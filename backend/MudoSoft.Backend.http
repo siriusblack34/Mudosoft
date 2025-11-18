@@ -1,0 +1,6 @@
+@MudoSoft.Backend_HostAddress = http://localhost:5102
+
+GET {{MudoSoft.Backend_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
