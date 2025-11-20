@@ -1,35 +1,36 @@
-using Microsoft.Extensions.DependencyInjection;
+﻿// agent/Program.cs
 using Microsoft.Extensions.Hosting;
 using Mudosoft.Agent;
-using Mudosoft.Agent.Options;
+using Mudosoft.Agent.Models;
 using Mudosoft.Agent.Services;
 
-IHostApplicationBuilder builder = Host.CreateApplicationBuilder(args);
+// Eklendi: Arayüzlerin (Interfaces) bulunduğu namespace
+using Mudosoft.Agent.Interfaces; 
 
-// Windows service olarak çalışmak için:
-builder.Services.AddWindowsService(options =>
-{
-    options.ServiceName = "Mudosoft Agent";
-});
 
-builder.Services.Configure<AgentOptions>(builder.Configuration.GetSection("Agent"));
+var builder = Host.CreateApplicationBuilder(args);
 
-builder.Services.AddHttpClient("BackendClient", (sp, client) =>
-{
-    var options = sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<AgentOptions>>().Value;
-    client.BaseAddress = new Uri(options.ServerUrl);
-    client.Timeout = TimeSpan.FromSeconds(15);
-});
+// "Agent" section → AgentConfig
+builder.Services.Configure<AgentConfig>(
+    builder.Configuration.GetSection("Agent")
+);
 
-// DI kayıtları
-builder.Services.AddSingleton<ISystemInfoCollector, SystemInfoCollector>();
-builder.Services.AddSingleton<IHeartbeatSender, HeartbeatSender>();
-builder.Services.AddSingleton<ICommandExecutor, CommandExecutor>();
-builder.Services.AddSingleton<IEventPublisher, EventPublisher>();
-builder.Services.AddSingleton<IWatchdogManager, WatchdogManager>();
-builder.Services.AddSingleton<ICommandPoller, CommandPoller>();
+// Identity provider (istersen ileride kullanırsın)
+builder.Services.AddSingleton<DeviceIdentityProvider>();
 
+// Worker + services
 builder.Services.AddHostedService<AgentWorker>();
+builder.Services.AddSingleton<ICommandExecutor, CommandExecutor>();
+builder.Services.AddSingleton<ICommandPoller, CommandPoller>();
+builder.Services.AddSingleton<IHeartbeatSender, HeartbeatService>();
+builder.Services.AddSingleton<IWatchdogManager, WatchdogManager>();
+// Artık ISystemInfoService'i Interfaces'ten ve SystemInfoService'i Services'ten biliyoruz.
+builder.Services.AddSingleton<ISystemInfoService, SystemInfoService>(); 
 
-IHost host = builder.Build();
-await host.RunAsync();
+
+// HttpClient
+builder.Services.AddHttpClient();
+
+// Build & run
+var host = builder.Build();
+host.Run();

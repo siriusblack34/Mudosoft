@@ -1,51 +1,59 @@
-using System.Net.Http.Json;
+using Mudosoft.Agent.Models;
+using Mudosoft.Shared.Dtos;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using Mudosoft.Agent.Options;
-using Mudosoft.Shared.Dtos;
+using System.Net.Http;
+using System.Net.Http.Json;
 
 namespace Mudosoft.Agent.Services;
 
 public sealed class CommandPoller : ICommandPoller
 {
+    private readonly HttpClient _http;
+    private readonly AgentConfig _config;
     private readonly ILogger<CommandPoller> _logger;
-    private readonly IHttpClientFactory _clientFactory;
     private readonly ICommandExecutor _executor;
-    private readonly AgentOptions _options;
 
     public CommandPoller(
-        ILogger<CommandPoller> logger,
-        IHttpClientFactory clientFactory,
+        IHttpClientFactory httpFactory,
+        IOptions<AgentConfig> options,
         ICommandExecutor executor,
-        IOptions<AgentOptions> options)
+        ILogger<CommandPoller> logger)
     {
-        _logger = logger;
-        _clientFactory = clientFactory;
+        _http = httpFactory.CreateClient();
+        _config = options.Value;
         _executor = executor;
-        _options = options.Value;
+        _logger = logger;
+
+        if (!string.IsNullOrWhiteSpace(_config.BackendUrl))
+            _http.BaseAddress = new Uri(_config.BackendUrl);
     }
 
-    public async Task PollAndExecuteAsync(CancellationToken cancellationToken)
+    public async Task PollAndExecuteAsync(CancellationToken token)
     {
-        var client = _clientFactory.CreateClient("BackendClient");
-
-        var response = await client.GetAsync($"/api/agent/commands?deviceId={_options.DeviceId}", cancellationToken);
-        if (!response.IsSuccessStatusCode)
+        try
         {
-            _logger.LogDebug("No commands or error while polling: {Status}", response.StatusCode);
-            return;
+            var url = $"api/agent/commands?deviceId={_config.DeviceId}";
+            var commands = await _http.GetFromJsonAsync<List<CommandDto>>(url, token);
+
+            if (commands is null || commands.Count == 0)
+                return;
+
+            foreach (var cmd in commands)
+            {
+                // 🔥 CommandId artık yok → Id
+                _logger.LogInformation("➡️ Received command {CommandId} → {Type}", cmd.Id, cmd.Type);
+
+                var result = await _executor.ExecuteAsync(cmd, token);
+
+                await _http.PostAsJsonAsync("api/agent/command-result", result, token);
+
+                _logger.LogInformation("⬅️ Result sent for {CommandId}", cmd.Id);
+            }
         }
-
-        var commands = await response.Content.ReadFromJsonAsync<List<CommandDto>>(cancellationToken: cancellationToken)
-                       ?? new List<CommandDto>();
-
-        foreach (var command in commands)
+        catch (Exception ex)
         {
-            _logger.LogInformation("Executing command {CommandId} of type {Type}", command.Id, command.Type);
-            var result = await _executor.ExecuteAsync(command, cancellationToken);
-
-            // Sonucu backend’e gönder
-            await client.PostAsJsonAsync("/api/agent/command-result", result, cancellationToken);
+            _logger.LogError(ex, "Command polling failed");
         }
     }
 }

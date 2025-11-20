@@ -1,7 +1,8 @@
+// agent/AgentWorker.cs
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using Mudosoft.Agent.Options;
+using Mudosoft.Agent.Models;
 using Mudosoft.Agent.Services;
 
 namespace Mudosoft.Agent;
@@ -9,20 +10,20 @@ namespace Mudosoft.Agent;
 public sealed class AgentWorker : BackgroundService
 {
     private readonly ILogger<AgentWorker> _logger;
-    private readonly AgentOptions _options;
+    private readonly AgentConfig _config;
     private readonly IHeartbeatSender _heartbeatSender;
     private readonly ICommandPoller _commandPoller;
     private readonly IWatchdogManager _watchdogManager;
 
     public AgentWorker(
         ILogger<AgentWorker> logger,
-        IOptions<AgentOptions> options,
+        IOptions<AgentConfig> config,
         IHeartbeatSender heartbeatSender,
         ICommandPoller commandPoller,
         IWatchdogManager watchdogManager)
     {
         _logger = logger;
-        _options = options.Value;
+        _config = config.Value;
         _heartbeatSender = heartbeatSender;
         _commandPoller = commandPoller;
         _watchdogManager = watchdogManager;
@@ -30,13 +31,13 @@ public sealed class AgentWorker : BackgroundService
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        _logger.LogInformation("Mudosoft Agent starting with DeviceId={DeviceId}", _options.DeviceId);
+        _logger.LogInformation("Mudosoft Agent starting with DeviceId={DeviceId}", _config.DeviceId);
 
         // Watchdog’ları arka planda başlat
         _watchdogManager.Start(stoppingToken);
 
-        var heartbeatPeriod = TimeSpan.FromSeconds(_options.HeartbeatIntervalSeconds);
-        var commandPollPeriod = TimeSpan.FromSeconds(_options.CommandPollIntervalSeconds);
+        var heartbeatPeriod = TimeSpan.FromSeconds(_config.HeartbeatIntervalSeconds);
+        var commandPollPeriod = TimeSpan.FromSeconds(_config.CommandPollIntervalSeconds);
 
         var heartbeatTask = RunPeriodicAsync(
             () => _heartbeatSender.SendHeartbeatAsync(stoppingToken),
@@ -64,7 +65,6 @@ public sealed class AgentWorker : BackgroundService
             }
             catch (Exception ex)
             {
-                // Burada global loglama yapılabilir
                 Console.Error.WriteLine(ex);
             }
 

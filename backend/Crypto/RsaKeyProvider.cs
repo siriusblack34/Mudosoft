@@ -5,40 +5,34 @@ namespace MudoSoft.Backend.Crypto;
 
 public class RsaKeyProvider
 {
-    private static RSA? _privateKey;
-    private static RSA? _publicKey;
+    private readonly RSA _privateKey;
+    private readonly RSA _publicKey;
 
-    public RsaKeyProvider(IHostEnvironment env)
+    public RsaKeyProvider()
     {
-        var keyPath = Path.Combine(env.ContentRootPath, "rsa_private.xml");
+        // TEST amaçlı key üretimi
+        _privateKey = RSA.Create();
+        _publicKey = RSA.Create();
 
-        if (File.Exists(keyPath))
-        {
-            var xml = File.ReadAllText(keyPath);
-            _privateKey = RSA.Create();
-            _privateKey.FromXmlString(xml);
-
-            _publicKey = RSA.Create();
-            _publicKey.FromXmlString(xml); // public key buradan çıkar
-        }
-        else
-        {
-            _privateKey = RSA.Create(2048);
-            var xml = _privateKey.ToXmlString(true);
-            File.WriteAllText(keyPath, xml);
-
-            _publicKey = RSA.Create();
-            _publicKey.FromXmlString(xml);
-        }
+        var p = _privateKey.ExportParameters(true);
+        _publicKey.ImportParameters(p);
     }
 
-    public string GetPublicKey()
+    // 🔥 Decrypt byte[] alır → string döner
+    public string Decrypt(byte[] encrypted)
     {
-        return _publicKey!.ToXmlString(false);
+        var decryptedBytes = _privateKey.Decrypt(
+            encrypted,
+            RSAEncryptionPadding.OaepSHA256
+        );
+
+        return Encoding.UTF8.GetString(decryptedBytes);
     }
 
-    public byte[] Decrypt(byte[] encrypted)
+    // İstersen agent için encrypt de ekliyoruz
+    public byte[] Encrypt(string json)
     {
-        return _privateKey!.Decrypt(encrypted, RSAEncryptionPadding.Pkcs1);
+        var bytes = Encoding.UTF8.GetBytes(json);
+        return _publicKey.Encrypt(bytes, RSAEncryptionPadding.OaepSHA256);
     }
 }

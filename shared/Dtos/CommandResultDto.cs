@@ -1,11 +1,7 @@
-namespace Mudosoft.Shared.Dtos;
-
-public sealed class CommandResultDto
+public class CommandResultDto
 {
-    public Guid CommandId { get; set; }
-    public string DeviceId { get; set; } = default!;
+    public Guid CommandId { get; set; }   // 🔥 string DEĞİL → Guid
+    public string DeviceId { get; set; } = "";
     public bool Success { get; set; }
-    public string? Output { get; set; }
-    public string? Error { get; set; }
-    public DateTime ExecutedAtUtc { get; set; }
+    public string Output { get; set; } = "";
 }

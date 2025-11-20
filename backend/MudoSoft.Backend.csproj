@@ -7,12 +7,25 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Swashbuckle.AspNetCore" Version="6.6.2" />
-    <PackageReference Include="System.Management" Version="10.0.0" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore" Version="8.0.10" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="8.0.10">
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+    <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" Version="8.0.10" />
+    <PackageReference Include="Swashbuckle.AspNetCore" Version="6.4.0" />
   </ItemGroup>
-  <ItemGroup>
-    <ProjectReference Include="..\Shared\Mudosoft.Shared.csproj" />
-</ItemGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="..\shared\Mudosoft.Shared.csproj" />
+    <ProjectReference Include="..\agent\MudoSoft.Agent.csproj" />
+  </ItemGroup>
+
+  <!-- BU BLOK KALDIRILDI, ÇÜNKÜ .NET SDK BU DOSYALARI ZATEN OTOMATİK OLARAK DAHİL EDİYOR.
+  <ItemGroup>
+    <Compile Include="Models\Device.cs" />
+    <Compile Include="Models\DeviceMetric.cs" />
+    <Compile Include="Data\MudoSoftDbContext.cs" />
+  </ItemGroup>
+  -->
 
 </Project>
