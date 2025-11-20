@@ -2,8 +2,15 @@ using MudoSoft.Backend.Services;
 using MudoSoft.Backend.Data;
 using MudoSoft.Backend.Crypto;
 using MudoSoft.Backend.Middleware;
+using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// 🔥 DbContext Register (ZORUNLU!)
+builder.Services.AddDbContext<MudoSoftDbContext>(options =>
+{
+    options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection"));
+});
 
 // Services
 builder.Services.AddControllers();
@@ -13,7 +20,6 @@ builder.Services.AddSingleton<RsaKeyProvider>();
 
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
-
 
 // CORS for Vite frontend
 builder.Services.AddCors(options =>
@@ -34,8 +40,9 @@ if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
     app.UseSwaggerUI();
+    app.UseMiddleware<EncryptedPayloadMiddleware>();
 }
+
 app.UseMiddleware<EncryptedPayloadMiddleware>();
 app.MapControllers();
 app.Run();
-

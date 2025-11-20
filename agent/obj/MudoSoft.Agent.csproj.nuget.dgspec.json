@@ -1,17 +1,97 @@
 {
   "format": 1,
   "restore": {
-    "C:\\MudoSoft\\Agent\\MudoSoft.Agent\\MudoSoft.Agent.csproj": {}
+    "C:\\Projects\\mudosoft\\agent\\MudoSoft.Agent.csproj": {}
   },
   "projects": {
-    "C:\\MudoSoft\\Agent\\MudoSoft.Agent\\MudoSoft.Agent.csproj": {
+    "C:\\Projects\\mudosoft\\agent\\MudoSoft.Agent.csproj": {
       "version": "1.0.0",
       "restore": {
-        "projectUniqueName": "C:\\MudoSoft\\Agent\\MudoSoft.Agent\\MudoSoft.Agent.csproj",
+        "projectUniqueName": "C:\\Projects\\mudosoft\\agent\\MudoSoft.Agent.csproj",
         "projectName": "MudoSoft.Agent",
-        "projectPath": "C:\\MudoSoft\\Agent\\MudoSoft.Agent\\MudoSoft.Agent.csproj",
+        "projectPath": "C:\\Projects\\mudosoft\\agent\\MudoSoft.Agent.csproj",
         "packagesPath": "C:\\Users\\mudoadmtd\\.nuget\\packages\\",
-        "outputPath": "C:\\MudoSoft\\Agent\\MudoSoft.Agent\\obj\\",
+        "outputPath": "C:\\Projects\\mudosoft\\agent\\obj\\",
+        "projectStyle": "PackageReference",
+        "configFilePaths": [
+          "C:\\Users\\mudoadmtd\\AppData\\Roaming\\NuGet\\NuGet.Config"
+        ],
+        "originalTargetFrameworks": [
+          "net8.0"
+        ],
+        "sources": {
+          "https://api.nuget.org/v3/index.json": {}
+        },
+        "frameworks": {
+          "net8.0": {
+            "targetAlias": "net8.0",
+            "projectReferences": {
+              "C:\\Projects\\mudosoft\\shared\\Mudosoft.Shared.csproj": {
+                "projectPath": "C:\\Projects\\mudosoft\\shared\\Mudosoft.Shared.csproj"
+              }
+            }
+          }
+        },
+        "warningProperties": {
+          "warnAsError": [
+            "NU1605"
+          ]
+        },
+        "restoreAuditProperties": {
+          "enableAudit": "true",
+          "auditLevel": "low",
+          "auditMode": "direct"
+        }
+      },
+      "frameworks": {
+        "net8.0": {
+          "targetAlias": "net8.0",
+          "dependencies": {
+            "Microsoft.Extensions.Hosting.WindowsServices": {
+              "target": "Package",
+              "version": "[8.0.0, )"
+            },
+            "Microsoft.Extensions.Http": {
+              "target": "Package",
+              "version": "[8.0.0, )"
+            },
+            "System.Diagnostics.PerformanceCounter": {
+              "target": "Package",
+              "version": "[7.0.0, )"
+            },
+            "System.Management": {
+              "target": "Package",
+              "version": "[8.0.0, )"
+            }
+          },
+          "imports": [
+            "net461",
+            "net462",
+            "net47",
+            "net471",
+            "net472",
+            "net48",
+            "net481"
+          ],
+          "assetTargetFallback": true,
+          "warn": true,
+          "frameworkReferences": {
+            "Microsoft.NETCore.App": {
+              "privateAssets": "all"
+            }
+          },
+          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\8.0.416/PortableRuntimeIdentifierGraph.json"
+        }
+      }
+    },
+    "C:\\Projects\\mudosoft\\shared\\Mudosoft.Shared.csproj": {
+      "version": "1.0.0",
+      "restore": {
+        "projectUniqueName": "C:\\Projects\\mudosoft\\shared\\Mudosoft.Shared.csproj",
+        "projectName": "Mudosoft.Shared",
+        "projectPath": "C:\\Projects\\mudosoft\\shared\\Mudosoft.Shared.csproj",
+        "packagesPath": "C:\\Users\\mudoadmtd\\.nuget\\packages\\",
+        "outputPath": "C:\\Projects\\mudosoft\\shared\\obj\\",
         "projectStyle": "PackageReference",
         "configFilePaths": [
           "C:\\Users\\mudoadmtd\\AppData\\Roaming\\NuGet\\NuGet.Config"
@@ -32,17 +112,16 @@
           "warnAsError": [
             "NU1605"
           ]
+        },
+        "restoreAuditProperties": {
+          "enableAudit": "true",
+          "auditLevel": "low",
+          "auditMode": "direct"
         }
       },
       "frameworks": {
         "net8.0": {
           "targetAlias": "net8.0",
-          "dependencies": {
-            "Microsoft.Extensions.Hosting": {
-              "target": "Package",
-              "version": "[8.0.1, )"
-            }
-          },
           "imports": [
             "net461",
             "net462",
@@ -59,7 +138,7 @@
               "privateAssets": "all"
             }
           },
-          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\8.0.121/PortableRuntimeIdentifierGraph.json"
+          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\8.0.416/PortableRuntimeIdentifierGraph.json"
         }
       }
     }

@@ -8,13 +8,30 @@
     <Description>Mudosoft Level 3 Retail POS Agent</Description>
   </PropertyGroup>
 
+  <!-- NuGet paketleri -->
   <ItemGroup>
     <PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" Version="8.0.0" />
     <PackageReference Include="System.Management" Version="8.0.0" />
+    <PackageReference Include="Microsoft.Extensions.Http" Version="8.0.0" />
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\Mudosoft.Shared\Mudosoft.Shared.csproj" />
+    <!-- Backend referans istemiyoruz — AŞIRI yanlış -->
+    <!-- <ProjectReference Include="..\backend\MudoSoft.Backend.csproj" /> -->
+
+    <!-- DOĞRU SHARED REFERANSI -->
+    <ProjectReference Include="..\shared\Mudosoft.Shared.csproj" />
   </ItemGroup>
+
+  <!-- _legacy klasörünü derlemeden çıkar -->
+  <ItemGroup>
+    <Compile Remove="_legacy\**\*.cs" />
+    <None Include="_legacy\**\*.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+  <PackageReference Include="System.Diagnostics.PerformanceCounter" Version="7.0.0" />
+</ItemGroup>
+
 
 </Project>

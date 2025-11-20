@@ -9,7 +9,7 @@ public sealed class DeviceHeartbeatDto
     public string Hostname { get; set; } = default!;
     public string IpAddress { get; set; } = default!;
     public string OsVersion { get; set; } = default!;
-    public string PosVersion { get; set; } = default!;  // fashion2701_751 vs
+    public string PosVersion { get; set; } = default!;
     public string SqlVersion { get; set; } = default!;
 
     public double CpuUsage { get; set; }
@@ -17,6 +17,8 @@ public sealed class DeviceHeartbeatDto
     public double DiskUsage { get; set; }
 
     public DateTime UptimeSince { get; set; }
+
+    public bool Online { get; set; }
 
     public AgentCapabilities Capabilities { get; set; } = new();
 }

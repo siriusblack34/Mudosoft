@@ -1,48 +1,68 @@
 using System.Text;
-using System.Text.Json;
+using Microsoft.AspNetCore.Http;
 using MudoSoft.Backend.Crypto;
-using MudoSoft.Backend.Models;
 
 namespace MudoSoft.Backend.Middleware;
 
 public class EncryptedPayloadMiddleware
 {
     private readonly RequestDelegate _next;
-    public EncryptedPayloadMiddleware(RequestDelegate next) => _next = next;
+
+    public EncryptedPayloadMiddleware(RequestDelegate next)
+    {
+        _next = next;
+    }
 
     public async Task InvokeAsync(HttpContext ctx, RsaKeyProvider rsa)
     {
-        if (!ctx.Request.Path.StartsWithSegments("/api/agent"))
+        // Swagger, GET ve boş body bypass
+        var path = ctx.Request.Path.Value?.ToLowerInvariant() ?? "";
+        if (ctx.Request.Method == "GET" ||
+            path.StartsWith("/swagger") ||
+            ctx.Request.ContentLength is null ||
+            ctx.Request.ContentLength == 0)
+        {
+            await _next(ctx);
+            return;
+        }
+
+        // Şifreleme header yok → bypass
+        if (!ctx.Request.Headers.TryGetValue("X-Encrypted", out var flag) ||
+            flag != "1")
         {
             await _next(ctx);
             return;
         }
 
         ctx.Request.EnableBuffering();
-        using var reader = new StreamReader(ctx.Request.Body, leaveOpen: true);
-        var body = await reader.ReadToEndAsync();
+        using var reader = new StreamReader(ctx.Request.Body, Encoding.UTF8, leaveOpen: true);
+        var bodyString = await reader.ReadToEndAsync();
         ctx.Request.Body.Position = 0;
 
-        if (string.IsNullOrWhiteSpace(body))
+        if (string.IsNullOrWhiteSpace(bodyString))
         {
             await _next(ctx);
             return;
         }
 
-        var enc = JsonSerializer.Deserialize<EncryptedPayload>(body);
+        // Base64 decode attempt
+        byte[] encryptedBytes;
+        try
+        {
+            encryptedBytes = Convert.FromBase64String(bodyString);
+        }
+        catch
+        {
+            await _next(ctx);
+            return;
+        }
 
-        var aesKey = rsa.Decrypt(Convert.FromBase64String(enc!.EncryptedKey));
-        var iv = Convert.FromBase64String(enc.IV);
-        var cipher = Convert.FromBase64String(enc.Data);
+        // RSA decrypt
+        var decryptedJson = rsa.Decrypt(encryptedBytes);
 
-        var plain = AesEncryption.Decrypt(cipher, aesKey, iv);
-        var json = Encoding.UTF8.GetString(plain);
-
-        ctx.Items["DecryptedBody"] = json;
-
-        var originalBody = ctx.Request.Body;
-        var newBody = new MemoryStream(Encoding.UTF8.GetBytes(json));
-        ctx.Request.Body = newBody;
+        // Replace body
+        var newBodyBytes = Encoding.UTF8.GetBytes(decryptedJson);
+        ctx.Request.Body = new MemoryStream(newBodyBytes);
 
         await _next(ctx);
     }

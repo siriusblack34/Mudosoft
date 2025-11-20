@@ -1,0 +1,12 @@
+C:\Projects\mudosoft\shared\bin\Debug\net8.0\Mudosoft.Shared.deps.json
+C:\Projects\mudosoft\shared\bin\Debug\net8.0\Mudosoft.Shared.dll
+C:\Projects\mudosoft\shared\bin\Debug\net8.0\Mudosoft.Shared.pdb
+C:\Projects\mudosoft\shared\obj\Debug\net8.0\Mudosoft.Shared.GeneratedMSBuildEditorConfig.editorconfig
+C:\Projects\mudosoft\shared\obj\Debug\net8.0\Mudosoft.Shared.AssemblyInfoInputs.cache
+C:\Projects\mudosoft\shared\obj\Debug\net8.0\Mudosoft.Shared.AssemblyInfo.cs
+C:\Projects\mudosoft\shared\obj\Debug\net8.0\Mudosoft.Shared.csproj.CoreCompileInputs.cache
+C:\Projects\mudosoft\shared\obj\Debug\net8.0\Mudosoft.Shared.sourcelink.json
+C:\Projects\mudosoft\shared\obj\Debug\net8.0\Mudosoft.Shared.dll
+C:\Projects\mudosoft\shared\obj\Debug\net8.0\refint\Mudosoft.Shared.dll
+C:\Projects\mudosoft\shared\obj\Debug\net8.0\Mudosoft.Shared.pdb
+C:\Projects\mudosoft\shared\obj\Debug\net8.0\ref\Mudosoft.Shared.dll
