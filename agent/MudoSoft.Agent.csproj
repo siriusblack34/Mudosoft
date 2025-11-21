@@ -33,5 +33,9 @@
   <PackageReference Include="System.Diagnostics.PerformanceCounter" Version="7.0.0" />
 </ItemGroup>
 
+<ItemGroup>
+    <PackageReference Include="System.Diagnostics.PerformanceCounter" Version="8.0.0" />
+</ItemGroup>
+
 
 </Project>

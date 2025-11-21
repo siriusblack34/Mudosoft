@@ -1,11 +1,12 @@
-// agent/Interfaces/ISystemInfoService.cs
+using System; // IDisposable için
+// ... diğer using'ler
 
-namespace Mudosoft.Agent.Interfaces // Düzeltildi: Services yerine Interfaces
+namespace Mudosoft.Agent.Interfaces;
+
+// IDisposable eklendi
+public interface ISystemInfoService : IDisposable 
 {
-    public interface ISystemInfoService
-    {
-        double GetCpuUsage();
-        double GetRamUsage();
-        double GetDiskUsage();
-    }
+    double GetCpuUsage();
+    double GetRamUsage();
+    double GetDiskUsage();
 }

@@ -1,30 +1,29 @@
 using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json; 
 
 namespace MudoSoft.Backend.Crypto;
 
-public static class AesEncryption
+public class AesEncryption // 'static' anahtar kelimesi yok
 {
-    public static byte[] Encrypt(byte[] data, byte[] key, byte[] iv)
+    // FIX: Middleware'in ihtiyaç duyduğu 3 parametreli Decrypt metodu
+    public string Decrypt(string cipherText, byte[] key, byte[] iv)
     {
-        using var aes = Aes.Create();
-        aes.KeySize = 256;
-        aes.Key = key;
-        aes.IV = iv;
-        aes.Mode = CipherMode.CBC;
+        // 1. Base64'ten şifreli metni byte array'e dönüştür
+        var cipherBytes = Convert.FromBase64String(cipherText);
 
-        using var encryptor = aes.CreateEncryptor();
-        return encryptor.TransformFinalBlock(data, 0, data.Length);
-    }
+        using var aesAlg = Aes.Create();
+        aesAlg.Key = key;
+        aesAlg.IV = iv;
+        aesAlg.Mode = CipherMode.CBC;
+        aesAlg.Padding = PaddingMode.PKCS7;
 
-    public static byte[] Decrypt(byte[] cipher, byte[] key, byte[] iv)
-    {
-        using var aes = Aes.Create();
-        aes.KeySize = 256;
-        aes.Key = key;
-        aes.IV = iv;
-        aes.Mode = CipherMode.CBC;
+        var decryptor = aesAlg.CreateDecryptor(aesAlg.Key, aesAlg.IV);
 
-        using var decryptor = aes.CreateDecryptor();
-        return decryptor.TransformFinalBlock(cipher, 0, cipher.Length);
+        using var msDecrypt = new MemoryStream(cipherBytes);
+        using var csDecrypt = new CryptoStream(msDecrypt, decryptor, CryptoStreamMode.Read);
+        using var srDecrypt = new StreamReader(csDecrypt);
+        
+        return srDecrypt.ReadToEnd();
     }
 }

@@ -1,21 +1,16 @@
+using System;
 using Mudosoft.Shared.Enums;
 
 namespace Mudosoft.Shared.Dtos;
 
-public class CommandDto
+public sealed class CommandDto
 {
-    // Backend tarafından atanacak benzersiz GUID
     public Guid Id { get; set; }
-
-    // Hedef cihaz (agentId)
-    public string DeviceId { get; set; } = "";
-
-    // Komut tipi
+    public string DeviceId { get; set; } = default!;
     public CommandType Type { get; set; }
 
-    // Komut parametresi / payload
-    public string Command { get; set; } = "";
-
-    // Komut oluşturulma zamanı
-    public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
+    // Payload: ExecuteScript komutu için çalıştırılacak betik (örneğin PowerShell kodu)
+    public string? Payload { get; set; } 
+    
+    public DateTime CreatedAtUtc { get; set; }
 }

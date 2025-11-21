@@ -1,128 +1,133 @@
 import React, { useEffect, useState } from "react";
-import { useParams, Link } from "react-router-dom";
-import { apiClient } from "../lib/apiClient";
-import type { Device } from "../types";
-import {
-  LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer
-} from "recharts";
+import { useParams } from "react-router-dom";
+import MetricChart from "../components/ui/MetricChart"; 
+import { apiClient } from "../lib/apiClient"; 
+import type { DeviceMetricDataPoint } from "../lib/apiClient"; 
+import RunScriptPanel from "../components/devices/RunScriptPanel"; // RunScriptPanel import edildi
 
+// Cihaz Detayları için yer tutucu arayüz
 interface DeviceDetailsState {
-  device: Device | null;
-  metrics: {
-    cpu: number[];
-    ram: number[];
-    disk: number[];
-  } | null;
-  loading: boolean;
-  error?: string;
+    hostname: string;
+    ipAddress: string;
+    os: string;
 }
 
+// ARTIK GEREKSİZ: fetchDeviceMetrics fonksiyonu kaldırıldı.
+// Hatanızın kaynağı bu fonksiyonun varlığı veya yanlış kullanımıydı.
+
+
 const DeviceDetailsPage: React.FC = () => {
-  const { id } = useParams<{ id: string }>();
-  const [state, setState] = useState<DeviceDetailsState>({
-    device: null,
-    metrics: null,
-    loading: true
-  });
+    const { deviceId } = useParams<{ deviceId: string }>();
 
-  useEffect(() => {
-    let cancelled = false;
+    const [deviceDetails, setDeviceDetails] = useState<DeviceDetailsState | null>(null); 
+    const [metrics, setMetrics] = useState<DeviceMetricDataPoint[]>([]); 
+    const [loading, setLoading] = useState(true);
 
-    const load = async () => {
-      if (!id) return;
-      try {
-        const device = await apiClient.getDevice(id);
-        const metrics = await apiClient.getDeviceMetrics(id);
-
-        if (!cancelled) {
-          setState({
-            device,
-            metrics,
-            loading: false
-          });
+    useEffect(() => {
+        if (!deviceId) {
+            setLoading(false);
+            return;
         }
-      } catch (err: any) {
-        if (!cancelled) {
-          setState({
-            device: null,
-            metrics: null,
-            loading: false,
-            error: err.message ?? "Failed to load device"
-          });
-        }
-      }
-    };
+        
+        let cancelled = false;
 
-    load();
-    const timer = setInterval(load, 8000); // her 8 saniyede güncelle
+        const loadData = async () => {
+            try {
+                // 1. Cihaz Detaylarını Yükleme için yer tutucu
+                if (!deviceDetails) {
+                    setDeviceDetails({ hostname: deviceId, ipAddress: "N/A", os: "N/A" });
+                }
+                
+                // DÜZELTME: Merkezi apiClient metodu kullanılıyor.
+                // Bu metot, apiClient.ts'te doğru şekilde tanımlandı.
+                const metricsRes = await apiClient.getDeviceMetrics(deviceId); 
 
-    return () => {
-      cancelled = true;
-      clearInterval(timer);
-    };
-  }, [id]);
+                if (!cancelled) setMetrics(metricsRes);
+            } catch (err) {
+                console.error("Detaylar/Metrikler yüklenemedi:", err);
+            } finally {
+                if (!cancelled) setLoading(false);
+            }
+        };
 
-  const { device, metrics, loading, error } = state;
+        loadData();
+        const intervalId = setInterval(loadData, 30000);
 
-  if (loading) return <div className="p-4">Loading device...</div>;
-  if (error) return <div className="p-4 text-red-400">{error}</div>;
-  if (!device) return <div className="p-4">Device not found.</div>;
+        return () => {
+            cancelled = true;
+            clearInterval(intervalId);
+        };
+    }, [deviceId, deviceDetails]);
 
-  // Grafik için format
-  const chartData =
-    metrics?.cpu.map((_, i) => ({
-      name: i.toString(),
-      cpu: metrics.cpu[i],
-      ram: metrics.ram[i],
-      disk: metrics.disk[i]
-    })) ?? [];
 
-  return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold">{device.hostname}</h1>
-        <Link to="/devices" className="text-ms-primary underline">
-          ← Back to Devices
-        </Link>
-      </div>
+    if (loading || !deviceId) return <div>Loading device details…</div>;
+    if (!deviceDetails) 
+        return <div className="text-red-500">Could not load device details for {deviceId}.</div>;
 
-      {/* Device Info */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 text-sm p-4 rounded-xl bg-ms-panel border border-ms-border">
-        <div><strong>IP:</strong> {device.ipAddress}</div>
-        <div><strong>OS:</strong> {device.os}</div>
-        <div><strong>Store:</strong> {device.storeCode}</div>
-        <div><strong>Type:</strong> {device.type}</div>
-        <div><strong>SQL:</strong> {device.sqlVersion ?? "N/A"}</div>
-        <div><strong>POS:</strong> {device.posVersion ?? "N/A"}</div>
-        <div><strong>Online:</strong> {device.online ? "🟢 Online" : "🔴 Offline"}</div>
-        <div><strong>Last Seen:</strong> {device.lastSeen}</div>
-        <div><strong>Agent:</strong> {device.agentVersion ?? "N/A"}</div>
-      </div>
+    const cpuData = metrics.map(m => ({ name: m.timestamp, value: m.cpu }));
+    const ramData = metrics.map(m => ({ name: m.timestamp, value: m.ram }));
+    const diskData = metrics.map(m => ({ name: m.timestamp, value: m.disk }));
+    
+    const latestCpu = cpuData[cpuData.length - 1]?.value ?? 0;
+    const latestRam = ramData[ramData.length - 1]?.value ?? 0;
+    const latestDisk = diskData[diskData.length - 1]?.value ?? 0;
 
-      {/* Metrics Charts */}
-      <div className="grid md:grid-cols-3 gap-4">
-        {["CPU", "RAM", "Disk"].map((label, idx) => (
-          <div key={label} className="p-4 rounded-xl bg-ms-panel border border-ms-border">
-            <div className="text-sm font-medium mb-2">{label} Usage</div>
-            <ResponsiveContainer width="100%" height={180}>
-              <LineChart data={chartData}>
-                <XAxis dataKey="name" hide />
-                <YAxis domain={[0, 100]} />
-                <Tooltip />
-                <Line
-                  type="monotone"
-                  dataKey={label.toLowerCase()}
-                  stroke="#4ade80"
-                  strokeWidth={2}
-                  dot={false}
-                />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
+    return (
+        <div className="space-y-6">
+            <h1 className="text-2xl font-semibold">{deviceDetails.hostname} Details</h1>
+
+            <section>
+                <h2 className="text-xl font-medium mb-4">Device Information</h2>
+                <div className="bg-ms-panel p-6 rounded-2xl border border-ms-border shadow-md text-sm">
+                    <p><strong>Device ID:</strong> {deviceId}</p>
+                    <p><strong>IP Address:</strong> {deviceDetails.ipAddress}</p>
+                    <p><strong>OS:</strong> {deviceDetails.os}</p>
+                </div>
+            </section>
+
+            {/* 📊 Metrik Grafikleri Bölümü */}
+            <section>
+                <h2 className="text-xl font-medium mb-4">Performance Metrics (Last 24 Hours)</h2>
+                {metrics.length === 0 ? (
+                    <div className="bg-ms-panel p-6 rounded-2xl border border-ms-border shadow-md text-center text-ms-text-muted">
+                        Son 24 saate ait metrik verisi bulunamadı.
+                    </div>
+                ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                        <div className="p-4 rounded-2xl">
+                            <MetricChart 
+                                title="CPU Usage" 
+                                data={cpuData} 
+                                value={latestCpu} 
+                                color="#f87171" 
+                            />
+                        </div>
+                        <div className="p-4 rounded-2xl">
+                            <MetricChart 
+                                title="RAM Usage"
+                                data={ramData} 
+                                value={latestRam} 
+                                color="#60a5fa"
+                            />
+                        </div>
+                        <div className="p-4 rounded-2xl">
+                            <MetricChart 
+                                title="Disk Usage" 
+                                data={diskData} 
+                                value={latestDisk} 
+                                color="#34d399" 
+                            />
+                        </div>
+                    </div>
+                )}
+            </section>
+
+            {/* 💻 Uzaktan Betik Çalıştırma Paneli (YENİ) */}
+            <section className="mt-6">
+                <RunScriptPanel deviceId={deviceId} />
+            </section>
+        </div>
+    );
 };
 
 export default DeviceDetailsPage;
