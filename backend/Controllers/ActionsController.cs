@@ -1,6 +1,8 @@
 using Microsoft.AspNetCore.Mvc;
+using Mudosoft.Shared.Dtos;
+using Mudosoft.Shared.Enums;
+using MudoSoft.Backend.Data;
 using MudoSoft.Backend.Models;
-using MudoSoft.Backend.Services;
 
 namespace MudoSoft.Backend.Controllers;
 
@@ -8,67 +10,58 @@ namespace MudoSoft.Backend.Controllers;
 [Route("api/[controller]")]
 public class ActionsController : ControllerBase
 {
-    private readonly IActionRepository _actionRepo;
-    private readonly IDeviceRepository _deviceRepo;
+    private readonly CommandQueue _queue;
+    private readonly ILogger<ActionsController> _logger;
 
-    public ActionsController(IActionRepository actionRepo, IDeviceRepository deviceRepo)
+    public ActionsController(CommandQueue queue, ILogger<ActionsController> logger)
     {
-        _actionRepo = actionRepo;
-        _deviceRepo = deviceRepo;
+        _queue = queue;
+        _logger = logger;
     }
 
-    // GET /api/actions
-    [HttpGet]
-    public ActionResult<IEnumerable<ActionRecord>> GetAll()
+    /// <summary>
+    /// Belirtilen cihazı yeniden başlatma komutunu kuyruğa alır.
+    /// </summary>
+    [HttpPost("reboot")]
+    public IActionResult Reboot([FromBody] ExecuteActionRequest request)
     {
-        return Ok(_actionRepo.GetAll());
-    }
-
-    // GET /api/actions/device/{deviceId}
-    [HttpGet("device/{deviceId}")]
-    public ActionResult<IEnumerable<ActionRecord>> GetByDevice(string deviceId)
-    {
-        return Ok(_actionRepo.GetByDevice(deviceId));
-    }
-
-    // POST /api/actions/execute
-    [HttpPost("execute")]
-    public ActionResult<ActionRecord> Execute([FromBody] ExecuteActionRequest request)
-    {
-        var device = _deviceRepo.GetById(request.DeviceId);
-        if (device is null)
-            return BadRequest($"Device {request.DeviceId} not found.");
-
-        var record = new ActionRecord
+        _queue.Enqueue(new CommandDto
         {
-            DeviceId = device.Id,
-            DeviceHostname = device.Hostname,
-            StoreCode = device.StoreCode,
-            Type = request.ActionType,
-            Status = "pending",
-            RequestedBy = "Administrator",
-            CreatedAt = DateTime.UtcNow,
-            Summary = $"Queued {request.ActionType} for {device.Hostname}"
-        };
+            Id = Guid.NewGuid(),
+            DeviceId = request.DeviceId,
+            Type = CommandType.Reboot,
+            CreatedAtUtc = DateTime.UtcNow
+        });
 
-        // Şimdilik sadece kayda alıyoruz; ileride gerçek job/agent entegrasyonu gelecek.
-        record = _actionRepo.Add(record);
-
-        return Ok(record);
+        _logger.LogInformation("Reboot komutu kuyruğa alındı: {DeviceId}", request.DeviceId);
+        return Accepted();
     }
 
-    // POST /api/actions/sql  (şimdilik stub, loglayıp OK dönsün)
-    [HttpPost("sql")]
-    public ActionResult<object> RunSql([FromBody] ExecuteActionRequest request)
+    /// <summary>
+    /// Belirtilen cihazda script çalıştırma komutunu kuyruğa alır. (YENİ)
+    /// </summary>
+    [HttpPost("run-script")]
+    public IActionResult RunScript([FromBody] ExecuteActionRequest request)
     {
-        // Gelecekte agent üzerinden gerçek SQL çalıştırılacak.
-        // Şimdilik fake result döndürüyoruz.
-        var result = new
+        if (string.IsNullOrWhiteSpace(request.Script))
         {
-            columns = new[] { "Result" },
-            rows = new object[][] { new object[] { "SQL execution stubbed." } }
-        };
+            return BadRequest("Script içeriği boş olamaz.");
+        }
 
-        return Ok(result);
+        var commandId = Guid.NewGuid();
+        _queue.Enqueue(new CommandDto
+        {
+            Id = commandId,
+            DeviceId = request.DeviceId,
+            Type = CommandType.ExecuteScript, // Yeni komut tipi
+            Payload = request.Script,        // Çalıştırılacak script
+            CreatedAtUtc = DateTime.UtcNow
+        });
+
+        _logger.LogInformation("Script çalıştırma komutu kuyruğa alındı: {DeviceId}, CommandId: {CommandId}", 
+                               request.DeviceId, commandId);
+        
+        // Komutun benzersiz kimliğini döndürerek Frontend'in sonucu takip etmesini sağlarız.
+        return Accepted(new { commandId = commandId.ToString() }); 
     }
 }

@@ -26,6 +26,8 @@ builder.Services.AddSingleton<IHeartbeatSender, HeartbeatService>();
 builder.Services.AddSingleton<IWatchdogManager, WatchdogManager>();
 // Artık ISystemInfoService'i Interfaces'ten ve SystemInfoService'i Services'ten biliyoruz.
 builder.Services.AddSingleton<ISystemInfoService, SystemInfoService>(); 
+builder.Services.AddSingleton<IRsaKeyService, RsaKeyService>(); 
+builder.Services.AddSingleton<IAesEncryptionService, AesEncryptionService>();
 
 
 // HttpClient

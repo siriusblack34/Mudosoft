@@ -15,9 +15,9 @@ builder.Services.AddDbContext<MudoSoftDbContext>(options =>
 // Services
 builder.Services.AddControllers();
 builder.Services.AddSingleton<CommandQueue>();
-builder.Services.AddSingleton<IAgentService, AgentService>();
+builder.Services.AddScoped<IAgentService, AgentService>();
 builder.Services.AddSingleton<RsaKeyProvider>();
-
+builder.Services.AddSingleton<AesEncryption>();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 

@@ -2,11 +2,9 @@ namespace Mudosoft.Shared.Enums;
 
 public enum CommandType
 {
+    Unknown = 0,
     Reboot = 1,
     Shutdown = 2,
-    RestartService = 3,
-    RunPowerShell = 4,
-    RunBatch = 5,
-    CopyFile = 6,
-    CustomPosMaintenance = 100 // POS özel komutlar için
+    ExecuteScript = 3, // Yeni: Uzaktan Betik Çalıştırma
+    // ... Diğer komut tipleri buraya eklenebilir
 }

@@ -1,38 +1,52 @@
 using System.Security.Cryptography;
-using System.Text;
+using Microsoft.Extensions.Configuration;
+using Microsoft.AspNetCore.Hosting;
+using System.IO;
 
 namespace MudoSoft.Backend.Crypto;
 
 public class RsaKeyProvider
 {
-    private readonly RSA _privateKey;
-    private readonly RSA _publicKey;
+    private readonly RSA _rsa; // 🔥 HATA ÇÖZÜMÜ: Sınıf seviyesinde tanımlandı.
+    private readonly IConfiguration _config;
+    private readonly IWebHostEnvironment _env;
+    private const string RsaKeyFileName = "rsa_private.xml";
 
-    public RsaKeyProvider()
+    public RsaKeyProvider(IConfiguration config, IWebHostEnvironment env)
     {
-        // TEST amaçlı key üretimi
-        _privateKey = RSA.Create();
-        _publicKey = RSA.Create();
+        _config = config;
+        _env = env;
+        _rsa = RSA.Create();
 
-        var p = _privateKey.ExportParameters(true);
-        _publicKey.ImportParameters(p);
+        LoadOrCreateKey();
     }
 
-    // 🔥 Decrypt byte[] alır → string döner
-    public string Decrypt(byte[] encrypted)
+    private void LoadOrCreateKey()
     {
-        var decryptedBytes = _privateKey.Decrypt(
-            encrypted,
-            RSAEncryptionPadding.OaepSHA256
-        );
+        var keyPath = Path.Combine(_env.ContentRootPath, RsaKeyFileName);
 
-        return Encoding.UTF8.GetString(decryptedBytes);
+        if (File.Exists(keyPath))
+        {
+            var xmlString = File.ReadAllText(keyPath);
+            _rsa.FromXmlString(xmlString);
+        }
+        else
+        {
+            _rsa.KeySize = 2048;
+            var xmlString = _rsa.ToXmlString(true);
+            File.WriteAllText(keyPath, xmlString);
+        }
     }
 
-    // İstersen agent için encrypt de ekliyoruz
-    public byte[] Encrypt(string json)
+    public byte[] Decrypt(byte[] cipherText)
     {
-        var bytes = Encoding.UTF8.GetBytes(json);
-        return _publicKey.Encrypt(bytes, RSAEncryptionPadding.OaepSHA256);
+        // AES key'i çözerken OAEP kullanıldığı varsayılır (Agent'ta kullandığımız gibi)
+        return _rsa.Decrypt(cipherText, RSAEncryptionPadding.OaepSHA256);
+    }
+
+    public string GetPublicKeyString()
+    {
+        // CS0103 hatası çözüldü
+        return _rsa.ToXmlString(false); 
     }
 }
