@@ -76,13 +76,15 @@ const DevicesPage: React.FC = () => {
                   onClick={() => navigate(`/devices/${d.id}`)}
                 >
                   <td className="px-4 py-2">
+                    {/* ✅ DÜZELTME: StatusPill artık 'online' prop'unu doğru şekilde kabul ediyor. */}
                     <StatusPill online={d.online} />
                   </td>
                   <td className="px-4 py-2 font-medium">{d.hostname}</td>
                   <td className="px-4 py-2">{d.ipAddress}</td>
                   <td className="px-4 py-2">{d.type}</td>
                   <td className="px-4 py-2">{d.storeCode}</td>
-                  <td className="px-4 py-2">{d.os}</td>
+                  {/* ✅ KRİTİK DÜZELTME: d.os nesnesinden name alanı çekildi. */}
+                  <td className="px-4 py-2">{d.os.name}</td>
                   <td className="px-4 py-2">{d.cpuUsage ?? '-'}%</td>
                   <td className="px-4 py-2">{d.ramUsage ?? '-'}%</td>
                   <td className="px-4 py-2 text-right text-ms-text-muted text-xs">

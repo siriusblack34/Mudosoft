@@ -4,16 +4,21 @@ import React from 'react';
 type StatusTone = 'success' | 'danger' | 'warning' | 'default';
 
 interface Props {
-    text: string;
-    // ÇÖZÜM: 'tone' prop'u eklendi
-    tone: StatusTone; 
+    // ✅ online durumunu kabul et
+    online: boolean; 
 }
 
-const StatusPill: React.FC<Props> = ({ text, tone }) => {
+const StatusPill: React.FC<Props> = ({ online }) => {
+    // Online durumuna göre metin ve tonu belirle
+    const text = online ? "ONLINE" : "OFFLINE";
+    // tone burada yalnızca 'success' veya 'danger' olabilir.
+    const tone = online ? 'success' : 'danger';
+    
     // Tailwind CSS sınıfını tonlara göre dinamik olarak seçme mantığı
     const baseClasses = "inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium";
 
     let colorClasses = "";
+    // ✅ DÜZELTME: Sadece olası durumlar (success ve danger) kontrol edilir.
     switch (tone) {
         case 'success':
             colorClasses = "bg-green-100 text-green-800";
@@ -21,12 +26,9 @@ const StatusPill: React.FC<Props> = ({ text, tone }) => {
         case 'danger':
             colorClasses = "bg-red-100 text-red-800";
             break;
-        case 'warning':
-            colorClasses = "bg-yellow-100 text-yellow-800";
-            break;
-        case 'default':
         default:
-            colorClasses = "bg-gray-100 text-gray-800";
+            // Güvenli bir varsayılan durum olarak default/danger rengini kullanabiliriz.
+            colorClasses = "bg-gray-100 text-gray-800"; 
             break;
     }
 

@@ -1,6 +1,6 @@
 export type DeviceType = 'POS' | 'PC';
 
-// ✅ DeviceMetric interface'i eklendi
+// ✅ KRİTİK DÜZELTME: DeviceMetric arayüzü doğru şekilde dışa aktarılmalıdır.
 export interface DeviceMetric {
   timestampUtc: string;
   cpuUsagePercent: number;
@@ -8,11 +8,17 @@ export interface DeviceMetric {
   diskUsagePercent: number;
 }
 
+// DeviceList ve DeviceDetails sayfalarının beklediği OS yapısı.
+export interface OsInfo {
+  name: string;
+  version?: string;
+}
+
 export interface Device {
   id: string;
   hostname: string;
   ipAddress: string;
-  os: string;
+  os: OsInfo; // List ve Detail sayfaları için OsInfo nesnesi bekleniyor.
   storeCode: number;
   storeName?: string;
   type: DeviceType;
@@ -24,7 +30,7 @@ export interface Device {
   ramUsage?: number;
   diskUsage?: number;
   agentVersion?: string;
-  metrics?: DeviceMetric[]; // ✅ Eklendi
+  metrics?: DeviceMetric[]; // ✅ Tarihsel Metrikler doğru tipe bağlanıyor.
 }
 
 export interface ActionRecord {

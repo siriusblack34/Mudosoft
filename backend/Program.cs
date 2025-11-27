@@ -53,4 +53,5 @@ if (app.Environment.IsDevelopment())
 
 app.UseMiddleware<EncryptedPayloadMiddleware>();
 app.MapControllers();
+app.Urls.Add("http://0.0.0.0:5102");
 app.Run();

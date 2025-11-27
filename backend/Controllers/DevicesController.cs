@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using MudoSoft.Backend.Models;
 using MudoSoft.Backend.Services;
 using MudoSoft.Backend.Data;
+using System.Linq; // Linq uzantıları için
 
 namespace MudoSoft.Backend.Controllers;
 
@@ -59,10 +60,47 @@ public class DevicesController : ControllerBase
     /// Full devices inventory list
     /// GET: /api/devices/inventory
     /// </summary>
+    // ✅ GÜNCELLEME: En güvenli DTO eşlemesi eklendi.
     [HttpGet("inventory")]
-    public ActionResult<IEnumerable<Device>> GetInventory()
+    public ActionResult<IEnumerable<DeviceListDto>> GetInventory()
     {
-        return Ok(_repo.GetAll());
+        var devices = _repo.GetAll();
+        
+        // Yardımcı fonksiyon: Float değerini güvenli bir şekilde int?'ye dönüştürür.
+        int? SafeRoundToNullableInt(float rawValue)
+        {
+            // NaN (Sayı Değil) veya sonsuzluk olup olmadığını kontrol et (Casting hatasını önler)
+            if (float.IsNaN(rawValue) || float.IsInfinity(rawValue))
+            {
+                return null;
+            }
+            
+            // Yuvarla ve 0'dan büyükse döndür (DTO'nun nullability'sini korur)
+            var roundedValue = (int)Math.Round(rawValue);
+            return roundedValue > 0 ? (int?)roundedValue : null;
+        }
+    
+        var deviceDtos = devices.Select(d => 
+        {
+            return new DeviceListDto
+            {
+                Id = d.Id,
+                Hostname = d.Hostname,
+                IpAddress = d.IpAddress,
+                Os = new OsInfo { Name = d.Os ?? "-" }, 
+                StoreCode = d.StoreCode, 
+                Type = d.Type.ToString(), 
+                Online = d.Online, 
+                LastSeen = d.LastSeen?.ToString("o"),
+                
+                // 🟢 Metrikler: Güvenli fonksiyondan değer atanır.
+                CpuUsage = SafeRoundToNullableInt(d.CurrentCpuUsagePercent),
+                RamUsage = SafeRoundToNullableInt(d.CurrentRamUsagePercent),
+                DiskUsage = SafeRoundToNullableInt(d.CurrentDiskUsagePercent)
+            };
+        }).ToList();
+
+        return Ok(deviceDtos);
     }
 
     /// <summary>
@@ -95,14 +133,15 @@ public class DevicesController : ControllerBase
             Id = device.Id,
             Hostname = device.Hostname,
             IpAddress = device.IpAddress,
-            Os = device.Os,
+            Os = device.Os, // String olarak kalır
             StoreCode = device.StoreCode,
             Type = device.Type.ToString(),
             Online = device.Online,
             LastSeen = device.LastSeen?.ToString("o"),
-            CpuUsage = metrics.LastOrDefault()?.CpuUsagePercent,
-            RamUsage = metrics.LastOrDefault()?.RamUsagePercent,
-            DiskUsage = metrics.LastOrDefault()?.DiskUsagePercent,
+            // ✅ Metrikler: Current* alanlarından alınıyor.
+            CpuUsage = (int)Math.Round(device.CurrentCpuUsagePercent),
+            RamUsage = (int)Math.Round(device.CurrentRamUsagePercent),
+            DiskUsage = (int)Math.Round(device.CurrentDiskUsagePercent),
             Metrics = metrics
         });
     }
@@ -137,6 +176,32 @@ public class DevicesController : ControllerBase
 }
 
 // DTO'lar
+
+// ✅ YENİ DTO: Envanter listesi için (Frontend'e özel alanlar içerir)
+public class DeviceListDto
+{
+    public string Id { get; set; } = default!;
+    public string? Hostname { get; set; }
+    public string IpAddress { get; set; } = default!;
+    // Front-end'in DeviceList.tsx dosyasındaki device.os.name kullanımını desteklemek için OsInfo DTO'su eklendi.
+    public OsInfo Os { get; set; } = default!; 
+    public int StoreCode { get; set; } // ✅ Store
+    public string Type { get; set; } = default!; // ✅ Type
+    public bool Online { get; set; } // Status bilgisini Online olarak kullanıyoruz.
+    public string? LastSeen { get; set; }
+
+    // Front-end'in beklediği alan adları.
+    public int? CpuUsage { get; set; } // ✅ CPU
+    public int? RamUsage { get; set; } // ✅ RAM
+    public int? DiskUsage { get; set; }
+}
+
+// Front-end'in beklediği OS yapısını temsil eder
+public class OsInfo
+{
+    public string Name { get; set; } = default!;
+}
+
 public class DashboardDto
 {
     public int TotalDevices { get; set; }
@@ -174,6 +239,6 @@ public class DeviceMetricDto
 {
     public string TimestampUtc { get; set; } = default!;
     public int CpuUsagePercent { get; set; }
-    public int RamUsagePercent { get; set; }
+    public int RamUsagePercent { get; set; } // ✅ DÜZELTME: get ve set arasında noktalı virgül eklendi
     public int DiskUsagePercent { get; set; }
 }
