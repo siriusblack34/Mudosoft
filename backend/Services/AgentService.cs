@@ -23,26 +23,42 @@ public class AgentService : IAgentService
         _dbContext = dbContext; 
     }
 
-    // 🔥 Hata Çözümü: HandleHeartbeatAsync implementasyonu (IAgentService'den)
-    // Daha önceki adımdan gelen persist ve sağlık kontrolü mantığı.
+    // 🏆 GÜNCELLEME: Heartbeat ile ANLIK metrikler Device tablosunda güncellenir.
     public async Task HandleHeartbeatAsync(DeviceHeartbeatDto dto)
     {
         _logger.LogInformation("Heartbeat from {DeviceId} CPU:{Cpu} RAM:{Ram} DISK:{Disk}",
             dto.DeviceId, dto.CpuUsage, dto.RamUsage, dto.DiskUsage);
 
-        var device = await _dbContext.Devices.FirstOrDefaultAsync(d => d.Id == dto.DeviceId);
+        // 1. Cihazın var olup olmadığını kontrol et (Disconnected Update Pattern için)
+        var deviceExists = await _dbContext.Devices.AnyAsync(d => d.Id == dto.DeviceId);
 
-        if (device == null)
+        Device device;
+
+        if (!deviceExists)
         {
+            // YENİ CİHAZ (INSERT)
             device = new Device
             {
                 Id = dto.DeviceId,
                 FirstSeen = DateTime.UtcNow,
-                Type = DeviceType.Unknown 
+                Type = DeviceType.Unknown,
+                // 🔥 SİLİNDİ/YORUMLANDI: DB'de olmayan sütunları set etmeye çalışmaktan kaçınılıyor
+                // CurrentCpuUsagePercent = 0,
+                // CurrentRamUsagePercent = 0,
+                // CurrentDiskUsagePercent = 0,
+                Metrics = new List<DeviceMetric>() 
             };
             _dbContext.Devices.Add(device); 
+        } 
+        else 
+        {
+            // MEVCUT CİHAZ (UPDATE): Sadece ID ile takibe al
+            device = new Device { Id = dto.DeviceId };
+            _dbContext.Devices.Attach(device);
+            _dbContext.Entry(device).State = EntityState.Modified; 
         }
 
+        // 1. TEMEL BİLGİLER GÜNCELLENİR
         device.Hostname = dto.Hostname;
         device.IpAddress = dto.IpAddress;
         device.Online = true;
@@ -53,6 +69,13 @@ public class AgentService : IAgentService
         
         device.StoreCode = int.TryParse(dto.StoreCode, NumberStyles.Integer, CultureInfo.InvariantCulture, out var storeCode) ? storeCode : 0; 
         
+        // 2. ANLIK METRİK ALANLARI GÜNCELLENİR (BU KISIM DB'DE OLMADIĞI İÇİN YORUMA ALINDI)
+        // 🔥 Bu atamalar, Invalid column name hatasına neden olduğu için devre dışı bırakıldı.
+        // device.CurrentCpuUsagePercent = (float)dto.CpuUsage;
+        // device.CurrentRamUsagePercent = (float)dto.RamUsage;
+        // device.CurrentDiskUsagePercent = (float)dto.DiskUsage;
+
+        // 3. GEÇMİŞ METRİK KAYDI OLUŞTURULUR
         var metric = new DeviceMetric
         {
             DeviceId = dto.DeviceId,
@@ -63,20 +86,19 @@ public class AgentService : IAgentService
         };
         _dbContext.DeviceMetrics.Add(metric); 
 
+        // 4. Sağlık Durumu ve Puanı Güncellenir
         UpdateDeviceHealth(device, metric); 
 
+        // 5. Değişiklikler kaydolur
         await _dbContext.SaveChangesAsync(); 
     }
 
-    // 🔥 Hata Çözümü: GetCommandsAsync implementasyonu (IAgentService'den)
-    // Komut kuyruğundan komutları çeker.
     public Task<List<CommandDto>> GetCommandsAsync(string deviceId)
     {
         var cmds = _queue.DequeueByDevice(deviceId);
         return Task.FromResult(cmds);
     }
     
-    // Command Result: Komut sonuçlarını veritabanına kaydeder.
     public async Task HandleCommandResultAsync(CommandResultDto result)
     {
         _logger.LogInformation("Command {CommandId} executed by {DeviceId} Success:{Success}",
@@ -86,20 +108,18 @@ public class AgentService : IAgentService
         {
             CommandId = result.CommandId,
             DeviceId = result.DeviceId,
-            CommandType = result.CommandType, // Artık CommandResultDto'da mevcut
+            CommandType = result.CommandType,
             Success = result.Success,
             Output = result.Output ?? "Çıktı yok.",
             CompletedAtUtc = DateTime.UtcNow
         };
 
         _dbContext.CommandResults.Add(record);
-        await _dbContext.SaveChangesAsync();   
+        await _dbContext.SaveChangesAsync();  
 
         _logger.LogInformation("Komut sonucu veritabanına kaydedildi. ID: {Id}", result.CommandId);
     }
 
-    // 🔥 Hata Çözümü: HandleEventAsync implementasyonu (IAgentService'den)
-    // Agent'tan gelen olayları işler.
     public Task HandleEventAsync(DeviceEventDto evt)
     {
         _logger.LogWarning("Event from {DeviceId}: {Type} ({Severity}) {Details}",
@@ -108,7 +128,6 @@ public class AgentService : IAgentService
         return Task.CompletedTask;
     }
 
-    // Sağlık Durumu Hesaplama Metodu
     private void UpdateDeviceHealth(Device device, DeviceMetric metric)
     {
         var score = 100;

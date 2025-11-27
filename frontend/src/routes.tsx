@@ -9,5 +9,6 @@ import DeviceDetailsPage from './pages/DeviceDetailsPage';
 export const routes: RouteObject[] = [
   { path: '/', element: <DashboardPage /> },
   { path: '/devices', element: <DevicesPage /> },
-  { path: '/devices/:id', element: <DeviceDetailsPage /> },
+  // 🏆 HATA GİDERME: URL parametresi, bileşen içinde çekilen adla eşleşecek şekilde düzeltildi.
+  { path: '/devices/:deviceId', element: <DeviceDetailsPage /> },
 ];

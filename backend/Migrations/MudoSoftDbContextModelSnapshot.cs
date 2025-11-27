@@ -41,6 +41,7 @@ namespace MudoSoft.Backend.Migrations
 
                     b.Property<string>("DeviceId")
                         .IsRequired()
+                        .HasMaxLength(450)
                         .HasColumnType("nvarchar(450)");
 
                     b.Property<string>("Output")
@@ -63,6 +64,7 @@ namespace MudoSoft.Backend.Migrations
             modelBuilder.Entity("MudoSoft.Backend.Models.Device", b =>
                 {
                     b.Property<string>("Id")
+                        .HasMaxLength(450)
                         .HasColumnType("nvarchar(450)");
 
                     b.Property<string>("AgentVersion")
@@ -132,6 +134,10 @@ namespace MudoSoft.Backend.Migrations
 
                     b.Property<string>("DeviceId")
                         .IsRequired()
+                        .HasMaxLength(450)
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<string>("DeviceId1")
                         .HasColumnType("nvarchar(450)");
 
                     b.Property<double?>("DiskFreeGb")
@@ -150,6 +156,8 @@ namespace MudoSoft.Backend.Migrations
 
                     b.HasIndex("DeviceId");
 
+                    b.HasIndex("DeviceId1");
+
                     b.ToTable("DeviceMetrics");
                 });
 
@@ -166,11 +174,15 @@ namespace MudoSoft.Backend.Migrations
 
             modelBuilder.Entity("MudoSoft.Backend.Models.DeviceMetric", b =>
                 {
-                    b.HasOne("MudoSoft.Backend.Models.Device", "Device")
+                    b.HasOne("MudoSoft.Backend.Models.Device", null)
                         .WithMany("Metrics")
                         .HasForeignKey("DeviceId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
+
+                    b.HasOne("MudoSoft.Backend.Models.Device", "Device")
+                        .WithMany()
+                        .HasForeignKey("DeviceId1");
 
                     b.Navigation("Device");
                 });

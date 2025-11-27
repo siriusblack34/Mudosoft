@@ -3,6 +3,7 @@ using MudoSoft.Backend.Data;
 using MudoSoft.Backend.Crypto;
 using MudoSoft.Backend.Middleware;
 using Microsoft.EntityFrameworkCore;
+using System.Text.Json.Serialization; // ⬅️ YENİ USING DİREKTİFİ
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -13,13 +14,20 @@ builder.Services.AddDbContext<MudoSoftDbContext>(options =>
 });
 
 // Services
-builder.Services.AddControllers();
+// 🏆 GÜNCELLENDİ: JSON döngüsel referans hatasını engellemek için ayar eklendi.
+builder.Services.AddControllers()
+    .AddJsonOptions(options =>
+    {
+        options.JsonSerializerOptions.ReferenceHandler = ReferenceHandler.IgnoreCycles;
+    });
+
 builder.Services.AddSingleton<CommandQueue>();
 builder.Services.AddScoped<IAgentService, AgentService>();
 builder.Services.AddSingleton<RsaKeyProvider>();
 builder.Services.AddSingleton<AesEncryption>();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
+builder.Services.AddScoped<IDeviceRepository, DeviceRepository>();
 
 // CORS for Vite frontend
 builder.Services.AddCors(options =>
@@ -40,7 +48,7 @@ if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
     app.UseSwaggerUI();
-    app.UseMiddleware<EncryptedPayloadMiddleware>();
+    // app.UseMiddleware<EncryptedPayloadMiddleware>(); // Yorum satırına alındı (aşağıdaki tek çağrı yeterli)
 }
 
 app.UseMiddleware<EncryptedPayloadMiddleware>();
