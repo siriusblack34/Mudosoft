@@ -1,27 +1,26 @@
-import type { Device } from "../types";
+import type { Device } from "../types"; // ✅ Import eklendi
 
 const API_BASE = "http://localhost:5102/api";
 
 // Cihaz Metrikleri için Arayüz
 export interface DeviceMetricDataPoint {
-  timestamp: string; 
-  cpu: number;
-  ram: number;
-  disk: number;
+  timestampUtc: string;
+  cpuUsagePercent: number;
+  ramUsagePercent: number;
+  diskUsagePercent: number;
 }
 
-// Komut Geçmişi için Arayüz (Backend'deki CommandHistoryDto'ya karşılık gelir)
+// Komut Geçmişi için Arayüz
 export interface CommandHistoryItem {
   commandId: string;
   deviceId: string;
   hostname: string;
-  type: number;       // CommandType Enum değeri
-  typeName: string;   // "Reboot", "ExecuteScript" vb.
+  type: number;
+  typeName: string;
   success: boolean;
   completedAtUtc: string;
   outputSnippet: string;
 }
-
 
 export const apiClient = {
   // 1. Dashboard Bilgileri
@@ -52,14 +51,14 @@ export const apiClient = {
     return res.json();
   },
 
-  // 3. Tek Cihaz Detayı
-  async getDevice(id: string): Promise<Device> {
+  // 3. Tek Cihaz Detayı (Metriklerle Birlikte)
+  async getDevice(id: string): Promise<Device> { // ✅ Tip düzeltildi
     const res = await fetch(`${API_BASE}/devices/${id}`);
     if (!res.ok) throw new Error("Device not found");
     return res.json();
   },
 
-  // 4. Metrik Geçmişi
+  // 4. Metrik Geçmişi (Opsiyonel)
   async getDeviceMetrics(id: string): Promise<DeviceMetricDataPoint[]> {
     const res = await fetch(`${API_BASE}/devices/${id}/metrics`);
     
@@ -90,7 +89,7 @@ export const apiClient = {
     return res.json();
   },
   
-  // 6. Komut Geçmişi Listesi (YENİ)
+  // 6. Komut Geçmişi Listesi
   async getCommandHistory(): Promise<CommandHistoryItem[]> {
     const res = await fetch(`${API_BASE}/actions/history`);
     
@@ -101,7 +100,7 @@ export const apiClient = {
     return res.json();
   },
 
-  // 7. Komut Çıktı Detayları (YENİ)
+  // 7. Komut Çıktı Detayları
   async getCommandDetails(commandId: string): Promise<any> {
     const res = await fetch(`${API_BASE}/actions/${commandId}/details`);
     

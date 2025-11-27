@@ -1,5 +1,13 @@
 export type DeviceType = 'POS' | 'PC';
 
+// ✅ DeviceMetric interface'i eklendi
+export interface DeviceMetric {
+  timestampUtc: string;
+  cpuUsagePercent: number;
+  ramUsagePercent: number;
+  diskUsagePercent: number;
+}
+
 export interface Device {
   id: string;
   hostname: string;
@@ -16,6 +24,7 @@ export interface Device {
   ramUsage?: number;
   diskUsage?: number;
   agentVersion?: string;
+  metrics?: DeviceMetric[]; // ✅ Eklendi
 }
 
 export interface ActionRecord {

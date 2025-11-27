@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("Mudosoft.Shared")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+64b0f99d80a5fc3e9bea7a900296e80fccfb1f0a")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+216fe62194a5039158d01b403aa03d371d707a41")]
 [assembly: System.Reflection.AssemblyProductAttribute("Mudosoft.Shared")]
 [assembly: System.Reflection.AssemblyTitleAttribute("Mudosoft.Shared")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]
