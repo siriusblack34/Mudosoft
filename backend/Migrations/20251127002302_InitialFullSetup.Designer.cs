@@ -12,8 +12,8 @@ using MudoSoft.Backend.Data;
 namespace MudoSoft.Backend.Migrations
 {
     [DbContext(typeof(MudoSoftDbContext))]
-    [Migration("20251119010938_InitialDeviceTelemetry")]
-    partial class InitialDeviceTelemetry
+    [Migration("20251127002302_InitialFullSetup")]
+    partial class InitialFullSetup
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -25,11 +25,50 @@ namespace MudoSoft.Backend.Migrations
 
             SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);
 
+            modelBuilder.Entity("MudoSoft.Backend.Models.CommandResultRecord", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<Guid>("CommandId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("CommandType")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("CompletedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("DeviceId")
+                        .IsRequired()
+                        .HasMaxLength(450)
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<string>("Output")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<bool>("Success")
+                        .HasColumnType("bit");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CommandId")
+                        .IsUnique();
+
+                    b.HasIndex("DeviceId");
+
+                    b.ToTable("CommandResults");
+                });
+
             modelBuilder.Entity("MudoSoft.Backend.Models.Device", b =>
                 {
                     b.Property<string>("Id")
-                        .HasMaxLength(100)
-                        .HasColumnType("nvarchar(100)");
+                        .HasMaxLength(450)
+                        .HasColumnType("nvarchar(450)");
 
                     b.Property<string>("AgentVersion")
                         .HasColumnType("nvarchar(max)");
@@ -50,8 +89,7 @@ namespace MudoSoft.Backend.Migrations
 
                     b.Property<string>("IpAddress")
                         .IsRequired()
-                        .HasMaxLength(50)
-                        .HasColumnType("nvarchar(50)");
+                        .HasColumnType("nvarchar(max)");
 
                     b.Property<DateTime?>("LastSeen")
                         .HasColumnType("datetime2");
@@ -73,8 +111,7 @@ namespace MudoSoft.Backend.Migrations
                         .HasColumnType("int");
 
                     b.Property<string>("StoreName")
-                        .HasMaxLength(200)
-                        .HasColumnType("nvarchar(200)");
+                        .HasColumnType("nvarchar(max)");
 
                     b.Property<int>("Type")
                         .HasColumnType("int");
@@ -100,7 +137,11 @@ namespace MudoSoft.Backend.Migrations
 
                     b.Property<string>("DeviceId")
                         .IsRequired()
-                        .HasColumnType("nvarchar(100)");
+                        .HasMaxLength(450)
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<string>("DeviceId1")
+                        .HasColumnType("nvarchar(450)");
 
                     b.Property<double?>("DiskFreeGb")
                         .HasColumnType("float");
@@ -116,18 +157,35 @@ namespace MudoSoft.Backend.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("DeviceId", "TimestampUtc");
+                    b.HasIndex("DeviceId");
+
+                    b.HasIndex("DeviceId1");
 
                     b.ToTable("DeviceMetrics");
                 });
 
-            modelBuilder.Entity("MudoSoft.Backend.Models.DeviceMetric", b =>
+            modelBuilder.Entity("MudoSoft.Backend.Models.CommandResultRecord", b =>
                 {
                     b.HasOne("MudoSoft.Backend.Models.Device", "Device")
+                        .WithMany()
+                        .HasForeignKey("DeviceId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Device");
+                });
+
+            modelBuilder.Entity("MudoSoft.Backend.Models.DeviceMetric", b =>
+                {
+                    b.HasOne("MudoSoft.Backend.Models.Device", null)
                         .WithMany("Metrics")
                         .HasForeignKey("DeviceId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
+
+                    b.HasOne("MudoSoft.Backend.Models.Device", "Device")
+                        .WithMany()
+                        .HasForeignKey("DeviceId1");
 
                     b.Navigation("Device");
                 });

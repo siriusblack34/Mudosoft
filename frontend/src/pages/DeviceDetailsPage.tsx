@@ -2,28 +2,56 @@ import React, { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import MetricChart from "../components/ui/MetricChart"; 
 import { apiClient } from "../lib/apiClient"; 
-import type { DeviceMetricDataPoint } from "../lib/apiClient"; 
-import RunScriptPanel from "../components/devices/RunScriptPanel"; // RunScriptPanel import edildi
+import RunScriptPanel from "../components/devices/RunScriptPanel"; 
+// types dosyasındaki Device modelini içe aktarın
+import type { Device } from "../types";
 
-// Cihaz Detayları için yer tutucu arayüz
-interface DeviceDetailsState {
-    hostname: string;
-    ipAddress: string;
-    os: string;
+// Backend'den gelen Metric yapısını taklit eden minimal arayüz
+interface DeviceMetricDataPoint {
+    timestampUtc: string;
+    cpuUsagePercent: number;
+    ramUsagePercent: number;
+    diskUsagePercent: number;
 }
 
-// ARTIK GEREKSİZ: fetchDeviceMetrics fonksiyonu kaldırıldı.
-// Hatanızın kaynağı bu fonksiyonun varlığı veya yanlış kullanımıydı.
+// 🏆 KESİN ZAMAN DÜZELTMESİ FONKSİYONU
+const formatTimeLocal = (utcString: string) => {
+    // Gelen dizeyi Date objesine dönüştür. (String UTC formatında ise, dönüştürmeyi garanti altına alır)
+    // Eğer string sonunda Z yoksa, local olarak yorumlayıp tekrar kaydırma hatası yapmaması için
+    // toLocaleString(undefined, options) kullanıyoruz.
+    const date = new Date(utcString); 
+    
+    // Formatlama seçenekleri: Saat dilimi dönüştürmesini zorlar.
+    const options: Intl.DateTimeFormatOptions = {
+        year: 'numeric',
+        month: 'numeric',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+    };
+    
+    // Tarayıcının yerel ayarlarını kullanarak formatla (Örn: UTC -> UTC+3)
+    return date.toLocaleString(undefined, options); 
+};
 
+
+// 🚨 Bileşenin Yüklendiğini gösteren genel log
+console.log("DeviceDetailsPage.tsx dosyası yüklendi.");
 
 const DeviceDetailsPage: React.FC = () => {
     const { deviceId } = useParams<{ deviceId: string }>();
+    
+    // 🚨 Render başladığında log yaz
+    console.log("DeviceDetailsPage render ediliyor. Current deviceId:", deviceId);
 
-    const [deviceDetails, setDeviceDetails] = useState<DeviceDetailsState | null>(null); 
-    const [metrics, setMetrics] = useState<DeviceMetricDataPoint[]>([]); 
+    const [deviceData, setDeviceData] = useState<Device | null>(null); 
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
+        // 🚨 useEffect bloğunun çalıştığını gösteren log
+        console.log("useEffect çalışıyor, API çağrısı başlatılıyor...");
+        
         if (!deviceId) {
             setLoading(false);
             return;
@@ -33,20 +61,25 @@ const DeviceDetailsPage: React.FC = () => {
 
         const loadData = async () => {
             try {
-                // 1. Cihaz Detaylarını Yükleme için yer tutucu
-                if (!deviceDetails) {
-                    setDeviceDetails({ hostname: deviceId, ipAddress: "N/A", os: "N/A" });
-                }
-                
-                // DÜZELTME: Merkezi apiClient metodu kullanılıyor.
-                // Bu metot, apiClient.ts'te doğru şekilde tanımlandı.
-                const metricsRes = await apiClient.getDeviceMetrics(deviceId); 
+                // API çağrısı, tek bir cihazın tüm detaylarını ve metriklerini çeker.
+                const fullDeviceData = await apiClient.getDevice(deviceId); 
 
-                if (!cancelled) setMetrics(metricsRes);
+                if (!cancelled) {
+                    setDeviceData(fullDeviceData);
+                    // 🚨 Başarılı Yükleme Logu
+                    console.log("SUCCESS: Cihaz verileri yüklendi. Hostname:", fullDeviceData.hostname);
+                }
             } catch (err) {
+                // 🚨 Hata Logu
                 console.error("Detaylar/Metrikler yüklenemedi:", err);
+                if (!cancelled) setDeviceData(null); 
             } finally {
-                if (!cancelled) setLoading(false);
+                // Veri çekme işlemi bittiğinde (başarılı veya hatalı) loading durumunu kapatıyoruz.
+                if (!cancelled) {
+                    // 🚨 Loading Kapatma Logu
+                    console.log("FINALLY: Loading durumu kapatıldı.");
+                    setLoading(false); 
+                }
             }
         };
 
@@ -57,31 +90,56 @@ const DeviceDetailsPage: React.FC = () => {
             cancelled = true;
             clearInterval(intervalId);
         };
-    }, [deviceId, deviceDetails]);
+    }, [deviceId]); 
 
 
-    if (loading || !deviceId) return <div>Loading device details…</div>;
-    if (!deviceDetails) 
-        return <div className="text-red-500">Could not load device details for {deviceId}.</div>;
+    // --- Render Mantığı ---
 
-    const cpuData = metrics.map(m => ({ name: m.timestamp, value: m.cpu }));
-    const ramData = metrics.map(m => ({ name: m.timestamp, value: m.ram }));
-    const diskData = metrics.map(m => ({ name: m.timestamp, value: m.disk }));
+    // Bu blok, loading true ise çalışır.
+    if (loading || !deviceId) {
+        return <div className="p-4 text-ms-text">Loading device details…</div>;
+    }
     
+    // Bu blok, loading false olduktan sonra (veri gelmediyse) çalışır.
+    if (!deviceData) 
+        return <div className="p-4 text-red-500">Could not load device details for {deviceId}.</div>;
+
+    // Metrik koleksiyonunu Device modelinden güvenli bir şekilde al
+    const metrics: DeviceMetricDataPoint[] = (deviceData as any).metrics || []; 
+    
+    
+    // Grafikler için metrik verilerinin hazırlanması
+    const cpuData = metrics.map(m => ({ 
+        // 🏆 ZAMAN DÜZELTME: formatTimeLocal fonksiyonunu kullanıyoruz.
+        name: formatTimeLocal(m.timestampUtc), 
+        value: m.cpuUsagePercent
+    }));
+    const ramData = metrics.map(m => ({ 
+        // 🏆 ZAMAN DÜZELTME
+        name: formatTimeLocal(m.timestampUtc), 
+        value: m.ramUsagePercent
+    }));
+    const diskData = metrics.map(m => ({ 
+        // 🏆 ZAMAN DÜZELTME
+        name: formatTimeLocal(m.timestampUtc), 
+        value: m.diskUsagePercent
+    }));
+    
+    // Anlık değerler için en son metriği alma
     const latestCpu = cpuData[cpuData.length - 1]?.value ?? 0;
     const latestRam = ramData[ramData.length - 1]?.value ?? 0;
     const latestDisk = diskData[diskData.length - 1]?.value ?? 0;
 
     return (
-        <div className="space-y-6">
-            <h1 className="text-2xl font-semibold">{deviceDetails.hostname} Details</h1>
+        <div className="space-y-6 p-4">
+            <h1 className="text-2xl font-semibold">{deviceData.hostname} Details</h1>
 
             <section>
                 <h2 className="text-xl font-medium mb-4">Device Information</h2>
                 <div className="bg-ms-panel p-6 rounded-2xl border border-ms-border shadow-md text-sm">
                     <p><strong>Device ID:</strong> {deviceId}</p>
-                    <p><strong>IP Address:</strong> {deviceDetails.ipAddress}</p>
-                    <p><strong>OS:</strong> {deviceDetails.os}</p>
+                    <p><strong>IP Address:</strong> {deviceData.ipAddress}</p>
+                    <p><strong>OS:</strong> {deviceData.os}</p>
                 </div>
             </section>
 

@@ -1,3 +1,7 @@
+using System;
+using System.ComponentModel.DataAnnotations; // EKLENDİ!
+using System.Collections.Generic; // List<T> için eklendi
+
 namespace MudoSoft.Backend.Models
 {
     public enum DeviceType
@@ -11,6 +15,8 @@ namespace MudoSoft.Backend.Models
     public class Device
     {
         // PRIMARY KEY
+        [Key] // Anahtar özniteliği eklendi
+        [MaxLength(450)] // 🏆 DÜZELTME: Sütun uzunluğunu kesinleştirdi
         public string Id { get; set; } = Guid.NewGuid().ToString();
 
         // BASIC INFO
@@ -34,6 +40,11 @@ namespace MudoSoft.Backend.Models
         // HEALTH
         public string HealthStatus { get; set; } = "Unknown"; 
         public int HealthScore { get; set; } = 100;
+        
+        // ❌ HATA ÇÖZÜMÜ İÇİN GEÇİCİ ÇÖZÜM: Migration'dan sonra silinecek sütunlar (şimdilik yoruma alındı)
+        // public float CurrentCpuUsagePercent { get; set; }
+        // public float CurrentRamUsagePercent { get; set; }
+        // public float CurrentDiskUsagePercent { get; set; }
 
         // NAVIGATION PROPERTY
         public List<DeviceMetric> Metrics { get; set; } = new();
