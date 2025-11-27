@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using MudoSoft.Backend.Models;
 using MudoSoft.Backend.Services;
+using MudoSoft.Backend.Dtos;
 
 namespace MudoSoft.Backend.Controllers;
 
@@ -32,9 +33,9 @@ public class DashboardController : ControllerBase
             .Where(d => !d.Online)
             .OrderByDescending(d => d.LastSeen)
             .Take(10)
-            .Select(d => new RecentOfflineDevice
+            .Select(d => new RecentOfflineDeviceDto
             {
-                Hostname = d.Hostname,
+                Hostname = d.Hostname ?? "-",
                 Ip       = d.IpAddress,
                 Os       = d.Os ?? "Unknown",
                 Store    = d.StoreCode,
@@ -42,7 +43,7 @@ public class DashboardController : ControllerBase
             })
             .ToList();
 
-        return Ok(new DashboardDto
+        return Ok(new DashboardResponseDto
         {
             TotalDevices  = total,
             Online        = online,
