@@ -15,62 +15,18 @@ public class DeviceRepository : IDeviceRepository
         _context = context;
     }
     
-    // 🏆 GÜNCELLEME: Tüm cihazlar çekilirken sadece eski (var olan) sütunlar çekilir.
-    // Bu, SQL hatasını atlar.
+    // ✅ DÜZELTME: Doğrudan ve hatasız veri çekimi için karmaşık Select projeksiyonu kaldırıldı.
     public List<Device> GetAll()
     {
         return _context.Devices
-            .Include(d => d.Metrics) // Metrics koleksiyonunu yükle
-            .Select(d => new Device 
-            {
-                // 🔥 SADECE VAR OLAN ESKİ SÜTUNLAR ÇEKİLİYOR
-                Id = d.Id,
-                Hostname = d.Hostname,
-                IpAddress = d.IpAddress,
-                StoreCode = d.StoreCode,
-                StoreName = d.StoreName,
-                Type = d.Type,
-                Os = d.Os,
-                SqlVersion = d.SqlVersion,
-                PosVersion = d.PosVersion,
-                AgentVersion = d.AgentVersion,
-                Online = d.Online,
-                FirstSeen = d.FirstSeen,
-                LastSeen = d.LastSeen,
-                HealthStatus = d.HealthStatus,
-                HealthScore = d.HealthScore,
-                Metrics = d.Metrics.ToList() // İlişkili veriler çekilmeye devam eder
-                // YENİ Current* Sütunları BURADA YOK
-            })
             .ToList();
     }
 
-    // 🏆 GÜNCELLEME: Tek cihaz çekilirken de sadece eski (var olan) sütunlar çekilir.
+    // ✅ DÜZELTME: GetById basitleştirildi. Include ile metrik ilişkisi korunur.
     public Device? GetById(string id)
     {
         return _context.Devices
             .Include(d => d.Metrics) // Metrics koleksiyonunu yükle
-            .Select(d => new Device 
-            {
-                // 🔥 SADECE VAR OLAN ESKİ SÜTUNLAR ÇEKİLİYOR
-                Id = d.Id,
-                Hostname = d.Hostname,
-                IpAddress = d.IpAddress,
-                StoreCode = d.StoreCode,
-                StoreName = d.StoreName,
-                Type = d.Type,
-                Os = d.Os,
-                SqlVersion = d.SqlVersion,
-                PosVersion = d.PosVersion,
-                AgentVersion = d.AgentVersion,
-                Online = d.Online,
-                FirstSeen = d.FirstSeen,
-                LastSeen = d.LastSeen,
-                HealthStatus = d.HealthStatus,
-                HealthScore = d.HealthScore,
-                Metrics = d.Metrics.ToList() // İlişkili veriler çekilmeye devam eder
-                // YENİ Current* Sütunları BURADA YOK
-            })
             .FirstOrDefault(d => d.Id == id);
     }
 

@@ -13,11 +13,11 @@
   "project": {
     "version": "1.0.0",
     "restore": {
-      "projectUniqueName": "C:\\Projects\\Mudosoft\\Shared\\Mudosoft.Shared.csproj",
+      "projectUniqueName": "C:\\Projects\\mudosoft\\shared\\Mudosoft.Shared.csproj",
       "projectName": "Mudosoft.Shared",
-      "projectPath": "C:\\Projects\\Mudosoft\\Shared\\Mudosoft.Shared.csproj",
+      "projectPath": "C:\\Projects\\mudosoft\\shared\\Mudosoft.Shared.csproj",
       "packagesPath": "C:\\Users\\mudoadmtd\\.nuget\\packages\\",
-      "outputPath": "C:\\Projects\\Mudosoft\\Shared\\obj\\",
+      "outputPath": "C:\\Projects\\mudosoft\\shared\\obj\\",
       "projectStyle": "PackageReference",
       "configFilePaths": [
         "C:\\Users\\mudoadmtd\\AppData\\Roaming\\NuGet\\NuGet.Config"

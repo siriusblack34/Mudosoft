@@ -23,7 +23,6 @@ public class AgentService : IAgentService
         _dbContext = dbContext;
     }
 
-    // ✅ DÜZELTME: TimestampUtc = DateTime.UtcNow kullanılıyor
     public async Task HandleHeartbeatAsync(DeviceHeartbeatDto dto)
     {
         _logger.LogInformation("Heartbeat from {DeviceId} CPU:{Cpu} RAM:{Ram} DISK:{Disk}",
@@ -47,7 +46,7 @@ public class AgentService : IAgentService
         }
         else
         {
-            // MEVCUT CİHAZ
+            // MEVCUT CİHAZ - Attach/Modified yöntemi kullanıldığında, tüm alanlar tekrar ayarlanmalıdır.
             device = new Device { Id = dto.DeviceId };
             _dbContext.Devices.Attach(device);
             _dbContext.Entry(device).State = EntityState.Modified;
@@ -56,18 +55,24 @@ public class AgentService : IAgentService
         // Temel bilgiler güncellenir
         device.Hostname = dto.Hostname;
         device.IpAddress = dto.IpAddress;
-        device.Online = true;
-        device.LastSeen = DateTime.UtcNow; // ✅ Server UTC time
+        device.Online = true; // ✅ Status (Çevrimiçi)
+        device.LastSeen = DateTime.UtcNow;
         device.Os = dto.OsVersion;
         device.PosVersion = dto.PosVersion;
         device.SqlVersion = dto.SqlVersion;
-        device.StoreCode = int.TryParse(dto.StoreCode, NumberStyles.Integer, CultureInfo.InvariantCulture, out var storeCode) ? storeCode : 0;
+        device.StoreCode = int.TryParse(dto.StoreCode, NumberStyles.Integer, CultureInfo.InvariantCulture, out var storeCode) ? storeCode : 0; // ✅ Store
 
-        // ✅ METRİK KAYDI: Server'ın UTC zamanını kullan
+        // 🟢 GÜNCELLEME: Canlı metrik alanlarını Device modeline kopyala. 
+        // Bu, DeviceController'ın GetInventory metodunun bu alanları çekmesini sağlar.
+        device.CurrentCpuUsagePercent = (float)dto.CpuUsage; // ✅ CPU
+        device.CurrentRamUsagePercent = (float)dto.RamUsage; // ✅ RAM
+        device.CurrentDiskUsagePercent = (float)dto.DiskUsage;
+
+        // METRİK KAYDI: Server'ın UTC zamanını kullan
         var metric = new DeviceMetric
         {
             DeviceId = dto.DeviceId,
-            TimestampUtc = DateTime.UtcNow, // 🔥 Agent'tan gelen değil, server time
+            TimestampUtc = DateTime.UtcNow,
             CpuUsagePercent = (int)Math.Round(dto.CpuUsage),
             RamUsagePercent = (int)Math.Round(dto.RamUsage),
             DiskUsagePercent = (int)Math.Round(dto.DiskUsage)

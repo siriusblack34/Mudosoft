@@ -32,6 +32,7 @@ const DeviceDetailsPage: React.FC = () => {
 
         const loadData = async () => {
             try {
+                // 3. Tek Cihaz Detayı (Metriklerle Birlikte) çağrılıyor.
                 const fullDeviceData = await apiClient.getDevice(deviceId);
 
                 if (!cancelled) {
@@ -49,6 +50,7 @@ const DeviceDetailsPage: React.FC = () => {
         };
 
         loadData();
+        // 30 saniyede bir otomatik yenileme
         const intervalId = setInterval(loadData, 30000);
 
         return () => {
@@ -68,7 +70,7 @@ const DeviceDetailsPage: React.FC = () => {
     // ✅ Backend'den gelen metrics dizisi
     const metrics: DeviceMetric[] = deviceData.metrics || [];
 
-    // Grafik için veri hazırlama
+    // Grafik için veri hazırlama: CPU, RAM ve Disk için ayrı diziler oluşturulur.
     const cpuData = metrics.map(m => ({
         name: formatTimeLocal(m.timestampUtc),
         value: m.cpuUsagePercent
@@ -82,7 +84,7 @@ const DeviceDetailsPage: React.FC = () => {
         value: m.diskUsagePercent
     }));
 
-    // Anlık değerler
+    // Anlık değerler (Listede gösterilenler)
     const latestCpu = deviceData.cpuUsage ?? 0;
     const latestRam = deviceData.ramUsage ?? 0;
     const latestDisk = deviceData.diskUsage ?? 0;
@@ -96,7 +98,8 @@ const DeviceDetailsPage: React.FC = () => {
                 <div className="bg-ms-panel p-6 rounded-2xl border border-ms-border shadow-md text-sm">
                     <p><strong>Device ID:</strong> {deviceId}</p>
                     <p><strong>IP Address:</strong> {deviceData.ipAddress}</p>
-                    <p><strong>OS:</strong> {deviceData.os}</p>
+                    {/* ✅ KRİTİK DÜZELTME: OS nesnesinden 'name' alanını çek. */}
+                    <p><strong>OS:</strong> {deviceData.os.name}</p>
                     <p><strong>Type:</strong> {deviceData.type}</p>
                     <p><strong>Store:</strong> {deviceData.storeCode}</p>
                     <p><strong>Status:</strong> {deviceData.online ? '🟢 Online' : '🔴 Offline'}</p>

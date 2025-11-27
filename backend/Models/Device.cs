@@ -1,6 +1,6 @@
 using System;
-using System.ComponentModel.DataAnnotations; // EKLENDİ!
-using System.Collections.Generic; // List<T> için eklendi
+using System.ComponentModel.DataAnnotations;
+using System.Collections.Generic;
 
 namespace MudoSoft.Backend.Models
 {
@@ -15,8 +15,8 @@ namespace MudoSoft.Backend.Models
     public class Device
     {
         // PRIMARY KEY
-        [Key] // Anahtar özniteliği eklendi
-        [MaxLength(450)] // 🏆 DÜZELTME: Sütun uzunluğunu kesinleştirdi
+        [Key]
+        [MaxLength(450)]
         public string Id { get; set; } = Guid.NewGuid().ToString();
 
         // BASIC INFO
@@ -24,7 +24,7 @@ namespace MudoSoft.Backend.Models
         public string IpAddress { get; set; } = string.Empty;
         public int StoreCode { get; set; }
         public string? StoreName { get; set; }
-        public DeviceType Type { get; set; } = DeviceType.Unknown;
+        public DeviceType Type { get; set; } = DeviceType.Unknown; // ✅ Type bilgisi
 
         // SYSTEM INFO
         public string Os { get; set; } = string.Empty;
@@ -33,18 +33,18 @@ namespace MudoSoft.Backend.Models
         public string? AgentVersion { get; set; }
 
         // ONLINE STATUS
-        public bool Online { get; set; }
+        public bool Online { get; set; } // ✅ Status (online/offline) bilgisi
         public DateTime FirstSeen { get; set; } = DateTime.UtcNow;
         public DateTime? LastSeen { get; set; }
 
         // HEALTH
-        public string HealthStatus { get; set; } = "Unknown"; 
+        public string HealthStatus { get; set; } = "Unknown";
         public int HealthScore { get; set; } = 100;
         
-        // ❌ HATA ÇÖZÜMÜ İÇİN GEÇİCİ ÇÖZÜM: Migration'dan sonra silinecek sütunlar (şimdilik yoruma alındı)
-         public float CurrentCpuUsagePercent { get; set; }
-         public float CurrentRamUsagePercent { get; set; }
-         public float CurrentDiskUsagePercent { get; set; }
+        // ✅ GÜNCELLEME: Canlı metrik sütunları aktifleştirildi (CPU/RAM için)
+        public float CurrentCpuUsagePercent { get; set; } // ✅ CPU bilgisi
+        public float CurrentRamUsagePercent { get; set; } // ✅ RAM bilgisi
+        public float CurrentDiskUsagePercent { get; set; }
 
         // NAVIGATION PROPERTY
         public List<DeviceMetric> Metrics { get; set; } = new();
