@@ -1,6 +1,10 @@
-import type { Device } from "../types"; // ✅ Import eklendi
+import type { Device } from "../types"; 
+import axios from 'axios'; // ⬅️ axios veya fetch kullanıyorsanız bu gerekli (Varsayılan fetch kullanacağım)
 
-const API_BASE = "http://localhost:5102/api";
+// API'nin temel adresi
+const API_BASE = "http://localhost:5102/api"; 
+
+// ... (Mevcut arayüzler ve tipler aynı kalır) ...
 
 // Cihaz Metrikleri için Arayüz
 export interface DeviceMetricDataPoint {
@@ -22,7 +26,28 @@ export interface CommandHistoryItem {
   outputSnippet: string;
 }
 
+// 🏆 KRİTİK EKLEME: Command Result için arayüz tanımı
+export interface CommandResultRecord {
+    output: string;
+    completedAtUtc: string | null;
+}
+
+
 export const apiClient = {
+  // 🏆 KRİTİK DÜZELTME 1: Genel GET metodunu ekle
+  async get<T>(url: string): Promise<T> {
+      // API_BASE, /api içerdiğinden, /agent/command-results yolu için URL'yi birleştiriyoruz.
+      // Eğer url zaten tam yolu içeriyorsa, sadece fetch kullanabiliriz.
+      const fullUrl = url.startsWith('/') ? `${API_BASE}${url}` : `${API_BASE}/${url}`;
+
+      const res = await fetch(fullUrl);
+      
+      if (!res.ok) {
+          throw new Error(`GET isteği başarısız oldu: ${res.statusText}`);
+      }
+      return res.json();
+  },
+
   // 1. Dashboard Bilgileri
   async getDashboard(): Promise<{
     totalDevices: number;
@@ -52,7 +77,7 @@ export const apiClient = {
   },
 
   // 3. Tek Cihaz Detayı (Metriklerle Birlikte)
-  async getDevice(id: string): Promise<Device> { // ✅ Tip düzeltildi
+  async getDevice(id: string): Promise<Device> { 
     const res = await fetch(`${API_BASE}/devices/${id}`);
     if (!res.ok) throw new Error("Device not found");
     return res.json();
@@ -82,8 +107,8 @@ export const apiClient = {
     });
 
     if (!res.ok) {
-        const errorText = await res.text();
-        throw new Error(`Script çalıştırma başarısız: ${res.status} ${errorText}`);
+      const errorText = await res.text();
+      throw new Error(`Script çalıştırma başarısız: ${res.status} ${errorText}`);
     }
 
     return res.json();

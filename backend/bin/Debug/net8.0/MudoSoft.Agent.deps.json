@@ -8,10 +8,11 @@
     ".NETCoreApp,Version=v8.0": {
       "MudoSoft.Agent/1.0.0": {
         "dependencies": {
+          "Microsoft.Extensions.Hosting": "8.0.0",
           "Microsoft.Extensions.Hosting.WindowsServices": "8.0.0",
           "Microsoft.Extensions.Http": "8.0.0",
           "Mudosoft.Shared": "1.0.0",
-          "System.Diagnostics.PerformanceCounter": "7.0.0",
+          "System.Diagnostics.PerformanceCounter": "8.0.0",
           "System.Management": "8.0.0"
         },
         "runtime": {
@@ -410,22 +411,6 @@
           }
         }
       },
-      "Microsoft.Win32.SystemEvents/7.0.0": {
-        "runtime": {
-          "lib/net7.0/Microsoft.Win32.SystemEvents.dll": {
-            "assemblyVersion": "7.0.0.0",
-            "fileVersion": "7.0.22.51805"
-          }
-        },
-        "runtimeTargets": {
-          "runtimes/win/lib/net7.0/Microsoft.Win32.SystemEvents.dll": {
-            "rid": "win",
-            "assetType": "runtime",
-            "assemblyVersion": "7.0.0.0",
-            "fileVersion": "7.0.22.51805"
-          }
-        }
-      },
       "System.CodeDom/8.0.0": {
         "runtime": {
           "lib/net8.0/System.CodeDom.dll": {
@@ -434,16 +419,15 @@
           }
         }
       },
-      "System.Configuration.ConfigurationManager/7.0.0": {
+      "System.Configuration.ConfigurationManager/8.0.0": {
         "dependencies": {
           "System.Diagnostics.EventLog": "8.0.0",
-          "System.Security.Cryptography.ProtectedData": "7.0.0",
-          "System.Security.Permissions": "7.0.0"
+          "System.Security.Cryptography.ProtectedData": "8.0.0"
         },
         "runtime": {
-          "lib/net7.0/System.Configuration.ConfigurationManager.dll": {
-            "assemblyVersion": "7.0.0.0",
-            "fileVersion": "7.0.22.51805"
+          "lib/net8.0/System.Configuration.ConfigurationManager.dll": {
+            "assemblyVersion": "8.0.0.0",
+            "fileVersion": "8.0.23.53103"
           }
         }
       },
@@ -470,41 +454,22 @@
           }
         }
       },
-      "System.Diagnostics.PerformanceCounter/7.0.0": {
+      "System.Diagnostics.PerformanceCounter/8.0.0": {
         "dependencies": {
-          "System.Configuration.ConfigurationManager": "7.0.0"
+          "System.Configuration.ConfigurationManager": "8.0.0"
         },
         "runtime": {
-          "lib/net7.0/System.Diagnostics.PerformanceCounter.dll": {
-            "assemblyVersion": "7.0.0.0",
-            "fileVersion": "7.0.22.51805"
+          "lib/net8.0/System.Diagnostics.PerformanceCounter.dll": {
+            "assemblyVersion": "8.0.0.0",
+            "fileVersion": "8.0.23.53103"
           }
         },
         "runtimeTargets": {
-          "runtimes/win/lib/net7.0/System.Diagnostics.PerformanceCounter.dll": {
+          "runtimes/win/lib/net8.0/System.Diagnostics.PerformanceCounter.dll": {
             "rid": "win",
             "assetType": "runtime",
-            "assemblyVersion": "7.0.0.0",
-            "fileVersion": "7.0.22.51805"
-          }
-        }
-      },
-      "System.Drawing.Common/7.0.0": {
-        "dependencies": {
-          "Microsoft.Win32.SystemEvents": "7.0.0"
-        },
-        "runtime": {
-          "lib/net7.0/System.Drawing.Common.dll": {
-            "assemblyVersion": "7.0.0.0",
-            "fileVersion": "7.0.22.51805"
-          }
-        },
-        "runtimeTargets": {
-          "runtimes/win/lib/net7.0/System.Drawing.Common.dll": {
-            "rid": "win",
-            "assetType": "runtime",
-            "assemblyVersion": "7.0.0.0",
-            "fileVersion": "7.0.22.51805"
+            "assemblyVersion": "8.0.0.0",
+            "fileVersion": "8.0.23.53103"
           }
         }
       },
@@ -527,30 +492,11 @@
           }
         }
       },
-      "System.Security.Cryptography.ProtectedData/7.0.0": {
+      "System.Security.Cryptography.ProtectedData/8.0.0": {
         "runtime": {
-          "lib/net7.0/System.Security.Cryptography.ProtectedData.dll": {
-            "assemblyVersion": "7.0.0.0",
-            "fileVersion": "7.0.22.51805"
-          }
-        },
-        "runtimeTargets": {
-          "runtimes/win/lib/net7.0/System.Security.Cryptography.ProtectedData.dll": {
-            "rid": "win",
-            "assetType": "runtime",
-            "assemblyVersion": "7.0.0.0",
-            "fileVersion": "7.0.22.51805"
-          }
-        }
-      },
-      "System.Security.Permissions/7.0.0": {
-        "dependencies": {
-          "System.Windows.Extensions": "7.0.0"
-        },
-        "runtime": {
-          "lib/net7.0/System.Security.Permissions.dll": {
-            "assemblyVersion": "7.0.0.0",
-            "fileVersion": "7.0.22.51805"
+          "lib/net8.0/System.Security.Cryptography.ProtectedData.dll": {
+            "assemblyVersion": "8.0.0.0",
+            "fileVersion": "8.0.23.53103"
           }
         }
       },
@@ -577,25 +523,6 @@
       "System.Text.Json/8.0.0": {
         "dependencies": {
           "System.Text.Encodings.Web": "8.0.0"
-        }
-      },
-      "System.Windows.Extensions/7.0.0": {
-        "dependencies": {
-          "System.Drawing.Common": "7.0.0"
-        },
-        "runtime": {
-          "lib/net7.0/System.Windows.Extensions.dll": {
-            "assemblyVersion": "7.0.0.0",
-            "fileVersion": "7.0.22.51805"
-          }
-        },
-        "runtimeTargets": {
-          "runtimes/win/lib/net7.0/System.Windows.Extensions.dll": {
-            "rid": "win",
-            "assetType": "runtime",
-            "assemblyVersion": "7.0.0.0",
-            "fileVersion": "7.0.22.51805"
-          }
         }
       },
       "Mudosoft.Shared/1.0.0": {
@@ -817,13 +744,6 @@
       "path": "microsoft.extensions.primitives/8.0.0",
       "hashPath": "microsoft.extensions.primitives.8.0.0.nupkg.sha512"
     },
-    "Microsoft.Win32.SystemEvents/7.0.0": {
-      "type": "package",
-      "serviceable": true,
-      "sha512": "sha512-2nXPrhdAyAzir0gLl8Yy8S5Mnm/uBSQQA7jEsILOS1MTyS7DbmV1NgViMtvV1sfCD1ebITpNwb1NIinKeJgUVQ==",
-      "path": "microsoft.win32.systemevents/7.0.0",
-      "hashPath": "microsoft.win32.systemevents.7.0.0.nupkg.sha512"
-    },
     "System.CodeDom/8.0.0": {
       "type": "package",
       "serviceable": true,
@@ -831,12 +751,12 @@
       "path": "system.codedom/8.0.0",
       "hashPath": "system.codedom.8.0.0.nupkg.sha512"
     },
-    "System.Configuration.ConfigurationManager/7.0.0": {
+    "System.Configuration.ConfigurationManager/8.0.0": {
       "type": "package",
       "serviceable": true,
-      "sha512": "sha512-WvRUdlL1lB0dTRZSs5XcQOd5q9MYNk90GkbmRmiCvRHThWiojkpGqWdmEDJdXyHbxG/BhE5hmVbMfRLXW9FJVA==",
-      "path": "system.configuration.configurationmanager/7.0.0",
-      "hashPath": "system.configuration.configurationmanager.7.0.0.nupkg.sha512"
+      "sha512": "sha512-JlYi9XVvIREURRUlGMr1F6vOFLk7YSY4p1vHo4kX3tQ0AGrjqlRWHDi66ImHhy6qwXBG3BJ6Y1QlYQ+Qz6Xgww==",
+      "path": "system.configuration.configurationmanager/8.0.0",
+      "hashPath": "system.configuration.configurationmanager.8.0.0.nupkg.sha512"
     },
     "System.Diagnostics.DiagnosticSource/8.0.0": {
       "type": "package",
@@ -852,19 +772,12 @@
       "path": "system.diagnostics.eventlog/8.0.0",
       "hashPath": "system.diagnostics.eventlog.8.0.0.nupkg.sha512"
     },
-    "System.Diagnostics.PerformanceCounter/7.0.0": {
+    "System.Diagnostics.PerformanceCounter/8.0.0": {
       "type": "package",
       "serviceable": true,
-      "sha512": "sha512-L+zIMEaXp1vA4wZk1KLMpk6tvU0xy94R0IfmhkmTWeC4KwShsmAfbg5I19LgjsCTYp6GVdXZ2aHluVWL0QqBdA==",
-      "path": "system.diagnostics.performancecounter/7.0.0",
-      "hashPath": "system.diagnostics.performancecounter.7.0.0.nupkg.sha512"
-    },
-    "System.Drawing.Common/7.0.0": {
-      "type": "package",
-      "serviceable": true,
-      "sha512": "sha512-KIX+oBU38pxkKPxvLcLfIkOV5Ien8ReN78wro7OF5/erwcmortzeFx+iBswlh2Vz6gVne0khocQudGwaO1Ey6A==",
-      "path": "system.drawing.common/7.0.0",
-      "hashPath": "system.drawing.common.7.0.0.nupkg.sha512"
+      "sha512": "sha512-lX6DXxtJqVGWw7N/QmVoiCyVQ+Q/Xp+jVXPr3gLK1jJExSn1qmAjJQeb8gnOYeeBTG3E3PmG1nu92eYj/TEjpg==",
+      "path": "system.diagnostics.performancecounter/8.0.0",
+      "hashPath": "system.diagnostics.performancecounter.8.0.0.nupkg.sha512"
     },
     "System.Management/8.0.0": {
       "type": "package",
@@ -873,19 +786,12 @@
       "path": "system.management/8.0.0",
       "hashPath": "system.management.8.0.0.nupkg.sha512"
     },
-    "System.Security.Cryptography.ProtectedData/7.0.0": {
+    "System.Security.Cryptography.ProtectedData/8.0.0": {
       "type": "package",
       "serviceable": true,
-      "sha512": "sha512-xSPiLNlHT6wAHtugASbKAJwV5GVqQK351crnILAucUioFqqieDN79evO1rku1ckt/GfjIn+b17UaSskoY03JuA==",
-      "path": "system.security.cryptography.protecteddata/7.0.0",
-      "hashPath": "system.security.cryptography.protecteddata.7.0.0.nupkg.sha512"
-    },
-    "System.Security.Permissions/7.0.0": {
-      "type": "package",
-      "serviceable": true,
-      "sha512": "sha512-Vmp0iRmCEno9BWiskOW5pxJ3d9n+jUqKxvX4GhLwFhnQaySZmBN2FuC0N5gjFHgyFMUjC5sfIJ8KZfoJwkcMmA==",
-      "path": "system.security.permissions/7.0.0",
-      "hashPath": "system.security.permissions.7.0.0.nupkg.sha512"
+      "sha512": "sha512-+TUFINV2q2ifyXauQXRwy4CiBhqvDEDZeVJU7qfxya4aRYOKzVBpN+4acx25VcPB9ywUN6C0n8drWl110PhZEg==",
+      "path": "system.security.cryptography.protecteddata/8.0.0",
+      "hashPath": "system.security.cryptography.protecteddata.8.0.0.nupkg.sha512"
     },
     "System.ServiceProcess.ServiceController/8.0.0": {
       "type": "package",
@@ -907,13 +813,6 @@
       "sha512": "sha512-OdrZO2WjkiEG6ajEFRABTRCi/wuXQPxeV6g8xvUJqdxMvvuCCEk86zPla8UiIQJz3durtUEbNyY/3lIhS0yZvQ==",
       "path": "system.text.json/8.0.0",
       "hashPath": "system.text.json.8.0.0.nupkg.sha512"
-    },
-    "System.Windows.Extensions/7.0.0": {
-      "type": "package",
-      "serviceable": true,
-      "sha512": "sha512-bR4qdCmssMMbo9Fatci49An5B1UaVJZHKNq70PRgzoLYIlitb8Tj7ns/Xt5Pz1CkERiTjcVBDU2y1AVrPBYkaw==",
-      "path": "system.windows.extensions/7.0.0",
-      "hashPath": "system.windows.extensions.7.0.0.nupkg.sha512"
     },
     "Mudosoft.Shared/1.0.0": {
       "type": "project",

@@ -20,18 +20,21 @@ namespace MudoSoft.Backend.Data
 
             // 🏆 KRİTİK DÜZELTME 1: Devices.Id sütununun uzunluğunu kesinleştirme
             // Bu, Foreign Key'lerin de aynı uzunluğu (nvarchar(450)) kullanmasını sağlar.
+            // GUID kullanıldığında bu ayarlama zorunlu değildir, ancak VARCHAR/NVARCHAR(450) ile uyumlu kalmak için tutulmuştur.
             modelBuilder.Entity<Device>()
                 .Property(d => d.Id)
                 .HasMaxLength(450); 
             
             // 🏆 KRİTİK DÜZELTME 2: DeviceMetric ForeignKey uzunluğunu garantileme
-           modelBuilder.Entity<DeviceMetric>()
-        .HasOne(dm => dm.Device) // DeviceMetric modelinde 'Device' navigasyon özelliği olmalı
-        .WithMany(d => d.Metrics)
-        .HasForeignKey(dm => dm.DeviceId) // 'DeviceId' sütununu kullanmaya zorlar
-        .IsRequired();
+            // DeviceMetric -> Device ilişkisini yapılandırır.
+            modelBuilder.Entity<DeviceMetric>()
+                .HasOne(dm => dm.Device) // DeviceMetric modelinde 'Device' navigasyon özelliği olmalı
+                .WithMany(d => d.Metrics)
+                .HasForeignKey(dm => dm.DeviceId) // 'DeviceId' sütununu kullanmaya zorlar
+                .IsRequired();
             
-            // 🏆 KRİTİK DÜZELTME 3: CommandResultRecord ForeignKey uzunluğunu garantileme
+            // KRİTİK DÜZELTME 3: CommandResultRecord'daki DeviceId uzunluğunu garantileme (Opsiyonel)
+            // CommandResultRecord'un DeviceId'sinin, Device.Id ile uyumlu olmasını sağlar.
             modelBuilder.Entity<CommandResultRecord>()
                 .Property(cr => cr.DeviceId)
                 .HasMaxLength(450);

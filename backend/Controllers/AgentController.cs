@@ -2,6 +2,9 @@ using Microsoft.AspNetCore.Mvc;
 using Mudosoft.Shared.Dtos;
 using MudoSoft.Backend.Services;
 using MudoSoft.Backend.Data;
+using MudoSoft.Backend.Models; // CommandResultRecord için gerekli
+using Microsoft.EntityFrameworkCore; // Sorgular için gerekli
+using Mudosoft.Shared.Enums; // CommandType için gerekli
 
 namespace MudoSoft.Backend.Controllers;
 
@@ -12,12 +15,18 @@ public class AgentController : ControllerBase
     private readonly IAgentService _service;
     private readonly CommandQueue _queue;
     private readonly ILogger<AgentController> _logger;
+    private readonly MudoSoftDbContext _dbContext; 
 
-    public AgentController(IAgentService service, CommandQueue queue, ILogger<AgentController> logger)
+    public AgentController(
+        IAgentService service, 
+        CommandQueue queue, 
+        ILogger<AgentController> logger, 
+        MudoSoftDbContext dbContext) 
     {
         _service = service;
         _queue = queue;
         _logger = logger;
+        _dbContext = dbContext; 
     }
 
     // ❤️ Heartbeat
@@ -28,18 +37,19 @@ public class AgentController : ControllerBase
         return Ok();
     }
 
-    // 📥 Commands Poll
+    // 📥 Commands Poll (Agent'ın komutları çektiği yer)
     [HttpGet("commands")]
     public async Task<ActionResult<List<CommandDto>>> GetCommands([FromQuery] string deviceId)
     {
         if (string.IsNullOrWhiteSpace(deviceId))
             return BadRequest("deviceId required");
 
-        var cmds = await _service.GetCommandsAsync(deviceId);
+        // IAgentService üzerinden komutları çek
+        var cmds = await _service.GetCommandsAsync(deviceId); 
         return Ok(cmds);
     }
 
-    // 📤 Command Result
+    // 📤 Command Result (Agent'ın sonucu geri gönderdiği yer)
     [HttpPost("command-result")]
     public async Task<IActionResult> CommandResult([FromBody] CommandResultDto result)
     {
@@ -54,7 +64,7 @@ public class AgentController : ControllerBase
         await _service.HandleEventAsync(evt);
         return Ok();
     }
-
+    
     // 🧪 Test command enqueue
     [HttpPost("enqueue-test-command")]
     public IActionResult EnqueueTestCommand(string deviceId)
@@ -63,23 +73,33 @@ public class AgentController : ControllerBase
         {
             Id = Guid.NewGuid(),
             DeviceId = deviceId,
-            Type = Mudosoft.Shared.Enums.CommandType.Reboot,
+            Type = CommandType.Reboot,
             CreatedAtUtc = DateTime.UtcNow
         });
 
         return Ok("Test command queued.");
     }
-
-    // 📝 Your previous logs API (retained)
-    [HttpGet("logs/{deviceId}")]
-    public ActionResult<IEnumerable<string>> GetLogs(string deviceId)
+    
+    // 🏆 KRİTİK EKLEME: Son Komut Sonucunu Çekme API'si (Frontend'in görmesi için)
+    [HttpGet("command-results/latest")]
+    public async Task<ActionResult<CommandResultRecord>> GetLatestCommandResult([FromQuery] string deviceId)
     {
-        var logs = new List<string>
+        if (string.IsNullOrEmpty(deviceId))
         {
-            $"{DateTime.UtcNow.AddMinutes(-5):O} - Agent started for {deviceId}",
-            $"{DateTime.UtcNow.AddMinutes(-1):O} - Heartbeat OK"
-        };
+            return BadRequest("Device ID gereklidir.");
+        }
 
-        return Ok(logs);
+        // Veritabanından bu DeviceID'ye ait en son tamamlanmış komut sonucunu çekme
+        var latestResult = await _dbContext.CommandResults
+            .Where(r => r.DeviceId == deviceId)
+            .OrderByDescending(r => r.CompletedAtUtc)
+            .FirstOrDefaultAsync();
+
+        if (latestResult == null)
+        {
+            return Ok(new CommandResultRecord { Output = "Henüz komut sonucu kaydedilmedi." });
+        }
+
+        return Ok(latestResult);
     }
 }
