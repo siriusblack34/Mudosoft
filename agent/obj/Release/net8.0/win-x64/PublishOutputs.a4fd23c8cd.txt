@@ -1,0 +1,5 @@
+C:\Publish\Agent\appsettings.Development.json
+C:\Publish\Agent\appsettings.json
+C:\Publish\Agent\MudoSoft.Agent.pdb
+C:\Publish\Agent\Mudosoft.Shared.pdb
+C:\Publish\Agent\MudoSoft.Agent.exe

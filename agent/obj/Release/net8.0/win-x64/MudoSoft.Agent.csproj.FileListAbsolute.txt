@@ -33,18 +33,14 @@ C:\Projects\mudosoft\agent\bin\Release\net8.0\win-x64\Microsoft.Extensions.Loggi
 C:\Projects\mudosoft\agent\bin\Release\net8.0\win-x64\Microsoft.Extensions.Options.dll
 C:\Projects\mudosoft\agent\bin\Release\net8.0\win-x64\Microsoft.Extensions.Options.ConfigurationExtensions.dll
 C:\Projects\mudosoft\agent\bin\Release\net8.0\win-x64\Microsoft.Extensions.Primitives.dll
-C:\Projects\mudosoft\agent\bin\Release\net8.0\win-x64\Microsoft.Win32.SystemEvents.dll
 C:\Projects\mudosoft\agent\bin\Release\net8.0\win-x64\System.CodeDom.dll
 C:\Projects\mudosoft\agent\bin\Release\net8.0\win-x64\System.Configuration.ConfigurationManager.dll
 C:\Projects\mudosoft\agent\bin\Release\net8.0\win-x64\System.Diagnostics.EventLog.Messages.dll
 C:\Projects\mudosoft\agent\bin\Release\net8.0\win-x64\System.Diagnostics.EventLog.dll
 C:\Projects\mudosoft\agent\bin\Release\net8.0\win-x64\System.Diagnostics.PerformanceCounter.dll
-C:\Projects\mudosoft\agent\bin\Release\net8.0\win-x64\System.Drawing.Common.dll
 C:\Projects\mudosoft\agent\bin\Release\net8.0\win-x64\System.Management.dll
 C:\Projects\mudosoft\agent\bin\Release\net8.0\win-x64\System.Security.Cryptography.ProtectedData.dll
-C:\Projects\mudosoft\agent\bin\Release\net8.0\win-x64\System.Security.Permissions.dll
 C:\Projects\mudosoft\agent\bin\Release\net8.0\win-x64\System.ServiceProcess.ServiceController.dll
-C:\Projects\mudosoft\agent\bin\Release\net8.0\win-x64\System.Windows.Extensions.dll
 C:\Projects\mudosoft\agent\bin\Release\net8.0\win-x64\Microsoft.CSharp.dll
 C:\Projects\mudosoft\agent\bin\Release\net8.0\win-x64\Microsoft.VisualBasic.Core.dll
 C:\Projects\mudosoft\agent\bin\Release\net8.0\win-x64\Microsoft.VisualBasic.dll
@@ -238,3 +234,7 @@ C:\Projects\mudosoft\agent\obj\Release\net8.0\win-x64\MudoSoft.Agent.dll
 C:\Projects\mudosoft\agent\obj\Release\net8.0\win-x64\refint\MudoSoft.Agent.dll
 C:\Projects\mudosoft\agent\obj\Release\net8.0\win-x64\MudoSoft.Agent.genruntimeconfig.cache
 C:\Projects\mudosoft\agent\obj\Release\net8.0\win-x64\ref\MudoSoft.Agent.dll
+C:\Projects\mudosoft\agent\bin\Release\net8.0\win-x64\MudoSoft.Agent.pdb
+C:\Projects\mudosoft\agent\bin\Release\net8.0\win-x64\Mudosoft.Shared.pdb
+C:\Projects\mudosoft\agent\obj\Release\net8.0\win-x64\MudoSoft.Agent.sourcelink.json
+C:\Projects\mudosoft\agent\obj\Release\net8.0\win-x64\MudoSoft.Agent.pdb

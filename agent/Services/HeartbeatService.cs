@@ -8,7 +8,7 @@ using Mudosoft.Agent.Models;
 using Mudosoft.Agent.Interfaces;
 using System.Text.Json; 
 using System.Net.Http;
-using System.Text; // 🔥 HATA ÇÖZÜMÜ: Encoding için eklendi
+using System.Text; 
 
 namespace Mudosoft.Agent.Services;
 
@@ -20,6 +20,7 @@ public sealed class HeartbeatService : IHeartbeatSender
     private readonly ISystemInfoService _sys;
     private readonly IRsaKeyService _rsaKeys; 
     private readonly IAesEncryptionService _aes; 
+    private readonly IDeviceIdentityProvider _identityProvider; // ⬅️ YENİ ALAN
 
     public HeartbeatService(
         IHttpClientFactory httpFactory,
@@ -27,7 +28,8 @@ public sealed class HeartbeatService : IHeartbeatSender
         ILogger<HeartbeatService> logger,
         ISystemInfoService sys,
         IRsaKeyService rsaKeys, 
-        IAesEncryptionService aes) 
+        IAesEncryptionService aes,
+        IDeviceIdentityProvider identityProvider) // ⬅️ YENİ BAĞIMLILIK
     {
         _http = httpFactory.CreateClient();
         _config = config.Value;
@@ -35,6 +37,7 @@ public sealed class HeartbeatService : IHeartbeatSender
         _sys = sys;
         _rsaKeys = rsaKeys;
         _aes = aes;
+        _identityProvider = identityProvider; // ⬅️ ATAMA
 
         if (!string.IsNullOrWhiteSpace(_config.BackendUrl))
             _http.BaseAddress = new Uri(_config.BackendUrl);
@@ -49,12 +52,13 @@ public sealed class HeartbeatService : IHeartbeatSender
 
             var ip = _config.IpAddress;
             if (string.IsNullOrWhiteSpace(ip))
-                ip = GetLocalIp(); // 🔥 HATA ÇÖZÜMÜ: Metod artık var.
+                ip = GetLocalIp(); 
 
             // 2. Payload oluştur
             var payloadDto = new DeviceHeartbeatDto
             {
-                DeviceId = _config.DeviceId,
+                // 🏆 KRİTİK DÜZELTME: DeviceId artık IdentityProvider'dan geliyor
+                DeviceId = _identityProvider.GetDeviceId(),
                 Hostname = Environment.MachineName,
                 IpAddress = ip,
                 Online = true,
@@ -70,8 +74,7 @@ public sealed class HeartbeatService : IHeartbeatSender
             // 3. Payload'u Şifrele (Hibrit Model)
             var encryptedPayload = _aes.EncryptPayload(payloadDto, publicKey);
             
-            // 4. HTTP İsteğini Hazırla (X-Encrypted Header'ı ekle)
-            // 🔥 HATA ÇÖZÜMÜ: StringContent constructor'ı Encoding ile düzeltildi.
+            // 4. HTTP İsteğini Hazırla
             var content = new StringContent(
                 JsonSerializer.Serialize(encryptedPayload), 
                 Encoding.UTF8, 
@@ -92,7 +95,7 @@ public sealed class HeartbeatService : IHeartbeatSender
         }
     }
     
-    // 🔥 HATA ÇÖZÜMÜ: Kayıp olan GetLocalIp metodu geri eklendi.
+    // GetLocalIp metodu aynı kalır.
     private string GetLocalIp()
     {
         foreach (var nic in NetworkInterface.GetAllNetworkInterfaces())

@@ -28,11 +28,9 @@ public class AgentService : IAgentService
         _logger.LogInformation("Heartbeat from {DeviceId} CPU:{Cpu} RAM:{Ram} DISK:{Disk}",
             dto.DeviceId, dto.CpuUsage, dto.RamUsage, dto.DiskUsage);
 
-        var deviceExists = await _dbContext.Devices.AnyAsync(d => d.Id == dto.DeviceId);
+        var device = await _dbContext.Devices.FindAsync(dto.DeviceId);
 
-        Device device;
-
-        if (!deviceExists)
+        if (device == null)
         {
             // YENİ CİHAZ
             device = new Device
@@ -44,28 +42,20 @@ public class AgentService : IAgentService
             };
             _dbContext.Devices.Add(device);
         }
-        else
-        {
-            // MEVCUT CİHAZ - Attach/Modified yöntemi kullanıldığında, tüm alanlar tekrar ayarlanmalıdır.
-            device = new Device { Id = dto.DeviceId };
-            _dbContext.Devices.Attach(device);
-            _dbContext.Entry(device).State = EntityState.Modified;
-        }
 
         // Temel bilgiler güncellenir
         device.Hostname = dto.Hostname;
         device.IpAddress = dto.IpAddress;
-        device.Online = true; // ✅ Status (Çevrimiçi)
-        device.LastSeen = DateTime.UtcNow;
+        device.Online = true; 
+        device.LastSeen = DateTime.UtcNow; // 🏆 KRİTİK: Son görme zamanını güncelleyin
         device.Os = dto.OsVersion;
         device.PosVersion = dto.PosVersion;
         device.SqlVersion = dto.SqlVersion;
-        device.StoreCode = int.TryParse(dto.StoreCode, NumberStyles.Integer, CultureInfo.InvariantCulture, out var storeCode) ? storeCode : 0; // ✅ Store
+        device.StoreCode = int.TryParse(dto.StoreCode, NumberStyles.Integer, CultureInfo.InvariantCulture, out var storeCode) ? storeCode : 0; 
 
         // 🟢 GÜNCELLEME: Canlı metrik alanlarını Device modeline kopyala. 
-        // Bu, DeviceController'ın GetInventory metodunun bu alanları çekmesini sağlar.
-        device.CurrentCpuUsagePercent = (float)dto.CpuUsage; // ✅ CPU
-        device.CurrentRamUsagePercent = (float)dto.RamUsage; // ✅ RAM
+        device.CurrentCpuUsagePercent = (float)dto.CpuUsage;
+        device.CurrentRamUsagePercent = (float)dto.RamUsage;
         device.CurrentDiskUsagePercent = (float)dto.DiskUsage;
 
         // METRİK KAYDI: Server'ın UTC zamanını kullan
@@ -84,7 +74,9 @@ public class AgentService : IAgentService
 
         await _dbContext.SaveChangesAsync();
     }
-
+    
+    // ... Diğer metotlar (GetCommandsAsync, HandleCommandResultAsync, HandleEventAsync, UpdateDeviceHealth) aynı kalır ...
+    
     public Task<List<CommandDto>> GetCommandsAsync(string deviceId)
     {
         var cmds = _queue.DequeueByDevice(deviceId);

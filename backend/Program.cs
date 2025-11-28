@@ -1,9 +1,11 @@
+using MudoSoft.Backend;
 using MudoSoft.Backend.Services;
 using MudoSoft.Backend.Data;
 using MudoSoft.Backend.Crypto;
 using MudoSoft.Backend.Middleware;
 using Microsoft.EntityFrameworkCore;
 using System.Text.Json.Serialization; // ⬅️ YENİ USING DİREKTİFİ
+
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -19,6 +21,7 @@ builder.Services.AddControllers()
     .AddJsonOptions(options =>
     {
         options.JsonSerializerOptions.ReferenceHandler = ReferenceHandler.IgnoreCycles;
+        options.JsonSerializerOptions.Converters.Add(new TimeZoneConverter());
     });
 
 builder.Services.AddSingleton<CommandQueue>();
@@ -28,6 +31,7 @@ builder.Services.AddSingleton<AesEncryption>();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 builder.Services.AddScoped<IDeviceRepository, DeviceRepository>();
+builder.Services.AddHostedService<HeartbeatCheckerWorker>();
 
 // CORS for Vite frontend
 builder.Services.AddCors(options =>

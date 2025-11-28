@@ -1,9 +1,9 @@
-// agent/AgentWorker.cs
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Mudosoft.Agent.Models;
 using Mudosoft.Agent.Services;
+using Mudosoft.Agent.Interfaces; // ⬅️ Yeni using
 
 namespace Mudosoft.Agent;
 
@@ -14,24 +14,29 @@ public sealed class AgentWorker : BackgroundService
     private readonly IHeartbeatSender _heartbeatSender;
     private readonly ICommandPoller _commandPoller;
     private readonly IWatchdogManager _watchdogManager;
+    private readonly IDeviceIdentityProvider _identityProvider; // ⬅️ Yeni
 
     public AgentWorker(
         ILogger<AgentWorker> logger,
         IOptions<AgentConfig> config,
         IHeartbeatSender heartbeatSender,
         ICommandPoller commandPoller,
-        IWatchdogManager watchdogManager)
+        IWatchdogManager watchdogManager,
+        IDeviceIdentityProvider identityProvider) // ⬅️ Yeni Enjeksiyon
     {
         _logger = logger;
         _config = config.Value;
         _heartbeatSender = heartbeatSender;
         _commandPoller = commandPoller;
         _watchdogManager = watchdogManager;
+        _identityProvider = identityProvider; // ⬅️ Yeni
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        _logger.LogInformation("Mudosoft Agent starting with DeviceId={DeviceId}", _config.DeviceId);
+        // 🏆 KRİTİK DÜZELTME: DeviceId artık kalıcı IdentityProvider'dan alınır ve loglanır.
+        string deviceId = _identityProvider.GetDeviceId();
+        _logger.LogInformation("Mudosoft Agent starting with DeviceId={DeviceId}", deviceId);
 
         // Watchdog’ları arka planda başlat
         _watchdogManager.Start(stoppingToken);
@@ -51,8 +56,8 @@ public sealed class AgentWorker : BackgroundService
 
         await Task.WhenAll(heartbeatTask, commandTask);
     }
-
-    private static async Task RunPeriodicAsync(
+    
+    private async Task RunPeriodicAsync(
         Func<Task> action,
         TimeSpan interval,
         CancellationToken cancellationToken)
@@ -65,7 +70,8 @@ public sealed class AgentWorker : BackgroundService
             }
             catch (Exception ex)
             {
-                Console.Error.WriteLine(ex);
+                // 🔥 KRİTİK DÜZELTME: Console.Error.WriteLine yerine ILogger kullanılıyor.
+                _logger.LogError(ex, "Periyodik görev yürütülürken hata oluştu."); 
             }
 
             try

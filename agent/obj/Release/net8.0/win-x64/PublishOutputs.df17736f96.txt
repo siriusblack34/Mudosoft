@@ -1,3 +1,5 @@
 C:\Projects\mudosoft\agent\bin\Release\net8.0\win-x64\publish\appsettings.Development.json
 C:\Projects\mudosoft\agent\bin\Release\net8.0\win-x64\publish\appsettings.json
+C:\Projects\mudosoft\agent\bin\Release\net8.0\win-x64\publish\MudoSoft.Agent.pdb
+C:\Projects\mudosoft\agent\bin\Release\net8.0\win-x64\publish\Mudosoft.Shared.pdb
 C:\Projects\mudosoft\agent\bin\Release\net8.0\win-x64\publish\MudoSoft.Agent.exe
