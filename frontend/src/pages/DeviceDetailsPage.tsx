@@ -3,15 +3,12 @@ import { useParams } from "react-router-dom";
 import MetricChart from "../components/ui/MetricChart";
 import { apiClient, type CommandResultRecord } from "../lib/apiClient";
 import RunScriptPanel from "../components/devices/RunScriptPanel";
-import type { Device, DeviceMetric } from "../types";
+import type { Device, DeviceMetric, OsInfo } from "../types"; 
 
-// ✅ UTC'yi Local Time'a çeviren fonksiyon (Aynı kalır, doğru çalışıyor)
+// ✅ UTC'yi Local Time'a çeviren fonksiyon (Aynı kalır)
 const formatTimeLocal = (utcString: string | null) => {
     if (!utcString) return "N/A";
-    
-    // Güvenlik için 'Z' eklemeye devam ediyoruz.
     const date = new Date(utcString.endsWith('Z') ? utcString : utcString + 'Z');
-    
     const options: Intl.DateTimeFormatOptions = {
         year: 'numeric',
         month: 'numeric',
@@ -23,6 +20,25 @@ const formatTimeLocal = (utcString: string | null) => {
     };
     return date.toLocaleString(undefined, options);
 };
+
+// 🏆 YENİ FONKSİYON: Kullanıcı dostu OS ismi çevirisi
+const formatOsName = (osInfo?: OsInfo) => {
+    // 🔴 KRİTİK KONTROL: osInfo veya osInfo.name yoksa N/A döndür
+    if (!osInfo || !osInfo.name) return "N/A";
+    
+    const name = osInfo.name.trim(); // Boşlukları temizleyelim
+    if (!name) return "N/A";
+
+    // Yaygın NT Sürüm Kodlarının Kullanıcı Adlarına Çevrilmesi
+    if (name.includes('NT 6.1')) return 'Windows 7 / Server 2008 R2';
+    if (name.includes('NT 6.2')) return 'Windows 8 / Server 2012';
+    if (name.includes('NT 6.3')) return 'Windows 8.1 / Server 2012 R2';
+    if (name.includes('NT 10.0')) return 'Windows 10 / Server 2016+'; 
+    
+    // Eşleşme yoksa, ham ismini döndür
+    return name; 
+};
+
 
 const DeviceDetailsPage: React.FC = () => {
     const { deviceId } = useParams<{ deviceId: string }>();
@@ -104,7 +120,7 @@ const DeviceDetailsPage: React.FC = () => {
     const ramData = metrics.map(m => ({ name: formatTimeLocal(m.timestampUtc), value: m.ramUsagePercent }));
     const diskData = metrics.map(m => ({ name: formatTimeLocal(m.timestampUtc), value: m.diskUsagePercent }));
 
-    // 🚀 KRİTİK ÇÖZÜM: Backend'den gelen doğru alan adlarını kullanıyoruz.
+    // Backend'den gelen doğru anlık alan adlarını kullanıyoruz.
     const latestCpu = deviceData.cpuUsage ?? 0; 
     const latestRam = deviceData.ramUsage ?? 0;
     const latestDisk = deviceData.diskUsage ?? 0;
@@ -121,13 +137,18 @@ const DeviceDetailsPage: React.FC = () => {
                     <p><strong>Device ID:</strong> {deviceId}</p>
                     <p><strong>Hostname:</strong> {deviceData.hostname}</p>
                     <p><strong>IP Address:</strong> {deviceData.ipAddress}</p>
-                    <p><strong>OS:</strong> {deviceData.os.name}</p>
+                    
+                    {/* 🚀 SON DÜZELTME: Temizlenmiş OS gösterimi */}
+                    <p><strong>OS:</strong> {formatOsName(deviceData.os)}</p>
+                    
                     <p><strong>Status:</strong> {deviceData.online ? '🟢 Online' : '🔴 Offline'}</p>
                     
                     <p><strong>Last Seen:</strong> {formatTimeLocal(deviceData.lastSeen + 'Z')}</p>
                     
+                    {/* Agent Version artık Backend'de DTO'ya eklendi, burada N/A fallback'i ile gösterilir */}
                     <p><strong>Agent Version:</strong> {deviceData.agentVersion || 'N/A'}</p>
-                    <p><strong>Store Code:</strong> {deviceData.storeCode}</p>
+                    
+                    <p><strong>Store Code:</strong> {deviceData.storeCode ?? 'N/A'}</p>
                 </div>
             </section>
 

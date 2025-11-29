@@ -1,9 +1,13 @@
+// siriusblack34/mudosoft/Mudosoft-138a269b679ef64544ce6a0b899393e338ef513e/agent/AgentWorker.cs
+
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Mudosoft.Agent.Models;
 using Mudosoft.Agent.Services;
-using Mudosoft.Agent.Interfaces; // ⬅️ Yeni using
+using Mudosoft.Agent.Interfaces; 
+using System;
+using System.Threading.Tasks;
 
 namespace Mudosoft.Agent;
 
@@ -14,7 +18,7 @@ public sealed class AgentWorker : BackgroundService
     private readonly IHeartbeatSender _heartbeatSender;
     private readonly ICommandPoller _commandPoller;
     private readonly IWatchdogManager _watchdogManager;
-    private readonly IDeviceIdentityProvider _identityProvider; // ⬅️ Yeni
+    private readonly IDeviceIdentityProvider _identityProvider; 
 
     public AgentWorker(
         ILogger<AgentWorker> logger,
@@ -22,14 +26,14 @@ public sealed class AgentWorker : BackgroundService
         IHeartbeatSender heartbeatSender,
         ICommandPoller commandPoller,
         IWatchdogManager watchdogManager,
-        IDeviceIdentityProvider identityProvider) // ⬅️ Yeni Enjeksiyon
+        IDeviceIdentityProvider identityProvider)
     {
         _logger = logger;
         _config = config.Value;
         _heartbeatSender = heartbeatSender;
         _commandPoller = commandPoller;
         _watchdogManager = watchdogManager;
-        _identityProvider = identityProvider; // ⬅️ Yeni
+        _identityProvider = identityProvider;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -41,6 +45,7 @@ public sealed class AgentWorker : BackgroundService
         // Watchdog’ları arka planda başlat
         _watchdogManager.Start(stoppingToken);
 
+        // ✅ DÜZELTME: AgentConfig'teki int tiplerini kullanarak TimeSpan oluştur
         var heartbeatPeriod = TimeSpan.FromSeconds(_config.HeartbeatIntervalSeconds);
         var commandPollPeriod = TimeSpan.FromSeconds(_config.CommandPollIntervalSeconds);
 
@@ -70,7 +75,6 @@ public sealed class AgentWorker : BackgroundService
             }
             catch (Exception ex)
             {
-                // 🔥 KRİTİK DÜZELTME: Console.Error.WriteLine yerine ILogger kullanılıyor.
                 _logger.LogError(ex, "Periyodik görev yürütülürken hata oluştu."); 
             }
 

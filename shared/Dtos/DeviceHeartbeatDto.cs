@@ -16,9 +16,12 @@ public sealed class DeviceHeartbeatDto
     public double RamUsage { get; set; }
     public double DiskUsage { get; set; }
 
+    // ✅ DÜZELTİLMİŞ ALANLAR
     public DateTime UptimeSince { get; set; }
-
     public bool Online { get; set; }
+
+    // 🏆 KRİTİK EKLEME
+    public string? AgentVersion { get; set; } 
 
     public AgentCapabilities Capabilities { get; set; } = new();
 }
