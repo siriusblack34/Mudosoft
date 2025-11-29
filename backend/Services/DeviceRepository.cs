@@ -15,18 +15,16 @@ public class DeviceRepository : IDeviceRepository
         _context = context;
     }
     
-    // ✅ DÜZELTME: Doğrudan ve hatasız veri çekimi için karmaşık Select projeksiyonu kaldırıldı.
     public List<Device> GetAll()
     {
         return _context.Devices
             .ToList();
     }
 
-    // ✅ DÜZELTME: GetById basitleştirildi. Include ile metrik ilişkisi korunur.
+    // 🚀 OPTİMİZASYON: Yavaşlığa neden olan .Include(d => d.Metrics) KALDIRILDI.
     public Device? GetById(string id)
     {
         return _context.Devices
-            .Include(d => d.Metrics) // Metrics koleksiyonunu yükle
             .FirstOrDefault(d => d.Id == id);
     }
 
