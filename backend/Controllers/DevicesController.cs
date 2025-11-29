@@ -5,6 +5,12 @@ using MudoSoft.Backend.Services;
 using MudoSoft.Backend.Data;
 using System.Linq; 
 using System; 
+using System.Collections.Generic;
+using System.Threading.Tasks;
+
+// Not: Shared.Dtos'dan sadece DeviceDetailsDto/OsInfoDto kullanılıyorsa, 
+// Controller'daki lokal DTO'lar (DeviceDetailDto, DeviceListDto) karışıklık yaratmaz.
+// Ancak derleme hatası almamak için tüm API DTO'ları bu Controller'ın namespace'i içinde tutuldu.
 
 namespace MudoSoft.Backend.Controllers;
 
@@ -25,7 +31,7 @@ public class DevicesController : ControllerBase
     private int? SafeRoundToNullableInt(float rawValue)
     {
         if (float.IsNaN(rawValue) || float.IsInfinity(rawValue))
-        {
+        {   
             return null;
         }
         var roundedValue = (int)Math.Round(rawValue);
@@ -81,7 +87,6 @@ public class DevicesController : ControllerBase
         
         var deviceDtos = devices.Select(d => 
         {
-            // OsInfo'nun tam adını kullanıyoruz (Controllers namespace'i altındaki yerel tanım)
             var osInfoLocal = new OsInfoDto { Name = d.Os ?? "-" };
 
             return new DeviceListDto
@@ -105,7 +110,7 @@ public class DevicesController : ControllerBase
     }
 
     /// <summary>
-    /// Returns a device by ID WITH last 24h metrics
+    /// Returns a device by ID WITH LIMITED last 24h metrics for graph display
     /// GET: /api/devices/{id}
     /// </summary>
     [HttpGet("{id}")]
@@ -117,21 +122,22 @@ public class DevicesController : ControllerBase
 
         var last24Hours = DateTime.UtcNow.AddHours(-24);
 
+        // 🚀 OPTİMİZASYON: Sadece son 120 kaydı çekerek network yükü azaltıldı.
         var metrics = await _dbContext.DeviceMetrics
             .Where(m => m.DeviceId == id && m.TimestampUtc >= last24Hours)
+            .OrderByDescending(m => m.TimestampUtc) 
+            .Take(120) 
             .OrderBy(m => m.TimestampUtc)
             .Select(m => new DeviceMetricDto
             {
-                TimestampUtc = m.TimestampUtc.ToString("o"), // ISO 8601
+                TimestampUtc = m.TimestampUtc.ToString("o"), 
                 CpuUsagePercent = m.CpuUsagePercent,
-                RamUsagePercent = m.RamUsagePercent,
+                RamUsagePercent = m.RamUsagePercent, // Düzeltildi
                 DiskUsagePercent = m.DiskUsagePercent
             })
             .ToListAsync();
 
-        // 🏆 KRİTİK DÜZELTME: OS string'ini OsInfoDto nesnesine dönüştürme
-        // Tip atamasını, Controller'ın hemen altında bulunan ve bizim düzenlediğimiz 
-        // OsInfoDto'ya yönlendiriyoruz.
+        // OS string'ini OsInfoDto nesnesine dönüştürme mantığı
         var osInfoLocal = new OsInfoDto(); 
         if (!string.IsNullOrWhiteSpace(device.Os))
         {
@@ -140,7 +146,6 @@ public class DevicesController : ControllerBase
             
             if (firstSpaceIndex > 0)
             {
-                // Hata veren satırlar şimdi yerel (Local) objeyi kullanıyor.
                 osInfoLocal.Name = osString.Substring(0, firstSpaceIndex); 
                 osInfoLocal.Version = osString.Substring(firstSpaceIndex).Trim();
             }
@@ -149,6 +154,9 @@ public class DevicesController : ControllerBase
                 osInfoLocal.Name = osString; 
                 osInfoLocal.Version = "-";
             }
+        } else {
+             osInfoLocal.Name = "Unknown"; 
+             osInfoLocal.Version = "-";
         }
         
         return Ok(new DeviceDetailDto
@@ -157,10 +165,8 @@ public class DevicesController : ControllerBase
             Hostname = device.Hostname,
             IpAddress = device.IpAddress, 
             
-            // ✅ DÜZELTME 1: Dönüştürülmüş yerel OsInfoDto nesnesi atanır
             Os = osInfoLocal, 
             
-            // ✅ DÜZELTME 2: Agent Version ve Store Code atanır
             Store = device.StoreCode, 
             AgentVersion = device.AgentVersion, 
             
@@ -177,7 +183,7 @@ public class DevicesController : ControllerBase
             PosVersion = device.PosVersion,
             Agent = !string.IsNullOrEmpty(device.AgentVersion),
             
-            Metrics = metrics
+            Metrics = metrics 
         });
     }
 
@@ -211,7 +217,7 @@ public class DevicesController : ControllerBase
 }
 
 // ---------------------------------------------------------------------------------------------------
-// DTO'lar: Çakışma Düzeltmesi (Bundan sonra tek bir ad kullanacağız)
+// API DTO'ları: Derleme hatalarını çözmek için Controller'ın kendi namespace'i içinde tanımlanmıştır.
 // ---------------------------------------------------------------------------------------------------
 
 // Frontend'in beklediği OS yapısını temsil eder (OsInfoDto olarak adlandırıldı)
@@ -227,7 +233,7 @@ public class DeviceListDto
     public string Id { get; set; } = default!;
     public string? Hostname { get; set; }
     public string IpAddress { get; set; } = default!;
-    public OsInfoDto Os { get; set; } = default!; // Yerel tanım kullanıldı
+    public OsInfoDto Os { get; set; } = default!; 
     public int StoreCode { get; set; } 
     public string Type { get; set; } = default!; 
     public bool Online { get; set; } 
@@ -254,15 +260,14 @@ public class RecentOfflineDevice
     public string LastSeen { get; set; } = default!;
 }
 
-// 🏆 KRİTİK DTO: Detay Sayfası DTO'su
+// 🏆 KRİTİK DTO: Detay Sayfası DTO'su (Metrics listesini içerir)
 public class DeviceDetailDto
 {
     public string Id { get; set; } = default!;
     public string? Hostname { get; set; }
     public string IpAddress { get; set; } = default!; 
     
-    // ✅ Os string yerine OsInfoDto nesnesi
-    public OsInfoDto Os { get; set; } = default!; // Yerel tanım kullanıldı
+    public OsInfoDto Os { get; set; } = default!; 
     
     public int Store { get; set; } 
     
@@ -281,7 +286,7 @@ public class DeviceDetailDto
     public string? PosVersion { get; set; }
     public bool Agent { get; set; }
     
-    public List<DeviceMetricDto> Metrics { get; set; } = new();
+    public List<DeviceMetricDto> Metrics { get; set; } = new(); 
 }
 
 public class DeviceMetricDto
