@@ -1,9 +1,13 @@
+// siriusblack34/mudosoft/Mudosoft-138a269b679ef64544ce6a0b899393e338ef513e/backend/Services/AgentService.cs
+
 using Mudosoft.Shared.Dtos;
 using MudoSoft.Backend.Data;
 using MudoSoft.Backend.Models;
 using Microsoft.EntityFrameworkCore;
 using System.Globalization;
 using Mudosoft.Shared.Enums;
+using System.Linq; // Math için eklendi
+using System.Collections.Generic; // List için eklendi
 
 namespace MudoSoft.Backend.Services;
 
@@ -47,8 +51,12 @@ public class AgentService : IAgentService
         device.Hostname = dto.Hostname;
         device.IpAddress = dto.IpAddress;
         device.Online = true; 
-        device.LastSeen = DateTime.UtcNow; // 🏆 KRİTİK: Son görme zamanını güncelleyin
+        device.LastSeen = DateTime.UtcNow; 
+        
+        // 🚀 KRİTİK KAYIT: OS ve Agent Version'ı kaydet
         device.Os = dto.OsVersion;
+        device.AgentVersion = dto.AgentVersion; // ✅ YENİ EKLENEN DTO ALANINDAN KAYIT
+
         device.PosVersion = dto.PosVersion;
         device.SqlVersion = dto.SqlVersion;
         device.StoreCode = int.TryParse(dto.StoreCode, NumberStyles.Integer, CultureInfo.InvariantCulture, out var storeCode) ? storeCode : 0; 
@@ -63,9 +71,9 @@ public class AgentService : IAgentService
         {
             DeviceId = dto.DeviceId,
             TimestampUtc = DateTime.UtcNow,
-            CpuUsagePercent = (int)Math.Round(dto.CpuUsage),
-            RamUsagePercent = (int)Math.Round(dto.RamUsage),
-            DiskUsagePercent = (int)Math.Round(dto.DiskUsage)
+            CpuUsagePercent = (int)System.Math.Round(dto.CpuUsage),
+            RamUsagePercent = (int)System.Math.Round(dto.RamUsage),
+            DiskUsagePercent = (int)System.Math.Round(dto.DiskUsage)
         };
         _dbContext.DeviceMetrics.Add(metric);
 
@@ -75,7 +83,7 @@ public class AgentService : IAgentService
         await _dbContext.SaveChangesAsync();
     }
     
-    // ... Diğer metotlar (GetCommandsAsync, HandleCommandResultAsync, HandleEventAsync, UpdateDeviceHealth) aynı kalır ...
+    // ... (Diğer metotlar aynı kalır)
     
     public Task<List<CommandDto>> GetCommandsAsync(string deviceId)
     {
@@ -129,6 +137,6 @@ public class AgentService : IAgentService
         }
 
         device.HealthStatus = status;
-        device.HealthScore = Math.Max(0, score);
+        device.HealthScore = System.Math.Max(0, score);
     }
 }

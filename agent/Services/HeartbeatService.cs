@@ -1,3 +1,5 @@
+// siriusblack34/mudosoft/Mudosoft-138a269b679ef64544ce6a0b899393e338ef513e/agent/Services/HeartbeatService.cs
+
 using System.Net.Http.Json; 
 using System.Net.NetworkInformation;
 using System.Net.Sockets;
@@ -9,6 +11,10 @@ using Mudosoft.Agent.Interfaces;
 using System.Text.Json; 
 using System.Net.Http;
 using System.Text; 
+using System.Reflection; 
+using System; 
+using System.Threading; 
+using System.Threading.Tasks;
 
 namespace Mudosoft.Agent.Services;
 
@@ -20,7 +26,7 @@ public sealed class HeartbeatService : IHeartbeatSender
     private readonly ISystemInfoService _sys;
     private readonly IRsaKeyService _rsaKeys; 
     private readonly IAesEncryptionService _aes; 
-    private readonly IDeviceIdentityProvider _identityProvider; // ⬅️ YENİ ALAN
+    private readonly IDeviceIdentityProvider _identityProvider; 
 
     public HeartbeatService(
         IHttpClientFactory httpFactory,
@@ -29,7 +35,7 @@ public sealed class HeartbeatService : IHeartbeatSender
         ISystemInfoService sys,
         IRsaKeyService rsaKeys, 
         IAesEncryptionService aes,
-        IDeviceIdentityProvider identityProvider) // ⬅️ YENİ BAĞIMLILIK
+        IDeviceIdentityProvider identityProvider)
     {
         _http = httpFactory.CreateClient();
         _config = config.Value;
@@ -37,7 +43,7 @@ public sealed class HeartbeatService : IHeartbeatSender
         _sys = sys;
         _rsaKeys = rsaKeys;
         _aes = aes;
-        _identityProvider = identityProvider; // ⬅️ ATAMA
+        _identityProvider = identityProvider;
 
         if (!string.IsNullOrWhiteSpace(_config.BackendUrl))
             _http.BaseAddress = new Uri(_config.BackendUrl);
@@ -54,21 +60,32 @@ public sealed class HeartbeatService : IHeartbeatSender
             if (string.IsNullOrWhiteSpace(ip))
                 ip = GetLocalIp(); 
 
+            // 💡 EKLENDİ: Agent Version'ı çalışma zamanından al
+            var agentVersion = Assembly.GetExecutingAssembly().GetName().Version?.ToString();
+            
+            // 💡 EKLENDİ: StoreCode'u config'den al
+            var storeCode = _config.StoreCode ?? "0"; 
+
             // 2. Payload oluştur
             var payloadDto = new DeviceHeartbeatDto
             {
-                // 🏆 KRİTİK DÜZELTME: DeviceId artık IdentityProvider'dan geliyor
                 DeviceId = _identityProvider.GetDeviceId(),
                 Hostname = Environment.MachineName,
                 IpAddress = ip,
-                Online = true,
+                
+                // ✅ DÜZELTME: HeartbeatService'te eksik olduğu bildirilen alanlar artık var
+                Online = true, 
                 CpuUsage = _sys.GetCpuUsage(),
                 RamUsage = _sys.GetRamUsage(),
                 DiskUsage = _sys.GetDiskUsage(),
                 OsVersion = Environment.OSVersion.ToString(),
                 PosVersion = "",
                 SqlVersion = "",
-                UptimeSince = DateTime.UtcNow
+                UptimeSince = DateTime.UtcNow, 
+                
+                // 🏆 KRİTİK EKLEMELER:
+                AgentVersion = agentVersion, 
+                StoreCode = storeCode        
             };
 
             // 3. Payload'u Şifrele (Hibrit Model)
@@ -95,7 +112,6 @@ public sealed class HeartbeatService : IHeartbeatSender
         }
     }
     
-    // GetLocalIp metodu aynı kalır.
     private string GetLocalIp()
     {
         foreach (var nic in NetworkInterface.GetAllNetworkInterfaces())

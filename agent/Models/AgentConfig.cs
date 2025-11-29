@@ -1,4 +1,3 @@
-// agent/Models/AgentConfig.cs
 namespace Mudosoft.Agent.Models;
 
 public sealed class AgentConfig
@@ -8,11 +7,12 @@ public sealed class AgentConfig
 
     // Backend base URL
     public string BackendUrl { get; set; } = "http://localhost:5102";
+    
+    // 🏆 KRİTİK EKLEME: StoreCode eklendi
+    public string? StoreCode { get; set; } 
 
-    // Kaç saniyede bir heartbeat atsın
+    // ✅ AgentWorker'daki Hataları Çözen eski int tipleri
     public int HeartbeatIntervalSeconds { get; set; } = 10;
-
-    // Kaç saniyede bir komut poll etsin
     public int CommandPollIntervalSeconds { get; set; } = 10;
 
     // İstersen sabit IP override etmek için (opsiyonel)
