@@ -15,7 +15,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Release")]
 [assembly: System.Reflection.AssemblyDescriptionAttribute("Mudosoft Level 3 Retail POS Agent")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+c3ead4989b166c9dacde05e77e553668be03723b")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+bedbd12ac7b3880b793850bba0cd83182c248860")]
 [assembly: System.Reflection.AssemblyProductAttribute("MudoSoft.Agent")]
 [assembly: System.Reflection.AssemblyTitleAttribute("MudoSoft.Agent")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

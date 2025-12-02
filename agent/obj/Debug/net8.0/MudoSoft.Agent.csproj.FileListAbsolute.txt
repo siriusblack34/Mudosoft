@@ -60,3 +60,5 @@ C:\Projects\mudosoft\agent\obj\Debug\net8.0\MudoSoft.Agent.pdb
 C:\Projects\mudosoft\agent\obj\Debug\net8.0\MudoSoft.Agent.genruntimeconfig.cache
 C:\Projects\mudosoft\agent\obj\Debug\net8.0\ref\MudoSoft.Agent.dll
 C:\Projects\mudosoft\agent\bin\Debug\net8.0\runtimes\win\lib\net8.0\System.Diagnostics.PerformanceCounter.dll
+C:\Projects\mudosoft\agent\bin\Debug\net8.0\Microsoft.Extensions.FileProviders.Embedded.dll
+C:\Projects\mudosoft\agent\obj\Debug\net8.0\MudoSoft.Agent.EmbeddedFilesManifest.cache
