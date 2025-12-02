@@ -6,7 +6,7 @@ public sealed class AgentConfig
     public string DeviceId { get; set; } = "DEV-001";
 
     // Backend base URL
-    public string BackendUrl { get; set; } = "http://localhost:5102";
+    public string BackendUrl { get; set; } = "http://0.0.0.0:5102";
     
     // 🏆 KRİTİK EKLEME: StoreCode eklendi
     public string? StoreCode { get; set; } 

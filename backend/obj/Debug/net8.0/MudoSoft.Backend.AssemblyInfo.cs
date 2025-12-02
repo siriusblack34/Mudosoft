@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("MudoSoft.Backend")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+c953f6e12102eb9684317565a375036f8ff09c4f")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+bedbd12ac7b3880b793850bba0cd83182c248860")]
 [assembly: System.Reflection.AssemblyProductAttribute("MudoSoft.Backend")]
 [assembly: System.Reflection.AssemblyTitleAttribute("MudoSoft.Backend")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

@@ -1,6 +1,6 @@
 {
   "version": 2,
-  "dgSpecHash": "oWvL3mrocmA=",
+  "dgSpecHash": "NGiMohWNsKo=",
   "success": true,
   "projectFilePath": "C:\\Projects\\mudosoft\\agent\\MudoSoft.Agent.csproj",
   "expectedPackageFiles": [
@@ -17,6 +17,7 @@
     "C:\\Users\\mudoadmtd\\.nuget\\packages\\microsoft.extensions.diagnostics\\8.0.0\\microsoft.extensions.diagnostics.8.0.0.nupkg.sha512",
     "C:\\Users\\mudoadmtd\\.nuget\\packages\\microsoft.extensions.diagnostics.abstractions\\8.0.0\\microsoft.extensions.diagnostics.abstractions.8.0.0.nupkg.sha512",
     "C:\\Users\\mudoadmtd\\.nuget\\packages\\microsoft.extensions.fileproviders.abstractions\\8.0.0\\microsoft.extensions.fileproviders.abstractions.8.0.0.nupkg.sha512",
+    "C:\\Users\\mudoadmtd\\.nuget\\packages\\microsoft.extensions.fileproviders.embedded\\8.0.0\\microsoft.extensions.fileproviders.embedded.8.0.0.nupkg.sha512",
     "C:\\Users\\mudoadmtd\\.nuget\\packages\\microsoft.extensions.fileproviders.physical\\8.0.0\\microsoft.extensions.fileproviders.physical.8.0.0.nupkg.sha512",
     "C:\\Users\\mudoadmtd\\.nuget\\packages\\microsoft.extensions.filesystemglobbing\\8.0.0\\microsoft.extensions.filesystemglobbing.8.0.0.nupkg.sha512",
     "C:\\Users\\mudoadmtd\\.nuget\\packages\\microsoft.extensions.hosting\\8.0.0\\microsoft.extensions.hosting.8.0.0.nupkg.sha512",
