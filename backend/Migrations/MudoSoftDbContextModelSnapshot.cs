@@ -22,6 +22,39 @@ namespace MudoSoft.Backend.Migrations
 
             SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);
 
+            modelBuilder.Entity("MudoSoft.Backend.Models.ActionRecord", b =>
+                {
+                    b.Property<Guid>("RecordId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("ActionType")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<Guid>("DeviceId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("ExecutionDate")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("Payload")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Result")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.HasKey("RecordId");
+
+                    b.ToTable("ActionRecords");
+                });
+
             modelBuilder.Entity("MudoSoft.Backend.Models.CommandResultRecord", b =>
                 {
                     b.Property<long>("Id")
@@ -58,7 +91,7 @@ namespace MudoSoft.Backend.Migrations
 
                     b.HasIndex("DeviceId");
 
-                    b.ToTable("CommandResults");
+                    b.ToTable("CommandResultRecord");
                 });
 
             modelBuilder.Entity("MudoSoft.Backend.Models.Device", b =>
@@ -168,6 +201,54 @@ namespace MudoSoft.Backend.Migrations
                     b.HasIndex("DeviceId1");
 
                     b.ToTable("DeviceMetrics");
+                });
+
+            modelBuilder.Entity("MudoSoft.Backend.Models.StoreDevice", b =>
+                {
+                    b.Property<string>("DeviceId")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("CalculatedIpAddress")
+                        .IsRequired()
+                        .HasMaxLength(15)
+                        .HasColumnType("nvarchar(15)");
+
+                    b.Property<DateTimeOffset>("CreatedDate")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("DbConnectionString")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<string>("DeviceName")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<string>("DeviceType")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)");
+
+                    b.Property<DateTimeOffset>("LastSyncDate")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<int>("StoreCode")
+                        .HasColumnType("int");
+
+                    b.Property<string>("StoreName")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.HasKey("DeviceId");
+
+                    b.HasIndex("StoreCode", "DeviceType")
+                        .IsUnique();
+
+                    b.ToTable("StoreDevices");
                 });
 
             modelBuilder.Entity("MudoSoft.Backend.Models.CommandResultRecord", b =>

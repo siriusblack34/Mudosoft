@@ -1,3 +1,5 @@
+// backend/Services/ActionRepository.cs (Hata CS0019 Giderildi)
+
 using System.Text.Json;
 using MudoSoft.Backend.Models;
 
@@ -18,7 +20,7 @@ public class ActionRepository : IActionRepository
     public ActionRepository(IConfiguration configuration)
     {
         var dataDir = configuration["MudoSoft:DataDirectory"]
-                      ?? "C:\\MudoSoft\\data";
+                             ?? "C:\\MudoSoft\\data";
         Directory.CreateDirectory(dataDir);
         _actionsPath = Path.Combine(dataDir, "actions.json");
 
@@ -37,7 +39,8 @@ public class ActionRepository : IActionRepository
 
     public List<ActionRecord> GetByDevice(string deviceId)
     {
-        return GetAll().Where(a => a.DeviceId == deviceId).ToList();
+        // DÜZELTME: Guid olan a.DeviceId, string ile karşılaştırma için ToString() ile string'e çevrildi.
+        return GetAll().Where(a => a.DeviceId.ToString() == deviceId).ToList();
     }
 
     public ActionRecord Add(ActionRecord record)
