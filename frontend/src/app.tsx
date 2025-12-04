@@ -1,12 +1,11 @@
-import React from 'react';
-import { useRoutes } from 'react-router-dom';
-import { routes } from './routes';
-import ShellLayout from './layout/ShellLayout';
+// src/App.tsx
 
-const App: React.FC = () => {
-  const element = useRoutes(routes);
+import { RouterProvider, createBrowserRouter } from "react-router-dom";
+import routes from "./routes";
 
-  return <ShellLayout>{element}</ShellLayout>;
-};
+function App() {
+  const router = createBrowserRouter(routes);
+  return <RouterProvider router={router} />;
+}
 
 export default App;

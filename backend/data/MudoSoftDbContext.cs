@@ -1,3 +1,5 @@
+// backend/data/MudoSoftDbContext.cs (KRİTİK HATA DÜZELTİLMİŞTİR)
+
 using Microsoft.EntityFrameworkCore;
 using MudoSoft.Backend.Models;
 
@@ -12,35 +14,42 @@ namespace MudoSoft.Backend.Data
 
         public DbSet<Device> Devices => Set<Device>();
         public DbSet<DeviceMetric> DeviceMetrics => Set<DeviceMetric>();
-        public DbSet<CommandResultRecord> CommandResults => Set<CommandResultRecord>(); 
+        
+        // FIX: CommandResultRecords DbSet'i standart olarak tutuldu. (CommandResults kaldırıldı)
+        public DbSet<CommandResultRecord> CommandResultRecords { get; set; } 
+        
+        // FIX: ActionRecords DbSet'i eklendi (CS1061 hatalarını giderir)
+        public DbSet<ActionRecord> ActionRecords { get; set; }
+        
+        // YENİ: StoreDevice DbSet'i
+        public DbSet<StoreDevice> StoreDevices { get; set; }
+        public DbSet<CommandResultRecord> CommandResults { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             base.OnModelCreating(modelBuilder);
-
-            // 🏆 KRİTİK DÜZELTME 1: Devices.Id sütununun uzunluğunu kesinleştirme
-            // Bu, Foreign Key'lerin de aynı uzunluğu (nvarchar(450)) kullanmasını sağlar.
-            // GUID kullanıldığında bu ayarlama zorunlu değildir, ancak VARCHAR/NVARCHAR(450) ile uyumlu kalmak için tutulmuştur.
+            
             modelBuilder.Entity<Device>()
                 .Property(d => d.Id)
                 .HasMaxLength(450); 
             
-            // 🏆 KRİTİK DÜZELTME 2: DeviceMetric ForeignKey uzunluğunu garantileme
-            // DeviceMetric -> Device ilişkisini yapılandırır.
             modelBuilder.Entity<DeviceMetric>()
-                .HasOne(dm => dm.Device) // DeviceMetric modelinde 'Device' navigasyon özelliği olmalı
+                .HasOne(dm => dm.Device)
                 .WithMany(d => d.Metrics)
-                .HasForeignKey(dm => dm.DeviceId) // 'DeviceId' sütununu kullanmaya zorlar
+                .HasForeignKey(dm => dm.DeviceId) 
                 .IsRequired();
             
-            // KRİTİK DÜZELTME 3: CommandResultRecord'daki DeviceId uzunluğunu garantileme (Opsiyonel)
-            // CommandResultRecord'un DeviceId'sinin, Device.Id ile uyumlu olmasını sağlar.
             modelBuilder.Entity<CommandResultRecord>()
                 .Property(cr => cr.DeviceId)
                 .HasMaxLength(450);
 
+            modelBuilder.Entity<StoreDevice>()
+                .HasKey(sd => sd.DeviceId);
+            
+            modelBuilder.Entity<StoreDevice>()
+                .HasIndex(sd => new { sd.StoreCode, sd.DeviceType })
+                .IsUnique();
 
-            // CommandResultRecord için indeks ve kısıtlamalar (Mevcut mantık korunmuştur)
             modelBuilder.Entity<CommandResultRecord>(e =>
             {
                 e.HasKey(r => r.Id);
@@ -48,12 +57,12 @@ namespace MudoSoft.Backend.Data
                 e.HasIndex(r => r.CommandId).IsUnique(); 
             });
             
-            // DeviceMetric'ler için de Foreign Key'i (DeviceId) yapılandırın. 
-            // Bu, AddCurrentMetricsToDevice migration'ının doğru çalışması için önemlidir.
             modelBuilder.Entity<DeviceMetric>()
                 .HasOne<Device>()
                 .WithMany(d => d.Metrics)
                 .HasForeignKey(dm => dm.DeviceId);
+
+            
         }
     }
 }

@@ -1,18 +1,34 @@
-namespace MudoSoft.Backend.Models;
+// backend/Models/ActionRecord.cs
 
-public class ActionRecord
+using System;
+using System.ComponentModel.DataAnnotations;
+
+namespace MudoSoft.Backend.Models
 {
-    public string Id { get; set; } = Guid.NewGuid().ToString();
-    public string DeviceId { get; set; } = string.Empty;
-    public string DeviceHostname { get; set; } = string.Empty;
-    public int StoreCode { get; set; }
-
-    public string Type { get; set; } = string.Empty; // reboot, run_ps, sql_query...
-    public string Status { get; set; } = "pending";  // pending | running | success | failed
-
-    public string RequestedBy { get; set; } = "system";
-    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
-    public DateTime? FinishedAt { get; set; }
-
-    public string? Summary { get; set; }
+    public class ActionRecord
+    {
+        [Key]
+        public Guid RecordId { get; set; } = Guid.NewGuid();
+        
+        // Cihazı Guid olarak tutuyoruz.
+        public Guid DeviceId { get; set; } 
+        
+        // Fix CS0117: ActionType tanımı eklendi.
+        [Required]
+        [StringLength(50)]
+        public required string ActionType { get; set; } 
+        
+        // Fix CS0117: Payload tanımı eklendi.
+        public string? Payload { get; set; } 
+        
+        // Fix CS0117: ExecutionDate tanımı eklendi.
+        public DateTimeOffset ExecutionDate { get; set; } = DateTimeOffset.UtcNow;
+        
+        [Required]
+        [StringLength(20)]
+        public required string Status { get; set; } 
+        
+        // Fix CS0117: Result tanımı eklendi.
+        public string? Result { get; set; }
+    }
 }
