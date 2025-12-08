@@ -5,7 +5,9 @@ import * as Icons from "../components/icons/Icons";
 import { StoreDevice } from "../types";
 
 const SQLQueryPage: React.FC = () => {
-    const [devices, setDevices] = useState<StoreDevice[]>([]);
+    const [onlineDevices, setOnlineDevices] = useState<StoreDevice[]>([]);
+    const [allDevices, setAllDevices] = useState<StoreDevice[]>([]);
+
     const [selectedDeviceId, setSelectedDeviceId] = useState<string>("");
     const [filterType, setFilterType] = useState<"ALL" | "PC" | "POS">("ALL");
     const [search, setSearch] = useState("");
@@ -16,43 +18,95 @@ const SQLQueryPage: React.FC = () => {
     const [isExecuting, setIsExecuting] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
+    // =====================================================
+    // LOAD DEVICES
+    // =====================================================
     useEffect(() => {
         const load = async () => {
             try {
-                const data = await apiClient.getSqlDevices();
-                setDevices(data);
-                if (data.length > 0) setSelectedDeviceId(data[0].deviceId);
+                const online = await apiClient.get<StoreDevice[]>("/api/sqlquery/devices/online-fast");
+                const all = await apiClient.get<StoreDevice[]>("/api/sqlquery/devices/all");
+
+                setOnlineDevices(online);
+                setAllDevices(all);
+
+                if (online.length > 0) {
+                    setSelectedDeviceId(online[0].deviceId);
+                }
             } catch {
                 setError("Cihaz listesi yüklenemedi.");
             } finally {
                 setIsLoading(false);
             }
         };
+
         load();
     }, []);
 
-    const filteredDevices = useMemo(() => {
-        let list = devices;
+    // =====================================================
+    // SEGMENT FİLTRELEME (ALL / PC / POS)
+    // =====================================================
+    const filterSegment = (d: StoreDevice) => {
+        if (filterType === "PC") return d.deviceType === "PC";
+        if (filterType === "POS") return ["KK1", "KK2", "KK3"].includes(d.deviceType);
+        return true;
+    };
 
-        if (filterType === "PC") {
-            list = list.filter(d => d.deviceType === "PC");
-        } else if (filterType === "POS") {
-            list = list.filter(d => ["KK1", "KK2", "KK3"].includes(d.deviceType));
-        }
+    // =====================================================
+    // OFFLINE = ALL - ONLINE
+    // =====================================================
+    const offlineDevices = useMemo(() => {
+        return allDevices
+            .filter((a) => !onlineDevices.some((o) => o.deviceId === a.deviceId))
+            .filter(filterSegment);
+    }, [allDevices, onlineDevices, filterType]);
+
+    // =====================================================
+    // ONLINE FİLTRE
+    // =====================================================
+    const filteredOnline = useMemo(() => {
+        let list = onlineDevices.filter(filterSegment);
 
         if (search.trim().length > 0) {
             const s = search.toLowerCase();
             list = list.filter(
-                d =>
+                (d) =>
                     d.storeName.toLowerCase().includes(s) ||
                     d.storeCode.toString().includes(s) ||
                     d.calculatedIpAddress.includes(s)
             );
         }
-
         return list;
-    }, [devices, filterType, search]);
+    }, [onlineDevices, filterType, search]);
 
+    // =====================================================
+    // OFFLINE FİLTRE (SEARCH dahil)
+    // =====================================================
+    const filteredOffline = useMemo(() => {
+        let list = offlineDevices;
+
+        if (search.trim().length > 0) {
+            const s = search.toLowerCase();
+            list = list.filter(
+                (d) =>
+                    d.storeName.toLowerCase().includes(s) ||
+                    d.storeCode.toString().includes(s) ||
+                    d.calculatedIpAddress.includes(s)
+            );
+        }
+        return list;
+    }, [offlineDevices, search]);
+
+    // =====================================================
+    // SAYILAR
+    // =====================================================
+    const onlineCount = filteredOnline.length;
+    const offlineCount = filteredOffline.length;
+    const totalCount = onlineCount + offlineCount;
+
+    // =====================================================
+    // EXECUTE SQL
+    // =====================================================
     const handleExecute = async () => {
         if (!selectedDeviceId) return;
 
@@ -77,6 +131,9 @@ const SQLQueryPage: React.FC = () => {
             </div>
         );
 
+    // =====================================================
+    // UI
+    // =====================================================
     return (
         <div className="p-6">
             <h1 className="text-3xl font-extrabold mb-6 flex items-center text-green-300">
@@ -84,6 +141,7 @@ const SQLQueryPage: React.FC = () => {
                 Uzak SQL Sorgu Yöneticisi
             </h1>
 
+            {/* ERROR */}
             {error && (
                 <div className="bg-red-900/40 border border-red-600 text-red-300 p-4 rounded-md mb-4">
                     {error}
@@ -91,9 +149,17 @@ const SQLQueryPage: React.FC = () => {
             )}
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {/* LEFT PANEL */}
                 <div className="bg-gray-900 p-6 rounded-xl border border-gray-700 shadow-xl">
-                    <h2 className="text-xl font-semibold mb-4 text-gray-200">Hedef Cihaz</h2>
+                    <h2 className="text-xl font-semibold mb-2 text-gray-200">Hedef Cihaz</h2>
 
+                    <p className="text-sm mb-4 flex gap-4">
+                        <span className="text-green-400">🟢 {onlineCount} online</span>
+                        <span className="text-red-400">🔴 {offlineCount} offline</span>
+                        <span className="text-purple-300">⚪ {totalCount} toplam</span>
+                    </p>
+
+                    {/* BUTTONS */}
                     <div className="flex gap-2 mb-4">
                         <button
                             onClick={() => setFilterType("ALL")}
@@ -129,6 +195,7 @@ const SQLQueryPage: React.FC = () => {
                         </button>
                     </div>
 
+                    {/* SEARCH */}
                     <input
                         type="text"
                         placeholder="🔍 Mağaza adı / IP / kod ara..."
@@ -137,26 +204,47 @@ const SQLQueryPage: React.FC = () => {
                         onChange={(e) => setSearch(e.target.value)}
                     />
 
+                    {/* DEVICE LIST */}
                     <select
                         className="w-full p-3 bg-gray-800 border border-gray-600 rounded-lg text-gray-200"
-                        size={8}
+                        size={12}
                         value={selectedDeviceId}
                         onChange={(e) => setSelectedDeviceId(e.target.value)}
                     >
-                        {filteredDevices.map((d) => (
-                            <option key={d.deviceId} value={d.deviceId}>
-                                [{d.storeCode.toString().padStart(3, "0")}] {d.storeName} — {d.deviceType} ({d.calculatedIpAddress})
+                        {/* ONLINE DEVICES */}
+                        {filteredOnline.map((d) => (
+                            <option
+                                key={d.deviceId}
+                                value={d.deviceId}
+                                className="text-green-300"
+                            >
+                                🟢 [{d.storeCode.toString().padStart(3, "0")}] {d.storeName} —{" "}
+                                {d.deviceType} ({d.calculatedIpAddress})
                             </option>
                         ))}
 
-                        {filteredDevices.length === 0 && (
+                        {/* OFFLINE DEVICES */}
+                        {filteredOffline.map((d) => (
+                            <option
+                                key={d.deviceId}
+                                value={d.deviceId}
+                                className="text-red-400"
+                            >
+                                🔴 [{d.storeCode.toString().padStart(3, "0")}] {d.storeName} —{" "}
+                                {d.deviceType} ({d.calculatedIpAddress})
+                            </option>
+                        ))}
+
+                        {filteredOnline.length === 0 && filteredOffline.length === 0 && (
                             <option disabled>Sonuç bulunamadı</option>
                         )}
                     </select>
                 </div>
 
+                {/* RIGHT PANEL (SQL) */}
                 <div className="bg-gray-900 p-6 rounded-xl border border-gray-700 shadow-xl">
                     <h2 className="text-xl font-semibold mb-4 text-gray-200">SQL Sorgusu</h2>
+
                     <textarea
                         className="w-full h-40 p-3 border bg-gray-800 border-gray-600 text-gray-300 rounded-md font-mono text-sm"
                         value={sqlQuery}
@@ -176,6 +264,7 @@ const SQLQueryPage: React.FC = () => {
                 </div>
             </div>
 
+            {/* RESULTS */}
             {queryResult && (
                 <div className="mt-10 bg-gray-900 p-6 rounded-xl border border-gray-700 shadow-xl">
                     <h2 className="text-2xl font-bold mb-4 text-gray-200">Sonuçlar</h2>
@@ -187,11 +276,12 @@ const SQLQueryPage: React.FC = () => {
                             <thead className="bg-gray-800 text-green-300 sticky top-0 z-10">
                                 <tr>
                                     {Object.keys(queryResult[0] || {}).map((col) => (
-                                        <th key={col} className="px-4 py-2 whitespace-nowrap">{col}</th>
+                                        <th key={col} className="px-4 py-2 whitespace-nowrap">
+                                            {col}
+                                        </th>
                                     ))}
                                 </tr>
                             </thead>
-
                             <tbody>
                                 {queryResult.map((row, i) => (
                                     <tr
@@ -206,11 +296,7 @@ const SQLQueryPage: React.FC = () => {
                                                 className="px-4 py-2 max-w-[200px] overflow-hidden truncate whitespace-nowrap text-sm"
                                                 title={val === null ? "NULL" : String(val)}
                                             >
-                                                {val === null ? (
-                                                    <i className="text-gray-500">NULL</i>
-                                                ) : (
-                                                    String(val)
-                                                )}
+                                                {val === null ? <i className="text-gray-500">NULL</i> : String(val)}
                                             </td>
                                         ))}
                                     </tr>

@@ -15,12 +15,14 @@ export interface OsInfo {
 }
 
 export interface StoreDevice {
-  deviceId: string;
-  storeCode: number;
-  storeName: string;
-  // KK13 -> KK3 olarak güncellendi
-  deviceType: "PC" | "KK1" | "KK2" | "KK3" | string;
-  calculatedIpAddress: string;
+    deviceId: string;
+    storeCode: number;
+    storeName: string;
+    deviceType: string;     // "PC", "KK1", "KK2", "KK3"
+    calculatedIpAddress: string;
+
+    dbConnectionString?: string;
+    lastSeen?: string;
 }
 
 export interface Device {

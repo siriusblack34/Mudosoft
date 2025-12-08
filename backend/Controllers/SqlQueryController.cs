@@ -1,5 +1,3 @@
-using System.Linq;
-using System.Threading.Tasks;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -10,8 +8,6 @@ using MudoSoft.Backend.Services;
 namespace MudoSoft.Backend.Controllers
 {
     [ApiController]
-
-    // >>> FRONTEND İLE BİREBİR AYNI ROUTE
     [Route("api/sqlquery")]
     public class SqlQueryController : ControllerBase
     {
@@ -30,10 +26,10 @@ namespace MudoSoft.Backend.Controllers
         }
 
         // ===========================================================
-        // 1) SQL CİHAZ LİSTESİ ENDPOINTİ (FRONTENDİN İSTEDİĞİ)
+        // 0) TÜM CİHAZLAR (ONLINE+OFFLINE)
         // ===========================================================
-        [HttpGet("devices")]
-        public async Task<IActionResult> GetDevices()
+        [HttpGet("devices/all")]
+        public async Task<IActionResult> GetAllDevices()
         {
             var devices = await _db.StoreDevices
                 .AsNoTracking()
@@ -48,6 +44,39 @@ namespace MudoSoft.Backend.Controllers
                 .ToListAsync();
 
             return Ok(devices);
+        }
+
+        // ===========================================================
+        // 1) ONLINE CİHAZLAR (PORT TEST 1433)
+        // ===========================================================
+        [HttpGet("devices/online-fast")]
+        public async Task<IActionResult> GetFastOnlineDevices(
+            [FromServices] FastSqlReachabilityService fastCheck)
+        {
+            var devices = await _db.StoreDevices
+                .AsNoTracking()
+                .ToListAsync();
+
+            var onlineList = new List<object>();
+
+            await Task.WhenAll(devices.Select(async d =>
+            {
+                bool ok = await fastCheck.IsSqlReachable(d.CalculatedIpAddress, 1433);
+
+                if (ok)
+                {
+                    onlineList.Add(new
+                    {
+                        d.DeviceId,
+                        d.StoreCode,
+                        d.StoreName,
+                        d.DeviceType,
+                        d.CalculatedIpAddress
+                    });
+                }
+            }));
+
+            return Ok(onlineList);
         }
 
         // ===========================================================
@@ -71,7 +100,7 @@ namespace MudoSoft.Backend.Controllers
                 var json = await _remoteSqlService.ExecuteQueryAndReturnJsonAsync(
                     device.DbConnectionString, request.Query);
 
-               var result = System.Text.Json.JsonSerializer.Deserialize<object>(json);
+                var result = System.Text.Json.JsonSerializer.Deserialize<object>(json);
                 return Ok(result);
             }
             catch (System.Exception ex)
