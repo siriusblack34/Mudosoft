@@ -1,13 +1,9 @@
-// siriusblack34/mudosoft/Mudosoft-138a269b679ef64544ce6a0b899393e338ef513e/backend/Services/AgentService.cs
-
 using Mudosoft.Shared.Dtos;
 using MudoSoft.Backend.Data;
 using MudoSoft.Backend.Models;
 using Microsoft.EntityFrameworkCore;
 using System.Globalization;
 using Mudosoft.Shared.Enums;
-using System.Linq; // Math için eklendi
-using System.Collections.Generic; // List için eklendi
 
 namespace MudoSoft.Backend.Services;
 
@@ -36,7 +32,6 @@ public class AgentService : IAgentService
 
         if (device == null)
         {
-            // YENİ CİHAZ
             device = new Device
             {
                 Id = dto.DeviceId,
@@ -47,44 +42,43 @@ public class AgentService : IAgentService
             _dbContext.Devices.Add(device);
         }
 
-        // Temel bilgiler güncellenir
+        // Genel bilgiler
         device.Hostname = dto.Hostname;
         device.IpAddress = dto.IpAddress;
-        device.Online = true; 
-        device.LastSeen = DateTime.UtcNow; 
-        
-        // 🚀 KRİTİK KAYIT: OS ve Agent Version'ı kaydet
-        device.Os = dto.OsVersion;
-        device.AgentVersion = dto.AgentVersion; // ✅ YENİ EKLENEN DTO ALANINDAN KAYIT
+        device.Online = true;
+        device.LastSeen = DateTime.UtcNow;
 
+        device.Os = dto.OsVersion;
+        device.AgentVersion = dto.AgentVersion;
         device.PosVersion = dto.PosVersion;
         device.SqlVersion = dto.SqlVersion;
-        device.StoreCode = int.TryParse(dto.StoreCode, NumberStyles.Integer, CultureInfo.InvariantCulture, out var storeCode) ? storeCode : 0; 
 
-        // 🟢 GÜNCELLEME: Canlı metrik alanlarını Device modeline kopyala. 
+        device.StoreCode = int.TryParse(dto.StoreCode, NumberStyles.Integer, CultureInfo.InvariantCulture, out var storeCode)
+            ? storeCode
+            : 0;
+
+        // Anlık metrik alanları
         device.CurrentCpuUsagePercent = (float)dto.CpuUsage;
         device.CurrentRamUsagePercent = (float)dto.RamUsage;
         device.CurrentDiskUsagePercent = (float)dto.DiskUsage;
 
-        // METRİK KAYDI: Server'ın UTC zamanını kullan
+        // METRIC YAZ
         var metric = new DeviceMetric
         {
             DeviceId = dto.DeviceId,
             TimestampUtc = DateTime.UtcNow,
-            CpuUsagePercent = (int)System.Math.Round(dto.CpuUsage),
-            RamUsagePercent = (int)System.Math.Round(dto.RamUsage),
-            DiskUsagePercent = (int)System.Math.Round(dto.DiskUsage)
+            CpuUsagePercent = (int)Math.Round(dto.CpuUsage),
+            RamUsagePercent = (int)Math.Round(dto.RamUsage),
+            DiskUsagePercent = (int)Math.Round(dto.DiskUsage)
         };
+
         _dbContext.DeviceMetrics.Add(metric);
 
-        // Sağlık durumu güncellenir
         UpdateDeviceHealth(device, metric);
 
         await _dbContext.SaveChangesAsync();
     }
-    
-    // ... (Diğer metotlar aynı kalır)
-    
+
     public Task<List<CommandDto>> GetCommandsAsync(string deviceId)
     {
         var cmds = _queue.DequeueByDevice(deviceId);
@@ -106,10 +100,8 @@ public class AgentService : IAgentService
             CompletedAtUtc = DateTime.UtcNow
         };
 
-        _dbContext.CommandResults.Add(record);
+        _dbContext.CommandResultRecords.Add(record);
         await _dbContext.SaveChangesAsync();
-
-        _logger.LogInformation("Komut sonucu veritabanına kaydedildi. ID: {Id}", result.CommandId);
     }
 
     public Task HandleEventAsync(DeviceEventDto evt)
@@ -137,6 +129,6 @@ public class AgentService : IAgentService
         }
 
         device.HealthStatus = status;
-        device.HealthScore = System.Math.Max(0, score);
+        device.HealthScore = Math.Max(0, score);
     }
 }

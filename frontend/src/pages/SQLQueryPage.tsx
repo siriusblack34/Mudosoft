@@ -1,5 +1,3 @@
-// frontend/src/pages/SQLQueryPage.tsx
-
 import React, { useState, useEffect, useMemo } from "react";
 import { apiClient } from "../lib/apiClient";
 import Spinner from "../components/ui/Spinner";
@@ -18,9 +16,6 @@ const SQLQueryPage: React.FC = () => {
     const [isExecuting, setIsExecuting] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
-    // ===============================
-    // DEVICES FETCH
-    // ===============================
     useEffect(() => {
         const load = async () => {
             try {
@@ -36,20 +31,15 @@ const SQLQueryPage: React.FC = () => {
         load();
     }, []);
 
-    // ===============================
-    // FİLTRELENMİŞ / ARANMIŞ LİSTE
-    // ===============================
     const filteredDevices = useMemo(() => {
         let list = devices;
 
-        // PC / POS filtresi
         if (filterType === "PC") {
             list = list.filter(d => d.deviceType === "PC");
         } else if (filterType === "POS") {
             list = list.filter(d => ["KK1", "KK2", "KK3"].includes(d.deviceType));
         }
 
-        // Arama filtresi — mağaza adı, kodu veya IP
         if (search.trim().length > 0) {
             const s = search.toLowerCase();
             list = list.filter(
@@ -63,9 +53,6 @@ const SQLQueryPage: React.FC = () => {
         return list;
     }, [devices, filterType, search]);
 
-    // ===============================
-    // SQL ÇALIŞTIR
-    // ===============================
     const handleExecute = async () => {
         if (!selectedDeviceId) return;
 
@@ -83,9 +70,6 @@ const SQLQueryPage: React.FC = () => {
         }
     };
 
-    // ===============================
-    // PAGE CONTENT
-    // ===============================
     if (isLoading)
         return (
             <div className="p-10 flex justify-center items-center">
@@ -95,14 +79,11 @@ const SQLQueryPage: React.FC = () => {
 
     return (
         <div className="p-6">
-
-            {/* BAŞLIK */}
             <h1 className="text-3xl font-extrabold mb-6 flex items-center text-green-300">
                 <Icons.DatabaseIcon className="w-8 h-8 mr-3" />
                 Uzak SQL Sorgu Yöneticisi
             </h1>
 
-            {/* HATA */}
             {error && (
                 <div className="bg-red-900/40 border border-red-600 text-red-300 p-4 rounded-md mb-4">
                     {error}
@@ -110,14 +91,9 @@ const SQLQueryPage: React.FC = () => {
             )}
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-
-                {/* ====================================================== */}
-                {/*            CİHAZ SEÇİMİ ALANI                         */}
-                {/* ====================================================== */}
                 <div className="bg-gray-900 p-6 rounded-xl border border-gray-700 shadow-xl">
                     <h2 className="text-xl font-semibold mb-4 text-gray-200">Hedef Cihaz</h2>
 
-                    {/* ====== PC/POS FILTER BUTTONS ====== */}
                     <div className="flex gap-2 mb-4">
                         <button
                             onClick={() => setFilterType("ALL")}
@@ -153,7 +129,6 @@ const SQLQueryPage: React.FC = () => {
                         </button>
                     </div>
 
-                    {/* ====== SEARCH BAR ====== */}
                     <input
                         type="text"
                         placeholder="🔍 Mağaza adı / IP / kod ara..."
@@ -162,7 +137,6 @@ const SQLQueryPage: React.FC = () => {
                         onChange={(e) => setSearch(e.target.value)}
                     />
 
-                    {/* ====== FILTERED DEVICE LIST ====== */}
                     <select
                         className="w-full p-3 bg-gray-800 border border-gray-600 rounded-lg text-gray-200"
                         size={8}
@@ -176,19 +150,13 @@ const SQLQueryPage: React.FC = () => {
                         ))}
 
                         {filteredDevices.length === 0 && (
-                            <option disabled className="text-gray-500">
-                                Sonuç bulunamadı
-                            </option>
+                            <option disabled>Sonuç bulunamadı</option>
                         )}
                     </select>
                 </div>
 
-                {/* ====================================================== */}
-                {/*              SQL SORGU ALANI                          */}
-                {/* ====================================================== */}
                 <div className="bg-gray-900 p-6 rounded-xl border border-gray-700 shadow-xl">
                     <h2 className="text-xl font-semibold mb-4 text-gray-200">SQL Sorgusu</h2>
-
                     <textarea
                         className="w-full h-40 p-3 border bg-gray-800 border-gray-600 text-gray-300 rounded-md font-mono text-sm"
                         value={sqlQuery}
@@ -208,33 +176,41 @@ const SQLQueryPage: React.FC = () => {
                 </div>
             </div>
 
-            {/* ====================================================== */}
-            {/*            SONUÇ TABLOSU                               */}
-            {/* ====================================================== */}
             {queryResult && (
                 <div className="mt-10 bg-gray-900 p-6 rounded-xl border border-gray-700 shadow-xl">
                     <h2 className="text-2xl font-bold mb-4 text-gray-200">Sonuçlar</h2>
 
-                    <p className="text-green-400 mb-3">
-                        {queryResult.length} satır döndürüldü.
-                    </p>
+                    <p className="text-green-400 mb-3">{queryResult.length} satır döndürüldü.</p>
 
-                    {/* TABLO */}
-                    <div className="overflow-x-auto shadow-lg rounded-lg border border-gray-700">
-                        <table className="min-w-full text-gray-200">
-                            <thead className="bg-gray-800 text-green-300">
+                    <div className="w-full overflow-x-auto rounded-lg border border-gray-700 shadow-lg">
+                        <table className="min-w-[1400px] text-gray-200 table-auto">
+                            <thead className="bg-gray-800 text-green-300 sticky top-0 z-10">
                                 <tr>
                                     {Object.keys(queryResult[0] || {}).map((col) => (
-                                        <th key={col} className="px-4 py-2">{col}</th>
+                                        <th key={col} className="px-4 py-2 whitespace-nowrap">{col}</th>
                                     ))}
                                 </tr>
                             </thead>
+
                             <tbody>
                                 {queryResult.map((row, i) => (
-                                    <tr key={i} className="border-t border-gray-700">
+                                    <tr
+                                        key={i}
+                                        className={`${
+                                            i % 2 === 0 ? "bg-gray-800/40" : "bg-gray-900/40"
+                                        } border-t border-gray-700`}
+                                    >
                                         {Object.values(row).map((val, j) => (
-                                            <td key={j} className="px-4 py-2">
-                                                {val === null ? <i className="text-gray-500">NULL</i> : String(val)}
+                                            <td
+                                                key={j}
+                                                className="px-4 py-2 max-w-[200px] overflow-hidden truncate whitespace-nowrap text-sm"
+                                                title={val === null ? "NULL" : String(val)}
+                                            >
+                                                {val === null ? (
+                                                    <i className="text-gray-500">NULL</i>
+                                                ) : (
+                                                    String(val)
+                                                )}
                                             </td>
                                         ))}
                                     </tr>

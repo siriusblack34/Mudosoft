@@ -4,20 +4,23 @@ using MudoSoft.Backend.Data;
 using MudoSoft.Backend.Crypto;
 using MudoSoft.Backend.Middleware;
 using Microsoft.EntityFrameworkCore;
-using System.Net;                      // ⭐ SecurityProtocolType için şart!
+using System.Net;
 using System.Text.Json.Serialization;
 
-// ⭐ TLS 1.0/1.1 devre dışı, sadece 1.2+ açılıyor
+// ❗ YANLIŞ Using Silindi:
+// using Npgsql.EntityFrameworkCore.PostgreSQL;  // ❌ BUNU KULLANMA!
+
+// ⭐ TLS Politikası
 ServicePointManager.SecurityProtocol = SecurityProtocolType.Tls12 | SecurityProtocolType.Tls13;
 
 var builder = WebApplication.CreateBuilder(args);
 
 // ===========================
-// 🔥 DATABASE CONTEXT REGISTER
+// 🔥 PostgreSQL DATABASE
 // ===========================
 builder.Services.AddDbContext<MudoSoftDbContext>(options =>
 {
-    options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection"));
+    options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection"));
 });
 
 // ===========================
@@ -45,7 +48,7 @@ builder.Services.AddScoped<IStoreDiscoveryService, StoreDiscoveryService>();
 builder.Services.AddScoped<IRemoteSqlService, RemoteSqlService>();
 
 // ===========================
-// 🔥 CORS CONFIG — VITE FRONTEND
+// 🔥 CORS (VITE)
 // ===========================
 builder.Services.AddCors(options =>
 {
@@ -75,8 +78,7 @@ using (var scope = app.Services.CreateScope())
         logger.LogInformation("Database migration'lar başarıyla uygulandı.");
 
         // CSV HARDCODE STORE LIST
-        string csvContent =
-@"Mağaza Kodu,Mağaza Adı
+        string csvContent = @"Mağaza Kodu,Mağaza Adı
 5,Nişantaşı Giyim
 7,Mersin Forum Giyim
 8,Bahariye Giyim
@@ -232,6 +234,6 @@ app.MapControllers();
 app.Urls.Add("http://0.0.0.0:5102");
 
 // ===========================
-// 🔥 APP RUN
+// 🔥 RUN
 // ===========================
 app.Run();
