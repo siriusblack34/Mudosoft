@@ -1,0 +1,7 @@
+/backend/bin/
+/backend/obj/
+/agent/bin/
+/agent/obj/
+/shared/bin/
+/shared/obj/
+/frontend/node_modules/
