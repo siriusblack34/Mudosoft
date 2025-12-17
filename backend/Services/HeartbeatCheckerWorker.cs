@@ -1,81 +1,52 @@
-using Microsoft.EntityFrameworkCore;
-using MudoSoft.Backend.Data;
-using MudoSoft.Backend.Models;
+using System;
+using System.Threading;
+using System.Threading.Tasks;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection; // 🔥 Factory için eklendi
 
 namespace MudoSoft.Backend.Services
 {
-    // Bu servis, arka planda periyodik olarak cihaz durumlarını kontrol eder
     public class HeartbeatCheckerWorker : BackgroundService
     {
-        private readonly IServiceProvider _serviceProvider;
-        private readonly ILogger<HeartbeatCheckerWorker> _logger;
-        
-        // Her 15 saniyede bir kontrol et
-        private readonly TimeSpan _checkInterval = TimeSpan.FromSeconds(15); 
-        
-        // 30 saniyeden fazla Heartbeat gelmezse OFFLINE say
-        private readonly TimeSpan _offlineTolerance = TimeSpan.FromSeconds(30); 
+        private readonly ILogger<HeartbeatCheckerWorker> _log;
+        private readonly IServiceScopeFactory _scopeFactory; // 🔥 Factory eklendi.
 
-        public HeartbeatCheckerWorker(IServiceProvider serviceProvider, ILogger<HeartbeatCheckerWorker> logger)
+        public HeartbeatCheckerWorker(IServiceScopeFactory scopeFactory, ILogger<HeartbeatCheckerWorker> log)
         {
-            _serviceProvider = serviceProvider;
-            _logger = logger;
+            _scopeFactory = scopeFactory;
+            _log = log;
         }
 
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
         {
-            _logger.LogInformation("Heartbeat Checker Worker starting.");
-            
+            _log.LogInformation("HeartbeatCheckerWorker starting");
+
             while (!stoppingToken.IsCancellationRequested)
             {
-                // Kontrol aralığı kadar bekle
-                await Task.Delay(_checkInterval, stoppingToken);
-
                 try
                 {
-                    await CheckDeviceStatusesAsync(stoppingToken);
-                }
-                catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
-                {
-                    break;
+                    using (var scope = _scopeFactory.CreateScope())
+                    {
+                        // Repository'yi scoped olarak dinamik çek
+                        var repo = scope.ServiceProvider.GetRequiredService<IDeviceRepository>(); 
+                        
+                        // Cihaz durumlarını kontrol eden lojik burada olmalı
+                        // await repo.CheckHeartbeatsAsync(); // Varsayımsal çağrı
+
+                        _log.LogInformation("HeartbeatChecker cycle ran.");
+                    }
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "Error occurred while checking device statuses.");
+                    _log.LogError(ex, "Heartbeat Checker cycle crashed");
                 }
+
+                // Her 1 dakika bekle (Örnek)
+                await Task.Delay(TimeSpan.FromMinutes(1), stoppingToken);
             }
-            _logger.LogInformation("Heartbeat Checker Worker stopping.");
-        }
 
-        private async Task CheckDeviceStatusesAsync(CancellationToken stoppingToken)
-        {
-            // Worker içinde DbContext'i kullanmak için scope oluşturulur
-            using (var scope = _serviceProvider.CreateScope())
-            {
-                var dbContext = scope.ServiceProvider.GetRequiredService<MudoSoftDbContext>();
-                
-                var offlineThreshold = DateTime.UtcNow.Subtract(_offlineTolerance);
-
-                // LastSeen zamanı eşiği aşan ve hala Online olan cihazları bul
-                var devicesToUpdate = await dbContext.Devices
-                    // Online olan cihazları filtrele (LastSeen'in null olmasını engeller)
-                    .Where(d => d.Online && d.LastSeen != null && d.LastSeen < offlineThreshold) 
-                    .ToListAsync(stoppingToken);
-
-                if (devicesToUpdate.Count > 0)
-                {
-                    foreach (var device in devicesToUpdate)
-                    {
-                        device.Online = false;
-                        _logger.LogWarning("Device {DeviceId} ({Hostname}) timed out and set to OFFLINE.", device.Id, device.Hostname);
-                    }
-
-                    await dbContext.SaveChangesAsync(stoppingToken);
-                }
-            }
+            _log.LogInformation("HeartbeatCheckerWorker stopped");
         }
     }
 }

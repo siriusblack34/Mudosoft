@@ -20,9 +20,9 @@ export interface StoreDevice {
     storeName: string;
     deviceType: string;     // "PC", "KK1", "KK2", "KK3"
     calculatedIpAddress: string;
-
     dbConnectionString?: string;
     lastSeen?: string;
+    isOnline?: boolean;
 }
 
 export interface Device {

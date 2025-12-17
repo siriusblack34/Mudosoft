@@ -10,47 +10,63 @@ namespace Mudosoft.Agent.Services
     public class SystemInfoService : ISystemInfoService, IDisposable
     {
         private readonly ILogger<SystemInfoService> _logger;
-        private readonly PerformanceCounter? _cpuCounter;
-        private readonly PerformanceCounter? _ramCounter;
-        private readonly Random _rnd = new(); // Hata durumları için rastgele veri (fallback)
+        private PerformanceCounter? _cpuCounter;
+        private PerformanceCounter? _ramCounter;
+        private readonly object _lock = new();
+        private bool _countersInitialized = false;
+        private readonly Random _rnd = new();
 
         public SystemInfoService(ILogger<SystemInfoService> logger)
         {
             _logger = logger;
+            // Constructor is now fast. Counters are initialized on first use.
+        }
 
-            // PerformanceCounter'lar Windows'a özeldir ve ilk okuma için hazırlanmalıdır.
-            try
+        private void InitializeCounters()
+        {
+            if (_countersInitialized) return;
+
+            lock (_lock)
             {
-                // % CPU Kullanımı: Bu sayaç, son NextValue() çağrısından bu yana geçen süredeki ortalamayı döndürür.
-                _cpuCounter = new PerformanceCounter("Processor", "% Processor Time", "_Total");
-                _cpuCounter.NextValue(); // İlk okuma için çağrılır (genellikle 0 döner)
-                
-                // RAM Kullanımı: % Committed Bytes In Use, toplam sanal bellek taahhüdünün yüzdesini verir,
-                // Fiziksel RAM kullanımına en yakın pratik değerlerden biridir.
-                _ramCounter = new PerformanceCounter("Memory", "% Committed Bytes In Use");
-                _ramCounter.NextValue(); // İlk okuma için çağrılır
-            }
-            catch (Exception ex)
-            {
-                // Sayaçlar başlatılamazsa (Örn: Windows olmayan bir işletim sistemi) rastgele veriye düşülür.
-                _logger.LogError(ex, "PerformanceCounter başlatılamadı. Uygulama simülasyon verileriyle devam edecek.");
-                _cpuCounter = null;
-                _ramCounter = null;
+                if (_countersInitialized) return;
+
+                try
+                {
+                    if (OperatingSystem.IsWindows())
+                    {
+                        _cpuCounter = new PerformanceCounter("Processor", "% Processor Time", "_Total");
+                        _cpuCounter.NextValue();
+                        
+                        _ramCounter = new PerformanceCounter("Memory", "% Committed Bytes In Use");
+                        _ramCounter.NextValue();
+                        
+                        _logger.LogInformation("PerformanceCounters initialized successfully.");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError("PerformanceCounter init failed. using random fallback. Error: {Message}", ex.Message);
+                }
+                finally
+                {
+                    _countersInitialized = true;
+                }
             }
         }
 
         public double GetCpuUsage()
         {
+            if (!_countersInitialized) InitializeCounters();
+
             if (_cpuCounter != null)
             {
                 try
                 {
-                    // Gerçek CPU kullanımını döndür.
                     return Math.Round(_cpuCounter.NextValue(), 1);
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogWarning(ex, "CPU verisi alınamadı. Rastgele veri fallback.");
+                    _logger.LogWarning("CPU read failed: {Message}", ex.Message);
                 }
             }
             return _rnd.Next(1, 40);
@@ -58,16 +74,17 @@ namespace Mudosoft.Agent.Services
 
         public double GetRamUsage()
         {
+            if (!_countersInitialized) InitializeCounters();
+
             if (_ramCounter != null)
             {
                 try
                 {
-                    // Gerçek RAM kullanım yüzdesini döndür.
                     return Math.Round(_ramCounter.NextValue(), 1); 
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogWarning(ex, "RAM verisi alınamadı. Rastgele veri fallback.");
+                    _logger.LogWarning("RAM read failed: {Message}", ex.Message);
                 }
             }
             return _rnd.Next(20, 80);
@@ -95,6 +112,31 @@ namespace Mudosoft.Agent.Services
             }
             // Fallback:
             return _rnd.Next(10, 70);
+        }
+
+        public string GetOsName()
+        {
+            try
+            {
+                if (OperatingSystem.IsWindows())
+                {
+                    using var searcher = new System.Management.ManagementObjectSearcher("SELECT Caption FROM Win32_OperatingSystem");
+                    foreach (var item in searcher.Get())
+                    {
+                        var caption = item["Caption"]?.ToString();
+                        if (!string.IsNullOrWhiteSpace(caption))
+                        {
+                            return caption;
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning("WMI ile OS bilgisi alınamadı: {Message}", ex.Message);
+            }
+            // Fallback
+            return Environment.OSVersion.ToString();
         }
 
         public void Dispose()

@@ -8,7 +8,6 @@ namespace Mudosoft.Agent.Services;
 
 public interface IAesEncryptionService
 {
-    // Payload'u AES ile şifreler, AES anahtarını RSA ile şifreler
     EncryptedPayloadDto EncryptPayload(object payloadObject, string rsaPublicKey);
 }
 
@@ -23,37 +22,30 @@ public sealed class AesEncryptionService : IAesEncryptionService
 
     public EncryptedPayloadDto EncryptPayload(object payloadObject, string rsaPublicKey)
     {
-        // 1. Rastgele AES Anahtarı ve IV oluştur
         using var aes = Aes.Create();
-        aes.Mode = CipherMode.CBC; // Backend'deki AesEncryption.cs ile uyumlu olmalı
+        aes.Mode = CipherMode.CBC;
         aes.Padding = PaddingMode.PKCS7;
 
         var aesKeyBytes = aes.Key;
         var aesIVBytes = aes.IV;
 
-        // AES Key ve IV'yi Backend'e göndermek için JSON formatına getir
-        var aesKeyJson = JsonSerializer.Serialize(new { Key = Convert.ToBase64String(aesKeyBytes), IV = Convert.ToBase64String(aesIVBytes) });
-
-
-        // 2. RSA ile AES Anahtarını Şifrele
-        string encryptedAesKey;
-        try
+        var aesKeyJson = JsonSerializer.Serialize(new
         {
-            using var rsa = RSA.Create();
-            rsa.FromXmlString(rsaPublicKey); // Public Key'i yükle
-            
-            var keyToEncrypt = Encoding.UTF8.GetBytes(aesKeyJson);
-            // RSA ile şifreleme (OAEP önerilir, ancak FromXmlString kullandığı için yalnızca standart RSA şifrelemesini kullanabiliriz)
-            var encryptedKeyBytes = rsa.Encrypt(keyToEncrypt, RSAEncryptionPadding.OaepSHA256); 
+            Key = Convert.ToBase64String(aesKeyBytes),
+            IV = Convert.ToBase64String(aesIVBytes)
+        });
+
+        string encryptedAesKey;
+        using (var rsa = RSA.Create())
+        {
+            rsa.FromXmlString(rsaPublicKey);
+            var encryptedKeyBytes = rsa.Encrypt(
+                Encoding.UTF8.GetBytes(aesKeyJson),
+                RSAEncryptionPadding.OaepSHA256
+            );
             encryptedAesKey = Convert.ToBase64String(encryptedKeyBytes);
         }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "AES Anahtarı RSA ile şifrelenirken kritik hata oluştu.");
-            throw;
-        }
 
-        // 3. Payload'u AES ile Şifrele
         var payloadJson = JsonSerializer.Serialize(payloadObject);
         var encryptedPayload = EncryptStringAes(payloadJson, aesKeyBytes, aesIVBytes);
 
@@ -63,7 +55,7 @@ public sealed class AesEncryptionService : IAesEncryptionService
             EncryptedPayload = encryptedPayload
         };
     }
-    
+
     private string EncryptStringAes(string plainText, byte[] key, byte[] iv)
     {
         using var aesAlg = Aes.Create();
@@ -72,15 +64,15 @@ public sealed class AesEncryptionService : IAesEncryptionService
         aesAlg.Mode = CipherMode.CBC;
         aesAlg.Padding = PaddingMode.PKCS7;
 
-        var encryptor = aesAlg.CreateEncryptor(aesAlg.Key, aesAlg.IV);
-
+        using var encryptor = aesAlg.CreateEncryptor();
         using var msEncrypt = new MemoryStream();
-        using var csEncrypt = new CryptoStream(msEncrypt, encryptor, CryptoStreamMode.Write);
+        using (var csEncrypt = new CryptoStream(msEncrypt, encryptor, CryptoStreamMode.Write))
         using (var swEncrypt = new StreamWriter(csEncrypt))
         {
             swEncrypt.Write(plainText);
-        }
-
+        } // StreamWriter ve CryptoStream burada dispose edilir ve flush işlemi gerçekleşir.
+        
+        // DİKKAT: ToArray() dispose işleminden SONRA çağrılmalı, yoksa veri eksik olabilir.
         return Convert.ToBase64String(msEncrypt.ToArray());
     }
 }

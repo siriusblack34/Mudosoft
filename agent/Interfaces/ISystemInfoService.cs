@@ -9,4 +9,5 @@ public interface ISystemInfoService : IDisposable
     double GetCpuUsage();
     double GetRamUsage();
     double GetDiskUsage();
+    string GetOsName();
 }

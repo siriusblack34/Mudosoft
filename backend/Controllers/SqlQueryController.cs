@@ -14,19 +14,22 @@ namespace MudoSoft.Backend.Controllers
         private readonly IRemoteSqlService _remoteSqlService;
         private readonly MudoSoftDbContext _db;
         private readonly ILogger<SqlQueryController> _logger;
+        private readonly FastSqlReachabilityService _fastCheck;
 
         public SqlQueryController(
             IRemoteSqlService remoteSqlService,
             MudoSoftDbContext db,
+            FastSqlReachabilityService fastCheck,
             ILogger<SqlQueryController> logger)
         {
             _remoteSqlService = remoteSqlService;
             _db = db;
+            _fastCheck = fastCheck;
             _logger = logger;
         }
 
         // ===========================================================
-        // 0) TÜM CİHAZLAR (ONLINE+OFFLINE)
+        // 0) TÜM CİHAZLAR (ENVANTER)
         // ===========================================================
         [HttpGet("devices/all")]
         public async Task<IActionResult> GetAllDevices()
@@ -47,36 +50,49 @@ namespace MudoSoft.Backend.Controllers
         }
 
         // ===========================================================
-        // 1) ONLINE CİHAZLAR (PORT TEST 1433)
+        // 1) TÜM CİHAZLAR + ONLINE / OFFLINE (TEK DOĞRU ENDPOINT)
         // ===========================================================
-        [HttpGet("devices/online-fast")]
-        public async Task<IActionResult> GetFastOnlineDevices(
-            [FromServices] FastSqlReachabilityService fastCheck)
+        [HttpGet("devices/with-status")]
+        public async Task<IActionResult> GetDevicesWithStatus(
+            [FromQuery] int timeoutMs = 500,
+            [FromQuery] int maxConcurrency = 40)
         {
             var devices = await _db.StoreDevices
                 .AsNoTracking()
+                .Select(d => new StoreDeviceWithStatusDto
+                {
+                    DeviceId = d.DeviceId,
+                    StoreCode = d.StoreCode,
+                    StoreName = d.StoreName,
+                    DeviceType = d.DeviceType,
+                    DeviceName = d.DeviceName,
+                    CalculatedIpAddress = d.CalculatedIpAddress,
+                    IsOnline = false
+                })
                 .ToListAsync();
 
-            var onlineList = new List<object>();
+            using var sem = new SemaphoreSlim(Math.Max(1, maxConcurrency));
 
-            await Task.WhenAll(devices.Select(async d =>
+            var tasks = devices.Select(async d =>
             {
-                bool ok = await fastCheck.IsSqlReachable(d.CalculatedIpAddress, 1433);
-
-                if (ok)
+                await sem.WaitAsync();
+                try
                 {
-                    onlineList.Add(new
-                    {
-                        d.DeviceId,
-                        d.StoreCode,
-                        d.StoreName,
-                        d.DeviceType,
-                        d.CalculatedIpAddress
-                    });
+                    d.IsOnline = await _fastCheck.IsSqlReachableAsync(
+                        d.CalculatedIpAddress,
+                        1433,
+                        timeoutMs
+                    );
                 }
-            }));
+                finally
+                {
+                    sem.Release();
+                }
+            });
 
-            return Ok(onlineList);
+            await Task.WhenAll(tasks);
+
+            return Ok(devices);
         }
 
         // ===========================================================
@@ -98,12 +114,14 @@ namespace MudoSoft.Backend.Controllers
             try
             {
                 var json = await _remoteSqlService.ExecuteQueryAndReturnJsonAsync(
-                    device.DbConnectionString, request.Query);
+                    device.DbConnectionString,
+                    request.Query
+                );
 
                 var result = System.Text.Json.JsonSerializer.Deserialize<object>(json);
                 return Ok(result);
             }
-            catch (System.Exception ex)
+            catch (Exception ex)
             {
                 _logger.LogError(ex, "SQL error");
                 return BadRequest(new { error = ex.Message });

@@ -78,7 +78,7 @@ public sealed class HeartbeatService : IHeartbeatSender
                 CpuUsage = _sys.GetCpuUsage(),
                 RamUsage = _sys.GetRamUsage(),
                 DiskUsage = _sys.GetDiskUsage(),
-                OsVersion = Environment.OSVersion.ToString(),
+                OsVersion = _sys.GetOsName(),
                 PosVersion = "",
                 SqlVersion = "",
                 UptimeSince = DateTime.UtcNow, 
@@ -92,14 +92,16 @@ public sealed class HeartbeatService : IHeartbeatSender
             var encryptedPayload = _aes.EncryptPayload(payloadDto, publicKey);
             
             // 4. HTTP İsteğini Hazırla
-            var content = new StringContent(
-                JsonSerializer.Serialize(encryptedPayload), 
-                Encoding.UTF8, 
-                "application/json"); 
-                
-            content.Headers.Add("X-Encrypted", "1"); 
+            // 4. HTTP İsteğini Hazırla
+            var request = new HttpRequestMessage(HttpMethod.Post, "api/agent/report");
+            request.Headers.Add("X-Encrypted", "1"); // Request Header (Doğru yer)
+            
+            request.Content = new StringContent(
+                JsonSerializer.Serialize(encryptedPayload),
+                Encoding.UTF8,
+                "application/json");
 
-            var resp = await _http.PostAsync("api/agent/heartbeat", content, token); 
+            var resp = await _http.SendAsync(request, token);
 
             if (resp.IsSuccessStatusCode)
                 _logger.LogInformation("💓 Heartbeat OK → {Code}", resp.StatusCode);

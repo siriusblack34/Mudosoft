@@ -38,152 +38,161 @@ public class DevicesController : ControllerBase
         return roundedValue > 0 ? (int?)roundedValue : null;
     }
     
-    /// <summary>
-    /// Dashboard statistics: online/offline counts & recent offline list
-    /// GET: /api/devices/status
-    /// </summary>
-    [HttpGet("status")]
-    public ActionResult<DashboardDto> GetStatus()
-    {
-        var devices = _repo.GetAll() ?? new List<Device>();
+ 
+    /// <summary>
+    /// Dashboard statistics: online/offline counts & recent offline list
+    /// GET: /api/devices/status
+    /// </summary>
+    [HttpGet("status")]
+    public ActionResult<DashboardDto> GetStatus()
+    {
+        // Sadece AgentVersion bilgisi dolu olan (yani aktif haberleşen) cihazları getir
+        var devices = _repo.GetAll()
+                           .Where(d => !string.IsNullOrEmpty(d.AgentVersion))
+                           .ToList();
 
-        var total = devices.Count;
-        var online = devices.Count(d => d.Online);
-        var offline = total - online;
+        if (devices == null) devices = new List<Device>();
 
-        var recentOffline = devices
-            .Where(d => !d.Online)
-            .OrderByDescending(d => d.LastSeen)
-            .Take(10)
-            .Select(d => new RecentOfflineDevice
-            {
-                Hostname = d.Hostname ?? "-",
-                Ip = d.IpAddress,
-                Os = d.Os ?? "-",
-                Store = d.StoreCode,
-                LastSeen = d.LastSeen?.ToString("g") ?? "-"
-            })
-            .ToList();
+        var total = devices.Count;
+        var online = devices.Count(d => d.Online);
+        var offline = total - online;
 
-        return Ok(new DashboardDto
-        {
-            TotalDevices = total,
-            Online = online,
-            Offline = offline,
-            RecentOffline = recentOffline
-        });
-    }
+        var recentOffline = devices
+            .Where(d => !d.Online)
+            .OrderByDescending(d => d.LastSeen)
+            .Take(10)
+            .Select(d => new RecentOfflineDevice
+            {
+                Hostname = d.Hostname ?? "-",
+                Ip = d.IpAddress,
+                Os = d.Os ?? "-",
+                Store = d.StoreCode,
+                LastSeen = d.LastSeen?.ToString("g") ?? "-"
+            })
+            .ToList();
 
-    /// <summary>
-    /// Full devices inventory list
-    /// GET: /api/devices/inventory
-    /// </summary>
-    [HttpGet("inventory")]
-    public ActionResult<IEnumerable<DeviceListDto>> GetInventory()
-    {
-        var devices = _repo.GetAll();
-        
-        var deviceDtos = devices.Select(d => 
-        {
-            var osInfoLocal = new OsInfoDto { Name = d.Os ?? "-" };
+        return Ok(new DashboardDto
+        {
+            TotalDevices = total,
+            Online = online,
+            Offline = offline,
+            RecentOffline = recentOffline
+        });
+    }
 
-            return new DeviceListDto
-            {
-                Id = d.Id,
-                Hostname = d.Hostname,
-                IpAddress = d.IpAddress,
-                Os = osInfoLocal, 
-                StoreCode = d.StoreCode, 
-                Type = d.Type.ToString(), 
-                Online = d.Online, 
-                LastSeen = d.LastSeen?.ToString("o"),
-                
-                CpuUsage = SafeRoundToNullableInt(d.CurrentCpuUsagePercent),
-                RamUsage = SafeRoundToNullableInt(d.CurrentRamUsagePercent),
-                DiskUsage = SafeRoundToNullableInt(d.CurrentDiskUsagePercent)
-            };
-        }).ToList();
+    /// <summary>
+    /// Full devices inventory list
+    /// GET: /api/devices/inventory
+    /// </summary>
+    [HttpGet("inventory")]
+    public ActionResult<IEnumerable<DeviceListDto>> GetInventory()
+    {
+        // Sadece AgentVersion bilgisi dolu olan (yani aktif haberleşen) cihazları getir
+        var devices = _repo.GetAll()
+                           .Where(d => !string.IsNullOrEmpty(d.AgentVersion))
+                           .ToList();
+        
+        var deviceDtos = devices.Select(d => 
+        {
+            var osInfoLocal = new OsInfoDto { Name = d.Os ?? "-" };
 
-        return Ok(deviceDtos);
-    }
+            return new DeviceListDto
+            {
+                Id = d.Id,
+                Hostname = d.Hostname,
+                IpAddress = d.IpAddress,
+                Os = osInfoLocal, 
+                StoreCode = d.StoreCode, 
+                Type = d.Type.ToString(), 
+                Online = d.Online, 
+                LastSeen = d.LastSeen?.ToString("o"),
+                
+                CpuUsage = SafeRoundToNullableInt(d.CurrentCpuUsagePercent),
+                RamUsage = SafeRoundToNullableInt(d.CurrentRamUsagePercent),
+                DiskUsage = SafeRoundToNullableInt(d.CurrentDiskUsagePercent)
+            };
+        }).ToList();
 
-    /// <summary>
-    /// Returns a device by ID WITH LIMITED last 24h metrics for graph display
-    /// GET: /api/devices/{id}
-    /// </summary>
-    [HttpGet("{id}")]
-    public async Task<ActionResult<DeviceDetailDto>> GetById(string id)
-    {
-        var device = _repo.GetById(id);
-        if (device is null)
-            return NotFound($"Device not found: {id}");
+        return Ok(deviceDtos);
+    }
 
-        var last24Hours = DateTime.UtcNow.AddHours(-24);
+    /// <summary>
+    /// Returns a device by ID WITH LIMITED last 24h metrics for graph display
+    /// GET: /api/devices/{id}
+    /// </summary>
+    [HttpGet("{id}")]
+    public async Task<ActionResult<DeviceDetailDto>> GetById(string id)
+    {
+        var device = _repo.GetById(id);
+        if (device is null)
+            return NotFound($"Device not found: {id}");
 
-        // 🚀 OPTİMİZASYON: Sadece son 120 kaydı çekerek network yükü azaltıldı.
-        var metrics = await _dbContext.DeviceMetrics
-            .Where(m => m.DeviceId == id && m.TimestampUtc >= last24Hours)
-            .OrderByDescending(m => m.TimestampUtc) 
-            .Take(120) 
-            .OrderBy(m => m.TimestampUtc)
-            .Select(m => new DeviceMetricDto
-            {
-                TimestampUtc = m.TimestampUtc.ToString("o"), 
-                CpuUsagePercent = m.CpuUsagePercent,
-                RamUsagePercent = m.RamUsagePercent, // Düzeltildi
-                DiskUsagePercent = m.DiskUsagePercent
-            })
-            .ToListAsync();
+        var last24Hours = DateTime.UtcNow.AddHours(-24);
 
-        // OS string'ini OsInfoDto nesnesine dönüştürme mantığı
-        var osInfoLocal = new OsInfoDto(); 
-        if (!string.IsNullOrWhiteSpace(device.Os))
-        {
-            var osString = device.Os;
-            var firstSpaceIndex = osString.IndexOf(' ');
-            
-            if (firstSpaceIndex > 0)
-            {
-                osInfoLocal.Name = osString.Substring(0, firstSpaceIndex); 
-                osInfoLocal.Version = osString.Substring(firstSpaceIndex).Trim();
-            }
-            else
-            {
-                osInfoLocal.Name = osString; 
-                osInfoLocal.Version = "-";
-            }
-        } else {
-             osInfoLocal.Name = "Unknown"; 
-             osInfoLocal.Version = "-";
-        }
-        
-        return Ok(new DeviceDetailDto
-        {
-            Id = device.Id,
-            Hostname = device.Hostname,
-            IpAddress = device.IpAddress, 
-            
-            Os = osInfoLocal, 
-            
-            Store = device.StoreCode, 
-            AgentVersion = device.AgentVersion, 
-            
-            Type = device.Type.ToString(),
-            Online = device.Online,
-            LastSeen = device.LastSeen?.ToString("o"),
-            
-            // Metrikler
-            CpuUsage = (int)Math.Round(device.CurrentCpuUsagePercent),
-            RamUsage = (int)Math.Round(device.CurrentRamUsagePercent),
-            DiskUsage = (int)Math.Round(device.CurrentDiskUsagePercent),
-            
-            SqlVersion = device.SqlVersion,
-            PosVersion = device.PosVersion,
-            Agent = !string.IsNullOrEmpty(device.AgentVersion),
-            
-            Metrics = metrics 
-        });
-    }
+        // 🚀 OPTİMİZASYON: Sadece son 120 kaydı çekerek network yükü azaltıldı.
+        var metrics = await _dbContext.DeviceMetrics
+            .Where(m => m.DeviceId == id && m.TimestampUtc >= last24Hours)
+            .OrderByDescending(m => m.TimestampUtc) 
+            .Take(120) 
+            .OrderBy(m => m.TimestampUtc)
+            .Select(m => new DeviceMetricDto
+            {
+                TimestampUtc = m.TimestampUtc.ToString("o"), 
+                CpuUsagePercent = m.CpuUsagePercent,
+                RamUsagePercent = m.RamUsagePercent,
+                DiskUsagePercent = m.DiskUsagePercent
+            })
+            .ToListAsync();
+
+        // OS string'ini OsInfoDto nesnesine dönüştürme mantığı
+        var osInfoLocal = new OsInfoDto(); 
+        if (!string.IsNullOrWhiteSpace(device.Os))
+        {
+            var osString = device.Os;
+            var firstSpaceIndex = osString.IndexOf(' ');
+            
+            if (firstSpaceIndex > 0)
+            {
+                osInfoLocal.Name = osString.Substring(0, firstSpaceIndex); 
+                osInfoLocal.Version = osString.Substring(firstSpaceIndex).Trim();
+            }
+            else
+            {
+                osInfoLocal.Name = osString; 
+                osInfoLocal.Version = "-";
+            }
+        } else {
+             osInfoLocal.Name = "Unknown"; 
+             osInfoLocal.Version = "-";
+        }
+        
+        return Ok(new DeviceDetailDto
+        {
+            Id = device.Id,
+            Hostname = device.Hostname,
+            IpAddress = device.IpAddress, 
+            
+            Os = osInfoLocal, 
+            
+            StoreCode = device.StoreCode, 
+            AgentVersion = device.AgentVersion, 
+            
+            Type = device.Type.ToString(),
+            Online = device.Online,
+            LastSeen = device.LastSeen?.ToString("o"),
+            
+            // Metrikler
+            CpuUsage = (int)Math.Round(device.CurrentCpuUsagePercent),
+            RamUsage = (int)Math.Round(device.CurrentRamUsagePercent),
+            DiskUsage = (int)Math.Round(device.CurrentDiskUsagePercent),
+            
+            SqlVersion = device.SqlVersion,
+            PosVersion = device.PosVersion,
+            Agent = !string.IsNullOrEmpty(device.AgentVersion),
+            
+            Metrics = metrics 
+        });
+    }
 
     /// <summary>
     /// Returns ONLY device metrics for the last 24 hours

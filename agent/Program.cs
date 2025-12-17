@@ -18,7 +18,7 @@ using System.Reflection;
 
 // 💡 KURULUM/KALDIRMA İÇİN KRİTİK DEĞİŞKENLER
 const string ServiceName = "MudosoftAgentService"; 
-const string DisplayName = "Mudosoft POS Agent";   
+const string DisplayName = "Mudosoft POS Agent";   
 const string ServiceDescription = "Mudosoft Retail POS cihazları için merkezi yönetim ve komut ajanı.";
 
 // 1. KENDİ KENDİNE KURULUM VE YÖNETİM İÇİN YARDIMCI FONKSİYONLAR

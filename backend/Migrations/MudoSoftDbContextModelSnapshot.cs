@@ -240,9 +240,6 @@ namespace MudoSoft.Backend.Migrations
 
                     b.HasKey("DeviceId");
 
-                    b.HasIndex("StoreCode", "DeviceType")
-                        .IsUnique();
-
                     b.ToTable("StoreDevices");
                 });
 

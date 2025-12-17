@@ -1,7 +1,10 @@
-// frontend/src/lib/apiClient.ts — FINAL VERSION
+// frontend/src/lib/apiClient.ts
 
 import type { Device } from "../types";
 
+// ==========================
+// TYPES
+// ==========================
 export interface DeviceMetricDataPoint {
     timestampUtc: string;
     cpuUsagePercent: number;
@@ -25,6 +28,20 @@ export interface CommandResultRecord {
     completedAtUtc: string | null;
 }
 
+// ✅ SQL QUERY – ENVANTER + STATUS
+export interface SqlDeviceWithStatus {
+    deviceId: string;
+    storeCode: number;
+    storeName: string;
+    deviceType: string;
+    deviceName: string;
+    calculatedIpAddress: string;
+    isOnline: boolean;
+}
+
+// ==========================
+// BASE CONFIG
+// ==========================
 const API_BASE = "http://localhost:5102";
 
 function buildUrl(url: string) {
@@ -33,10 +50,15 @@ function buildUrl(url: string) {
     return `${base}/${cleanUrl}`;
 }
 
+// ==========================
+// API CLIENT
+// ==========================
 export const apiClient = {
     async get<T>(url: string): Promise<T> {
         const res = await fetch(buildUrl(url));
-        if (!res.ok) throw new Error(`GET failed: ${res.status}`);
+        if (!res.ok) {
+            throw new Error(`GET ${url} failed: ${res.status}`);
+        }
         return res.json();
     },
 
@@ -46,56 +68,39 @@ export const apiClient = {
             headers: { "Content-Type": "application/json" },
             body: data ? JSON.stringify(data) : undefined,
         });
-        if (!res.ok) throw new Error(`POST failed: ${res.status}`);
+        if (!res.ok) {
+            throw new Error(`POST ${url} failed: ${res.status}`);
+        }
         return res.json();
     },
 
     // ==========================
-    // DEVICES
+    // DEVICES (ENVANTER)
     // ==========================
     getDevices(): Promise<Device[]> {
         return this.get("/api/devices/inventory");
     },
-
+    
     getDevice(id: string): Promise<Device> {
         return this.get(`/api/devices/${id}`);
     },
 
-    getDeviceMetrics(id: string): Promise<DeviceMetricDataPoint[]> {
-        return this.get(`/api/devices/${id}/metrics`);
-    },
-
     // ==========================
-    // COMMANDS
+    // SQL QUERY – ✅ TEK DOĞRU KAYNAK
     // ==========================
-    runScript(deviceId: string, scriptContent: string) {
-        return this.post("/api/actions/run-script", {
-            deviceId,
-            script: scriptContent,
-        });
-    },
+    getSqlDevicesWithStatus(params?: {
+        timeoutMs?: number;
+        maxConcurrency?: number;
+    }): Promise<SqlDeviceWithStatus[]> {
+        const qs = new URLSearchParams();
+        if (params?.timeoutMs) qs.append("timeoutMs", String(params.timeoutMs));
+        if (params?.maxConcurrency) qs.append("maxConcurrency", String(params.maxConcurrency));
 
-    getCommandHistory(): Promise<CommandHistoryItem[]> {
-        return this.get("/api/actions/history");
-    },
-
-    getCommandDetails(commandId: string): Promise<CommandResultRecord> {
-        return this.get(`/api/actions/${commandId}/details`);
-    },
-
-    // ==========================
-    // SQL QUERY
-    // ==========================
-    getSqlDevices() {
-        return this.get("/api/sqlquery/devices");
+        const suffix = qs.toString() ? `?${qs}` : "";
+        return this.get(`/api/sqlquery/devices/with-status${suffix}`);
     },
 
     runSqlQuery(deviceId: string, query: string) {
         return this.post("/api/sqlquery/execute", { deviceId, query });
     },
-
-    // ⭐ Yeni eklendi: Offline teşhis
-    getDeviceStatus(deviceId: string) {
-        return this.get(`/api/sqlquery/device-status/${deviceId}`);
-    }
 };

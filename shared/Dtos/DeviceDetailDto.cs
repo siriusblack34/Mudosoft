@@ -10,7 +10,7 @@ namespace Mudosoft.Shared.Dtos
 
         public OsInfoDto? Os { get; set; }
 
-        public int Store { get; set; }
+        public int StoreCode { get; set; }
         public string? AgentVersion { get; set; }
         public string? Type { get; set; }
         public bool Online { get; set; }

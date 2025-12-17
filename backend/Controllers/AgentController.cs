@@ -1,10 +1,10 @@
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using Mudosoft.Shared.Dtos;
+using Mudosoft.Shared.Enums;
 using MudoSoft.Backend.Services;
 using MudoSoft.Backend.Data;
 using MudoSoft.Backend.Models;
-using Microsoft.EntityFrameworkCore;
-using Mudosoft.Shared.Enums;
 
 namespace MudoSoft.Backend.Controllers;
 
@@ -29,13 +29,18 @@ public class AgentController : ControllerBase
         _dbContext = dbContext;
     }
 
-    // ❤️ Heartbeat
-    [HttpPost("heartbeat")]
+    // ❤️ Heartbeat (decrypt edilmiş DTO middleware'den gelir)
+    // 🔥 DÜZELTME: Endpoint adı 'report' olarak değiştirildi (AgentWorker ile eşleşmesi için)
+    [HttpPost("report")] 
     public async Task<IActionResult> Heartbeat([FromBody] DeviceHeartbeatDto dto)
     {
+        if (dto == null)
+            return BadRequest("DTO null");
+
         await _service.HandleHeartbeatAsync(dto);
         return Ok();
     }
+
 
     // 📥 Commands Poll
     [HttpGet("commands")]
@@ -48,7 +53,7 @@ public class AgentController : ControllerBase
         return Ok(cmds);
     }
 
-    // 📤 Command Result (agent geri gönderiyor)
+    // 📤 Command Result
     [HttpPost("command-result")]
     public async Task<IActionResult> CommandResult([FromBody] CommandResultDto result)
     {
@@ -79,7 +84,7 @@ public class AgentController : ControllerBase
         return Ok("Test command queued.");
     }
 
-    // 🏆 Ön Uca: Son Komut Sonucunu çekme
+    // 🏆 Ön Uca: Son Komut Sonucu
     [HttpGet("command-results/latest")]
     public async Task<ActionResult<CommandResultRecord>> GetLatestCommandResult([FromQuery] string deviceId)
     {
