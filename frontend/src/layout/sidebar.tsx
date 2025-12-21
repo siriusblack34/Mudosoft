@@ -3,11 +3,11 @@ import React from "react";
 import { NavLink } from "react-router-dom";
 // Tüm ikonları bir namespace altında alıyoruz (Icons dosyanın doğru export'ları içerdiğinden emin ol)
 import * as Icons from "../components/icons/Icons";
+import { LogOut } from "lucide-react";
 
 const Sidebar: React.FC = () => {
   const linkClasses = ({ isActive }: { isActive: boolean }) =>
-    `flex items-center gap-2 px-4 py-2 rounded-xl text-sm transition ${
-      isActive ? "bg-ms-accent-soft/10 text-ms-accent" : "text-ms-text-muted hover:bg-ms-panel"
+    `flex items-center gap-2 px-4 py-2 rounded-xl text-sm transition ${isActive ? "bg-ms-accent-soft/10 text-ms-accent" : "text-ms-text-muted hover:bg-ms-panel"
     }`;
 
   return (
@@ -45,10 +45,29 @@ const Sidebar: React.FC = () => {
           <Icons.SettingsIcon className="w-5 h-5" />
           Settings
         </NavLink>
+
+        <NavLink to="/agent-update" className={linkClasses}>
+          <Icons.ReloadIcon className="w-5 h-5" />
+          Agent Update
+        </NavLink>
       </nav>
 
-      <div className="px-4 py-4 text-xs text-ms-text-muted">
-        Logged in as <span className="text-ms-text">Administrator</span>
+      <div className="p-4 border-t border-ms-border">
+        <div className="flex items-center justify-between">
+          <div className="text-xs text-ms-text-muted">
+            Logged in as <span className="text-ms-text font-medium block">Administrator</span>
+          </div>
+          <button
+            onClick={() => {
+              localStorage.removeItem('isAuthenticated');
+              window.location.href = '/login';
+            }}
+            className="p-2 text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition-colors"
+            title="Sign Out"
+          >
+            <LogOut className="w-4 h-4" />
+          </button>
+        </div>
       </div>
     </aside>
   );

@@ -101,4 +101,141 @@ public class AgentController : ControllerBase
 
         return Ok(latestResult);
     }
+
+    #region File Manager Endpoints
+
+    /// <summary>
+    /// List directory contents
+    /// </summary>
+    [HttpPost("files/list")]
+    public IActionResult FileList([FromQuery] string deviceId, [FromQuery] string path)
+    {
+        if (string.IsNullOrEmpty(deviceId))
+            return BadRequest("deviceId required");
+
+        var commandId = Guid.NewGuid();
+        _queue.Enqueue(new CommandDto
+        {
+            Id = commandId,
+            DeviceId = deviceId,
+            Type = CommandType.FileList,
+            Payload = path ?? "C:\\",
+            CreatedAtUtc = DateTime.UtcNow
+        });
+
+        return Ok(new { commandId, message = "FileList command queued" });
+    }
+
+    /// <summary>
+    /// Create a new folder
+    /// </summary>
+    [HttpPost("files/mkdir")]
+    public IActionResult FolderCreate([FromQuery] string deviceId, [FromQuery] string path)
+    {
+        if (string.IsNullOrEmpty(deviceId) || string.IsNullOrEmpty(path))
+            return BadRequest("deviceId and path required");
+
+        var commandId = Guid.NewGuid();
+        _queue.Enqueue(new CommandDto
+        {
+            Id = commandId,
+            DeviceId = deviceId,
+            Type = CommandType.FolderCreate,
+            Payload = path,
+            CreatedAtUtc = DateTime.UtcNow
+        });
+
+        return Ok(new { commandId, message = "FolderCreate command queued" });
+    }
+
+    /// <summary>
+    /// Delete file or folder
+    /// </summary>
+    [HttpDelete("files")]
+    public IActionResult FileDelete([FromQuery] string deviceId, [FromQuery] string path)
+    {
+        if (string.IsNullOrEmpty(deviceId) || string.IsNullOrEmpty(path))
+            return BadRequest("deviceId and path required");
+
+        var commandId = Guid.NewGuid();
+        _queue.Enqueue(new CommandDto
+        {
+            Id = commandId,
+            DeviceId = deviceId,
+            Type = CommandType.FileDelete,
+            Payload = path,
+            CreatedAtUtc = DateTime.UtcNow
+        });
+
+        return Ok(new { commandId, message = "FileDelete command queued" });
+    }
+
+    /// <summary>
+    /// Upload file (content as base64)
+    /// </summary>
+    [HttpPost("files/upload")]
+    public IActionResult FileUpload([FromQuery] string deviceId, [FromBody] FileUploadRequest request)
+    {
+        if (string.IsNullOrEmpty(deviceId) || request == null || string.IsNullOrEmpty(request.Path))
+            return BadRequest("deviceId and path required");
+
+        var commandId = Guid.NewGuid();
+        var payload = System.Text.Json.JsonSerializer.Serialize(new { path = request.Path, content = request.Content ?? "" });
+        
+        _queue.Enqueue(new CommandDto
+        {
+            Id = commandId,
+            DeviceId = deviceId,
+            Type = CommandType.FileWrite,
+            Payload = payload,
+            CreatedAtUtc = DateTime.UtcNow
+        });
+
+        return Ok(new { commandId, message = "FileUpload command queued" });
+    }
+
+    /// <summary>
+    /// Download file (returns base64 content via command result)
+    /// </summary>
+    [HttpPost("files/download")]
+    public IActionResult FileDownload([FromQuery] string deviceId, [FromQuery] string path)
+    {
+        if (string.IsNullOrEmpty(deviceId) || string.IsNullOrEmpty(path))
+            return BadRequest("deviceId and path required");
+
+        var commandId = Guid.NewGuid();
+        _queue.Enqueue(new CommandDto
+        {
+            Id = commandId,
+            DeviceId = deviceId,
+            Type = CommandType.FileRead,
+            Payload = path,
+            CreatedAtUtc = DateTime.UtcNow
+        });
+
+        return Ok(new { commandId, message = "FileDownload command queued" });
+    }
+
+    /// <summary>
+    /// Get command result by ID (for file operations)
+    /// </summary>
+    [HttpGet("command-results/{commandId}")]
+    public async Task<ActionResult<CommandResultRecord>> GetCommandResult(Guid commandId)
+    {
+        var result = await _dbContext.CommandResultRecords
+            .FirstOrDefaultAsync(r => r.CommandId == commandId);
+
+        if (result == null)
+            return NotFound("Command result not found or pending");
+
+        return Ok(result);
+    }
+
+    #endregion
+}
+
+public class FileUploadRequest
+{
+    public string? Path { get; set; }
+    public string? Content { get; set; } // Base64 encoded
 }

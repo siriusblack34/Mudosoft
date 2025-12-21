@@ -16,6 +16,20 @@ using System.Reflection;
 // Bu proje bir Windows Servisi olduğu için tüm CA1416 (Platform uyumluluğu) uyarılarını bastırır.
 [assembly: SupportedOSPlatform("windows")]
 
+// 🔍 HELPER CRASH DEBUG - En başta log
+bool isHelperMode = args.Contains("--desktop-helper");
+if (isHelperMode)
+{
+    try
+    {
+        System.IO.File.AppendAllText(@"C:\mudosoft_helper.log", $"{DateTime.Now}: Helper started with args: {string.Join(" ", args)}{Environment.NewLine}");
+    }
+    catch { }
+}
+
+try  // Global try-catch for Helper crash detection
+{
+
 // 💡 KURULUM/KALDIRMA İÇİN KRİTİK DEĞİŞKENLER
 const string ServiceName = "MudosoftAgentService"; 
 const string DisplayName = "Mudosoft POS Agent";   
@@ -82,13 +96,27 @@ static int RunServiceCommand(string command, string serviceName, string? argumen
 }
 
 
-// 2. ARGÜMAN KONTROLÜ VE SERVİS YÖNETİMİ BAŞLANGICI
+// 1.5. ESKİ/ÇAKIŞAN SERVİSLERİ TEMİZLEME
+static void CleanLegacyServices()
+{
+    string[] legacyNames = { "MudoSoftAgent", "MudosoftAgentService" };
+    foreach (var name in legacyNames)
+    {
+        try 
+        {
+            Console.WriteLine($"Eski servis kontrol ediliyor: {name}...");
+            RunServiceCommand("stop", name);
+            RunServiceCommand("delete", name);
+        }
+        catch { /* Yoksay */}
+    }
+}
+
+// 2. ARGÜMAN KONTROLÜ VE SERVİS YÖNETİMİ
 var cliArgs = Environment.GetCommandLineArgs().Skip(1).ToArray();
 
-// 🏆 KRİTİK DÜZELTME: Eğer argüman yoksa VEYA /Install isteniyorsa kurulumu başlat.
-if (cliArgs.Any(a => a.Equals("/Install", StringComparison.OrdinalIgnoreCase)) || !cliArgs.Any())
+if (cliArgs.Any(a => a.Equals("/Install", StringComparison.OrdinalIgnoreCase)))
 {
-    // Kurulum isteniyor veya Çift Tıklama algılandı.
     if (!IsAdministrator())
     {
         Console.WriteLine("Kurulum için yönetici yetkisi gerekiyor. Yeniden başlatılıyor...");
@@ -96,24 +124,36 @@ if (cliArgs.Any(a => a.Equals("/Install", StringComparison.OrdinalIgnoreCase)) |
         return 0; 
     }
 
+    Console.WriteLine("Mevcut/Eski servisler temizleniyor...");
+    CleanLegacyServices();
+
     Console.WriteLine($"Windows Servisi kuruluyor: {DisplayName}...");
     
     string binPathArg = $"binPath= \"{Environment.ProcessPath} --service\"";
     
-    RunServiceCommand("create", ServiceName, $"start= auto {binPathArg}");
+    // type= interact type= own → Local System'ın desktop ile etkileşmesine izin verir
+    RunServiceCommand("create", ServiceName, $"start= auto type= interact type= own {binPathArg}");
     RunServiceCommand("description", ServiceName, $"\"{ServiceDescription}\"");
     
     Console.WriteLine($"Servis başlatılıyor: {ServiceName}...");
     RunServiceCommand("start", ServiceName);
 
-    Console.WriteLine("Kurulum ve başlatma tamamlandı. Pencereyi kapatabilirsiniz.");
+    Console.WriteLine("");
+    Console.WriteLine("========================================");
+    Console.WriteLine("Kurulum tamamlandı!");
+    Console.WriteLine("");
+    Console.WriteLine("NOT: Remote Desktop çalışmazsa, servisi bir domain admin");
+    Console.WriteLine("hesabıyla çalıştırmanız gerekebilir:");
+    Console.WriteLine("  1. services.msc açın");
+    Console.WriteLine("  2. MudosoftAgentService → Özellikler → Oturum Aç");
+    Console.WriteLine("  3. 'Bu hesap' seçip domain admin bilgilerini girin");
+    Console.WriteLine("========================================");
     Console.ReadKey();
     return 0;
 }
 
 if (cliArgs.Any(a => a.Equals("/Uninstall", StringComparison.OrdinalIgnoreCase)))
 {
-    // Kaldırma isteniyor
     if (!IsAdministrator())
     {
         Console.WriteLine("Kaldırma için yönetici yetkisi gerekiyor. Yeniden başlatılıyor...");
@@ -121,9 +161,8 @@ if (cliArgs.Any(a => a.Equals("/Uninstall", StringComparison.OrdinalIgnoreCase))
         return 0; 
     }
 
-    Console.WriteLine($"Windows Servisi durduruluyor ve kaldırılıyor: {ServiceName}...");
-    RunServiceCommand("stop", ServiceName);
-    RunServiceCommand("delete", ServiceName);
+    Console.WriteLine("Servisler kaldırılıyor...");
+    CleanLegacyServices();
     
     Console.WriteLine("Kaldırma işlemi tamamlandı. Pencereyi kapatabilirsiniz.");
     Console.ReadKey();
@@ -137,21 +176,19 @@ var hostBuilder = Host.CreateDefaultBuilder(args)
     .UseWindowsService() 
     .ConfigureAppConfiguration((hostContext, config) =>
     {
-        // Yapılandırmayı gömülü kaynaklardan yükle
-        config.Sources.Clear(); 
-
-        var assembly = Assembly.GetExecutingAssembly();
+        // Fiziksel dosyalardan yapılandırma yükle (exe'nin yanındaki dosyalar)
+        var basePath = AppDomain.CurrentDomain.BaseDirectory;
         var environmentName = hostContext.HostingEnvironment.EnvironmentName;
 
-        var embeddedProvider = new EmbeddedFileProvider(assembly);
-
+        config.SetBasePath(basePath);
+        
         // appsettings.json yükle
-        config.AddJsonFile(embeddedProvider, "appsettings.json", optional: false, reloadOnChange: false);
+        config.AddJsonFile("appsettings.json", optional: false, reloadOnChange: false);
 
         // appsettings.{Environment}.json yükle
-        config.AddJsonFile(embeddedProvider, $"appsettings.{environmentName}.json", optional: true, reloadOnChange: false);
+        config.AddJsonFile($"appsettings.{environmentName}.json", optional: true, reloadOnChange: false);
         
-        // Ortam değişkenleri ve komut satırı argümanlarını ekle (varsayılan host builder davranışı)
+        // Ortam değişkenleri ve komut satırı argümanlarını ekle
         config.AddEnvironmentVariables();
         if (args is { Length: > 0 })
         {
@@ -160,29 +197,60 @@ var hostBuilder = Host.CreateDefaultBuilder(args)
     })
     .ConfigureServices((hostContext, services) =>
     {
-        // AgentConfig konfigürasyonunu yükle
-        services.Configure<AgentConfig>(
-            hostContext.Configuration.GetSection("Agent")
-        );
+        // Mode Detection:
+        // --desktop-helper = Helper (launched by service)
+        // --service = Manager (service that launches helper)
+        // (nothing) = Helper (console mode, direct streaming)
+        bool isDesktopHelper = args.Contains("--desktop-helper");
+        bool isService = args.Contains("--service");
         
-        // Identity provider (Kalıcı ID sağlar)
-        services.AddSingleton<IDeviceIdentityProvider, DeviceIdentityProvider>(); 
-        
-        // Worker + services
-        services.AddHostedService<AgentWorker>();
-        services.AddSingleton<ICommandExecutor, CommandExecutor>();
-        services.AddSingleton<ICommandPoller, CommandPoller>(); 
-        services.AddSingleton<IHeartbeatSender, HeartbeatService>(); 
-        services.AddSingleton<IWatchdogManager, WatchdogManager>();
-        services.AddSingleton<ISystemInfoService, SystemInfoService>(); 
-        services.AddSingleton<IRsaKeyService, RsaKeyService>(); 
-        services.AddSingleton<IAesEncryptionService, AesEncryptionService>();
+        // Konsol modunda veya --desktop-helper ile: Helper (doğrudan streaming)
+        // Servis modunda (--service): Manager (helper başlatır)
+        bool shouldStream = isDesktopHelper || !isService;
 
-        // HttpClient
+        // Common Services
+        services.Configure<AgentConfig>(hostContext.Configuration.GetSection("Agent"));
+        services.AddSingleton<IDeviceIdentityProvider, DeviceIdentityProvider>();
         services.AddHttpClient();
+        
+        // Pass Mode to Configuration
+        services.AddSingleton(new RemoteDesktopConfig { Mode = shouldStream ? "Helper" : "Manager" });
+
+        if (isDesktopHelper)
+        {
+            // --- HELPER MODE (User Session - launched by service) ---
+            // Sadece streaming servisini çalıştır
+            services.AddHostedService<RemoteDesktopService>();
+        }
+        else
+        {
+            // --- NORMAL MODE (Console or Service) ---
+            // Tüm yönetim servisleri
+            services.AddHostedService<AgentWorker>();
+            services.AddSingleton<ICommandExecutor, CommandExecutor>();
+            services.AddSingleton<ICommandPoller, CommandPoller>(); 
+            services.AddSingleton<IHeartbeatSender, HeartbeatService>(); 
+            services.AddSingleton<IWatchdogManager, WatchdogManager>();
+            services.AddSingleton<ISystemInfoService, SystemInfoService>(); 
+            services.AddSingleton<IRsaKeyService, RsaKeyService>(); 
+            services.AddSingleton<IAesEncryptionService, AesEncryptionService>();
+
+            // RemoteDesktopService - Mode'a göre stream veya launch
+            services.AddHostedService<RemoteDesktopService>();
+        }
     });
 
 var host = hostBuilder.Build();
 host.Run();
+
+} // end global try
+catch (Exception ex)
+{
+    if (isHelperMode)
+    {
+        System.IO.File.AppendAllText(@"C:\mudosoft_helper.log", $"{DateTime.Now}: CRASH: {ex}{Environment.NewLine}");
+    }
+    throw;
+}
 
 return 0;

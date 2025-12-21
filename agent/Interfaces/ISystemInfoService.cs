@@ -1,13 +1,24 @@
-using System; // IDisposable için
-// ... diğer using'ler
-
 namespace Mudosoft.Agent.Interfaces;
 
-// IDisposable eklendi
 public interface ISystemInfoService : IDisposable 
 {
+    // Performance Metrics
     double GetCpuUsage();
     double GetRamUsage();
     double GetDiskUsage();
+    
+    // System Info
     string GetOsName();
+    
+    // Hardware Inventory
+    string GetCpuModel();
+    long GetTotalRamMB();
+    long GetTotalDiskGB();
+    string? GetGpuModel();
+    
+    // User & Session
+    string? GetLastLoggedInUser();
+    
+    // Uptime
+    DateTime GetSystemBootTime();
 }

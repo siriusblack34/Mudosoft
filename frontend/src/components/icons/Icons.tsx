@@ -6,6 +6,7 @@ import {
   Database,
   Clock,
   Settings,
+  RefreshCw,
   // DÜZELTME: Close ikonunu ekleyin
   X, // 'X' lucide-react kütüphanesinde genellikle çarpı/kapatma ikonudur
 } from "lucide-react";
@@ -15,5 +16,6 @@ export const ServerIcon = Server;
 export const DatabaseIcon = Database;
 export const ClockIcon = Clock;
 export const SettingsIcon = Settings;
+export const ReloadIcon = RefreshCw;
 // DÜZELTME: X ikonunu CloseIcon adı altında dışa aktarın
 export const CloseIcon = X;

@@ -181,10 +181,22 @@ public class DevicesController : ControllerBase
             Online = device.Online,
             LastSeen = device.LastSeen?.ToString("o"),
             
-            // Metrikler
+            // Live Metrics
             CpuUsage = (int)Math.Round(device.CurrentCpuUsagePercent),
             RamUsage = (int)Math.Round(device.CurrentRamUsagePercent),
             DiskUsage = (int)Math.Round(device.CurrentDiskUsagePercent),
+            
+            // Hardware Inventory
+            CpuModel = device.CpuModel,
+            TotalRamMB = device.TotalRamMB,
+            TotalDiskGB = device.TotalDiskGB,
+            GpuModel = device.GpuModel,
+            
+            // User & Session
+            LastLoggedInUser = device.LastLoggedInUser,
+            
+            // Uptime (boot time as ISO string)
+            SystemBootTime = device.SystemBootTime?.ToString("o"),
             
             SqlVersion = device.SqlVersion,
             PosVersion = device.PosVersion,

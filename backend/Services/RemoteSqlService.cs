@@ -23,37 +23,35 @@ namespace MudoSoft.Backend.Services
             }
         }
 
-        public async Task<DataTable?> ExecuteQueryAsync(string connectionString, string query)
+        public async Task<DataTable> ExecuteQueryAsync(string connectionString, string query)
         {
-            try
-            {
-                using var conn = new SqlConnection(connectionString);
-                using var cmd = new SqlCommand(query, conn);
+            // try-catch bloğunu kaldırdık ki hata Controller'a fırlatılsın ve kullanıcı görsün.
+            using var conn = new SqlConnection(connectionString);
+            using var cmd = new SqlCommand(query, conn);
 
-                cmd.CommandTimeout = 5;
-                await conn.OpenAsync();
+            cmd.CommandTimeout = 30; // 5sn çok kısaydı, 30sn yaptık.
+            await conn.OpenAsync();
 
-                using var reader = await cmd.ExecuteReaderAsync();
-                var dt = new DataTable();
-                dt.Load(reader);
-                return dt;
-            }
-            catch
-            {
-                return null;
-            }
+            using var reader = await cmd.ExecuteReaderAsync();
+            var dt = new DataTable();
+            dt.Load(reader);
+            return dt;
         }
 
         public async Task<string> ExecuteQueryAndReturnJsonAsync(string connectionString, string sqlQuery)
         {
-            // SELECT dışı sorguları engelle
-            if (!sqlQuery.TrimStart().StartsWith("select", StringComparison.OrdinalIgnoreCase))
-                return "[]";
-
+            // 'Only SELECT' engelini kaldırdık. Artık UPDATE/DELETE de çalışır.
+            
+            // Eğer UPDATE/INSERT/DELETE ise DataTable boş dönebilir ama Exception fırlatmazsa başarılıdır.
+            // Bunu ayırt etmek için basit bir kontrol ekleyebiliriz veya 
+            // ExecuteQueryAsync içinde reader.RecordsAffected kontrol edilebilir 
+            // ama şimdilik DataTable mantığı ile devam edelim.
+            // DataTable boş dönerse [] döner, bu da front-end için 'başarılı ama veri yok' demektir.
+            
+            // Ancak asıl sorun: Hata olduğunda null dönüyor ve [] gidiyordu.
+            // Artık hata fırlatılacak.
+            
             var table = await ExecuteQueryAsync(connectionString, sqlQuery);
-
-            if (table == null)
-                return "[]";
 
             // DataTable → List<Dictionary<string,object>>
             var rows = new List<Dictionary<string, object?>>();
@@ -67,6 +65,16 @@ namespace MudoSoft.Backend.Services
                 }
 
                 rows.Add(item);
+            }
+
+            // Eğer sorgu bir UPDATE/DELETE ise ve satır dönmediyse (ama hata da almadıysak)
+            // Kullanıcıya bir şey göstermek iyi olur.
+            // Fakat DataTable reader'dan şema alamazsa column count 0 olur.
+            if (rows.Count == 0 && !sqlQuery.TrimStart().StartsWith("select", StringComparison.OrdinalIgnoreCase))
+            {
+                // Bir "Affected Rows" bilgisi dönmek daha şık olurdu ama 
+                // şimdilik en azından hata vermediğini biliyoruz.
+                // Boş array dönersek "0 rows" yazar, bu da teknik olarak doğru.
             }
 
             return JsonSerializer.Serialize(rows);

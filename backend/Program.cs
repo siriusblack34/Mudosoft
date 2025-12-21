@@ -17,7 +17,8 @@ builder.Services.AddCors(options =>
     {
         policy.WithOrigins("http://localhost:5173")
               .AllowAnyHeader()
-              .AllowAnyMethod();
+              .AllowAnyMethod()
+              .AllowCredentials(); // SignalR için ZORUNLU
     });
 });
 
@@ -53,8 +54,15 @@ builder.Services.AddScoped<AesEncryption>();
 
 
 // 6. Worker'lar (Singleton/HostedService olarak doğru şekilde kaydedildi)
-//builder.Services.AddHostedService<MudoSoft.Backend.Services.HeartbeatCheckerWorker>();
+builder.Services.AddHostedService<MudoSoft.Backend.Services.HeartbeatCheckerWorker>();
 //builder.Services.AddHostedService<MudoSoft.Backend.Services.DiscoveryWorker>();
+
+// 7. SignalR
+builder.Services.AddSignalR(hubOptions =>
+{
+    hubOptions.MaximumReceiveMessageSize = 5 * 1024 * 1024; // 5MB Limit
+    hubOptions.EnableDetailedErrors = true;
+}); 
 
 // =====================================================
 
@@ -75,6 +83,8 @@ app.UseMiddleware<EncryptedPayloadMiddleware>();
 
 app.UseAuthorization();
 app.MapControllers();
+// Hub Mapping
+app.MapHub<MudoSoft.Backend.Hubs.RemoteDesktopHub>("/hubs/desktop");
 
 // ================== SEED (SADECE DEVELOPMENT) ==================
 if (app.Environment.IsDevelopment())
@@ -112,13 +122,59 @@ if (app.Environment.IsDevelopment())
             }
 
             db.StoreDevices.AddRange(
-                new StoreDevice { DeviceId=$"{s.Code}-PC", StoreCode=s.Code, StoreName=s.Name, DeviceType="PC", DeviceName=$"{s.Code}-PC", CalculatedIpAddress=pcIp },
-                new StoreDevice { DeviceId=$"{s.Code}-K1", StoreCode=s.Code, StoreName=s.Name, DeviceType="Kasa-1", DeviceName=$"{s.Code}-Kasa-1", CalculatedIpAddress=k1 },
-                new StoreDevice { DeviceId=$"{s.Code}-K2", StoreCode=s.Code, StoreName=s.Name, DeviceType="Kasa-2", DeviceName=$"{s.Code}-Kasa-2", CalculatedIpAddress=k2 },
-                new StoreDevice { DeviceId=$"{s.Code}-K3", StoreCode=s.Code, StoreName=s.Name, DeviceType="Kasa-3", DeviceName=$"{s.Code}-Kasa-3", CalculatedIpAddress=k3 }
+                new StoreDevice 
+                { 
+                    DeviceId=$"{s.Code}-PC", 
+                    StoreCode=s.Code, 
+                    StoreName=s.Name, 
+                    DeviceType="PC", 
+                    DeviceName=$"{s.Code}-PC", 
+                    CalculatedIpAddress=pcIp,
+                    DbConnectionString = $"Server={pcIp};Database=Genius3;User Id=GENIUS3;Password=***REMOVED***;TrustServerCertificate=True;Connect Timeout=30;"
+                },
+                new StoreDevice 
+                { 
+                    DeviceId=$"{s.Code}-K1", 
+                    StoreCode=s.Code, 
+                    StoreName=s.Name, 
+                    DeviceType="Kasa-1", 
+                    DeviceName=$"{s.Code}-Kasa-1", 
+                    CalculatedIpAddress=k1,
+                    DbConnectionString = $"Server={k1};Database=Genius3;User Id=GENIUS3;Password=***REMOVED***;TrustServerCertificate=True;Connect Timeout=30;"
+                },
+                new StoreDevice 
+                { 
+                    DeviceId=$"{s.Code}-K2", 
+                    StoreCode=s.Code, 
+                    StoreName=s.Name, 
+                    DeviceType="Kasa-2", 
+                    DeviceName=$"{s.Code}-Kasa-2", 
+                    CalculatedIpAddress=k2,
+                    DbConnectionString = $"Server={k2};Database=Genius3;User Id=GENIUS3;Password=***REMOVED***;TrustServerCertificate=True;Connect Timeout=30;"
+                },
+                new StoreDevice 
+                { 
+                    DeviceId=$"{s.Code}-K3", 
+                    StoreCode=s.Code, 
+                    StoreName=s.Name, 
+                    DeviceType="Kasa-3", 
+                    DeviceName=$"{s.Code}-Kasa-3", 
+                    CalculatedIpAddress=k3,
+                    DbConnectionString = $"Server={k3};Database=Genius3;User Id=GENIUS3;Password=***REMOVED***;TrustServerCertificate=True;Connect Timeout=30;"
+                }
             );
         }
-
+        db.SaveChanges();
+    }
+    
+    // FIX AÇIKLAMASI: Var olan kayıtların ConnectionString'i yanlışsa (sa user) veya boşsa düzelt
+    var wrongDevices = db.StoreDevices.Where(d => d.DbConnectionString == "" || d.DbConnectionString.Contains("User Id=sa")).ToList();
+    if (wrongDevices.Any())
+    {
+        foreach (var d in wrongDevices)
+        {
+            d.DbConnectionString = $"Server={d.CalculatedIpAddress};Database=Genius3;User Id=GENIUS3;Password=***REMOVED***;TrustServerCertificate=True;Connect Timeout=30;";
+        }
         db.SaveChanges();
     }
 }

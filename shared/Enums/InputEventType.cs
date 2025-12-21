@@ -1,0 +1,11 @@
+namespace Mudosoft.Shared.Enums;
+
+public enum InputEventType
+{
+    MouseMove,
+    MouseDown,
+    MouseUp,
+    KeyDown,
+    KeyUp,
+    Scroll
+}

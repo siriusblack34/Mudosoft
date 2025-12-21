@@ -73,17 +73,32 @@ public sealed class HeartbeatService : IHeartbeatSender
                 Hostname = Environment.MachineName,
                 IpAddress = ip,
                 
-                // ✅ DÜZELTME: HeartbeatService'te eksik olduğu bildirilen alanlar artık var
+                // Status
                 Online = true, 
+                
+                // Performance Metrics
                 CpuUsage = _sys.GetCpuUsage(),
                 RamUsage = _sys.GetRamUsage(),
                 DiskUsage = _sys.GetDiskUsage(),
+                
+                // System Info
                 OsVersion = _sys.GetOsName(),
                 PosVersion = "",
                 SqlVersion = "",
-                UptimeSince = DateTime.UtcNow, 
                 
-                // 🏆 KRİTİK EKLEMELER:
+                // Hardware Inventory
+                CpuModel = _sys.GetCpuModel(),
+                TotalRamMB = _sys.GetTotalRamMB(),
+                TotalDiskGB = _sys.GetTotalDiskGB(),
+                GpuModel = _sys.GetGpuModel(),
+                
+                // User & Session
+                LastLoggedInUser = _sys.GetLastLoggedInUser(),
+                
+                // Uptime (actual boot time)
+                UptimeSince = _sys.GetSystemBootTime(),
+                
+                // Agent Info
                 AgentVersion = agentVersion, 
                 StoreCode = storeCode        
             };

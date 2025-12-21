@@ -103,6 +103,9 @@ namespace MudoSoft.Backend.Migrations
                     b.Property<string>("AgentVersion")
                         .HasColumnType("text");
 
+                    b.Property<string>("CpuModel")
+                        .HasColumnType("text");
+
                     b.Property<float>("CurrentCpuUsagePercent")
                         .HasColumnType("real");
 
@@ -114,6 +117,9 @@ namespace MudoSoft.Backend.Migrations
 
                     b.Property<DateTime>("FirstSeen")
                         .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("GpuModel")
+                        .HasColumnType("text");
 
                     b.Property<int>("HealthScore")
                         .HasColumnType("integer");
@@ -128,6 +134,9 @@ namespace MudoSoft.Backend.Migrations
 
                     b.Property<string>("IpAddress")
                         .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("LastLoggedInUser")
                         .HasColumnType("text");
 
                     b.Property<DateTime?>("LastSeen")
@@ -151,6 +160,15 @@ namespace MudoSoft.Backend.Migrations
 
                     b.Property<string>("StoreName")
                         .HasColumnType("text");
+
+                    b.Property<DateTime?>("SystemBootTime")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<long>("TotalDiskGB")
+                        .HasColumnType("bigint");
+
+                    b.Property<long>("TotalRamMB")
+                        .HasColumnType("bigint");
 
                     b.Property<int>("Type")
                         .HasColumnType("integer");

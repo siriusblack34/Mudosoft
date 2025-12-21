@@ -25,8 +25,9 @@ public class AgentService : IAgentService
 
     public async Task HandleHeartbeatAsync(DeviceHeartbeatDto dto)
     {
-        _logger.LogInformation("Heartbeat from {DeviceId} CPU:{Cpu} RAM:{Ram} DISK:{Disk}",
-            dto.DeviceId, dto.CpuUsage, dto.RamUsage, dto.DiskUsage);
+        _logger.LogInformation("Heartbeat from {DeviceId} CPU:{Cpu} RAM:{Ram} DISK:{Disk} | User:{User} BootTime:{Boot}",
+            dto.DeviceId, dto.CpuUsage, dto.RamUsage, dto.DiskUsage,
+            dto.LastLoggedInUser ?? "(null)", dto.UptimeSince);
 
         var device = await _dbContext.Devices.FindAsync(dto.DeviceId);
 
@@ -42,12 +43,13 @@ public class AgentService : IAgentService
             _dbContext.Devices.Add(device);
         }
 
-        // Genel bilgiler
+        // Basic Info
         device.Hostname = dto.Hostname;
         device.IpAddress = dto.IpAddress;
         device.Online = true;
         device.LastSeen = DateTime.UtcNow;
 
+        // System Info
         device.Os = dto.OsVersion;
         device.AgentVersion = dto.AgentVersion;
         device.PosVersion = dto.PosVersion;
@@ -57,7 +59,19 @@ public class AgentService : IAgentService
             ? storeCode
             : 0;
 
-        // Anlık metrik alanları
+        // Hardware Inventory
+        device.CpuModel = dto.CpuModel;
+        device.TotalRamMB = dto.TotalRamMB;
+        device.TotalDiskGB = dto.TotalDiskGB;
+        device.GpuModel = dto.GpuModel;
+
+        // User & Session
+        device.LastLoggedInUser = dto.LastLoggedInUser;
+
+        // Uptime (boot time)
+        device.SystemBootTime = dto.UptimeSince;
+
+        // Live Metrics
         device.CurrentCpuUsagePercent = (float)dto.CpuUsage;
         device.CurrentRamUsagePercent = (float)dto.RamUsage;
         device.CurrentDiskUsagePercent = (float)dto.DiskUsage;

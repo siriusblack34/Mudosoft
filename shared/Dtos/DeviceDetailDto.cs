@@ -16,9 +16,22 @@ namespace Mudosoft.Shared.Dtos
         public bool Online { get; set; }
         public string? LastSeen { get; set; }
 
+        // Live Metrics
         public int CpuUsage { get; set; }
         public int RamUsage { get; set; }
         public int DiskUsage { get; set; }
+
+        // Hardware Inventory
+        public string? CpuModel { get; set; }
+        public long TotalRamMB { get; set; }
+        public long TotalDiskGB { get; set; }
+        public string? GpuModel { get; set; }
+
+        // User & Session
+        public string? LastLoggedInUser { get; set; }
+
+        // Uptime
+        public string? SystemBootTime { get; set; }
 
         public string? SqlVersion { get; set; }
         public string? PosVersion { get; set; }
@@ -27,3 +40,4 @@ namespace Mudosoft.Shared.Dtos
         public IEnumerable<DeviceMetricDto>? Metrics { get; set; }
     }
 }
+

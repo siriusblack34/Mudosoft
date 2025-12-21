@@ -32,17 +32,26 @@ namespace MudoSoft.Backend.Models
         public string? PosVersion { get; set; }
         public string? AgentVersion { get; set; }
 
-        // ONLINE STATUS
+        // HARDWARE INVENTORY
+        public string? CpuModel { get; set; }
+        public long TotalRamMB { get; set; }
+        public long TotalDiskGB { get; set; }
+        public string? GpuModel { get; set; }
+
+        // USER & SESSION
+        public string? LastLoggedInUser { get; set; }
+
+        // ONLINE STATUS & TIMING
         public bool Online { get; set; }
         public DateTime FirstSeen { get; set; } = DateTime.UtcNow;
-        // LastSeen alanı HeartbeatWorker için zorunludur.
-        public DateTime? LastSeen { get; set; } 
+        public DateTime? LastSeen { get; set; }
+        public DateTime? SystemBootTime { get; set; } // For uptime calculation
 
         // HEALTH
         public string HealthStatus { get; set; } = "Unknown";
         public int HealthScore { get; set; } = 100;
         
-        // GÜNCELLEME: Canlı metrik sütunları
+        // LIVE METRICS
         public float CurrentCpuUsagePercent { get; set; }
         public float CurrentRamUsagePercent { get; set; }
         public float CurrentDiskUsagePercent { get; set; }

@@ -4,8 +4,18 @@
     <TargetFramework>net8.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>Mudosoft.Agent</RootNamespace>
+    <PublishReadyToRun>true</PublishReadyToRun>
+    <!-- Her zaman yönetici olarak çalışması için manifest -->
+    <ApplicationManifest>app.manifest</ApplicationManifest>
     <UserSecretsId>mudosoft-agent-dev</UserSecretsId>
     <Description>Mudosoft Level 3 Retail POS Agent</Description>
+    
+    <!-- Agent Version - Önemli: Her güncellemede artır! -->
+    <Version>1.0.0.6</Version>
+    <AssemblyVersion>1.0.0.6</AssemblyVersion>
+    <FileVersion>1.0.0.6</FileVersion>
 
     <GenerateEmbeddedFilesManifest>true</GenerateEmbeddedFilesManifest>
   </PropertyGroup>
@@ -18,6 +28,18 @@
     <PackageReference Include="System.Management" Version="8.0.0" />
     <PackageReference Include="Microsoft.Extensions.Http" Version="8.0.0" />
     <PackageReference Include="System.Diagnostics.PerformanceCounter" Version="8.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Remove="publish_**" />
+    <Compile Remove="publish_**" />
+    <EmbeddedResource Remove="publish_**" />
+    <None Remove="publish_**" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.SignalR.Client" Version="8.0.0" />
+    <PackageReference Include="System.Drawing.Common" Version="8.0.0" />
 
     <ProjectReference Include="..\shared\Mudosoft.Shared.csproj" />
 

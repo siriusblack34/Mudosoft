@@ -12,6 +12,11 @@ export interface DeviceMetricDataPoint {
     diskUsagePercent: number;
 }
 
+export interface ExecuteSqlQueryRequest {
+    deviceId: string;
+    query: string;
+}
+
 export interface CommandHistoryItem {
     commandId: string;
     deviceId: string;
@@ -42,7 +47,8 @@ export interface SqlDeviceWithStatus {
 // ==========================
 // BASE CONFIG
 // ==========================
-const API_BASE = "http://localhost:5102";
+export const API_BASE_URL = "http://localhost:5102";
+const API_BASE = API_BASE_URL;
 
 function buildUrl(url: string) {
     const cleanUrl = url.startsWith("/") ? url.substring(1) : url;
@@ -57,7 +63,12 @@ export const apiClient = {
     async get<T>(url: string): Promise<T> {
         const res = await fetch(buildUrl(url));
         if (!res.ok) {
-            throw new Error(`GET ${url} failed: ${res.status}`);
+            let errorMessage = `GET ${url} failed: ${res.status}`;
+            try {
+                const errorBody = await res.json();
+                if (errorBody?.error) errorMessage = errorBody.error;
+            } catch { } // ignore
+            throw new Error(errorMessage);
         }
         return res.json();
     },
@@ -69,7 +80,27 @@ export const apiClient = {
             body: data ? JSON.stringify(data) : undefined,
         });
         if (!res.ok) {
-            throw new Error(`POST ${url} failed: ${res.status}`);
+            let errorMessage = `POST ${url} failed: ${res.status}`;
+            try {
+                const errorBody = await res.json();
+                if (errorBody?.error) errorMessage = errorBody.error;
+            } catch { } // ignore
+            throw new Error(errorMessage);
+        }
+        return res.json();
+    },
+
+    async delete<T>(url: string): Promise<T> {
+        const res = await fetch(buildUrl(url), {
+            method: "DELETE",
+        });
+        if (!res.ok) {
+            let errorMessage = `DELETE ${url} failed: ${res.status}`;
+            try {
+                const errorBody = await res.json();
+                if (errorBody?.error) errorMessage = errorBody.error;
+            } catch { } // ignore
+            throw new Error(errorMessage);
         }
         return res.json();
     },
@@ -80,7 +111,7 @@ export const apiClient = {
     getDevices(): Promise<Device[]> {
         return this.get("/api/devices/inventory");
     },
-    
+
     getDevice(id: string): Promise<Device> {
         return this.get(`/api/devices/${id}`);
     },
@@ -102,5 +133,19 @@ export const apiClient = {
 
     runSqlQuery(deviceId: string, query: string) {
         return this.post("/api/sqlquery/execute", { deviceId, query });
+    },
+
+    // ==========================
+    // SCRIPTS
+    // ==========================
+    runScript(deviceId: string, script: string): Promise<{ commandId: string }> {
+        return this.post("/api/actions/run-script", { deviceId, script });
+    },
+
+    // ==========================
+    // DASHBOARD
+    // ==========================
+    getDashboard(): Promise<any> {
+        return this.get("/api/dashboard/summary");
     },
 };
