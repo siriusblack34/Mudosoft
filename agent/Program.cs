@@ -229,11 +229,18 @@ var hostBuilder = Host.CreateDefaultBuilder(args)
             services.AddHostedService<AgentWorker>();
             services.AddSingleton<ICommandExecutor, CommandExecutor>();
             services.AddSingleton<ICommandPoller, CommandPoller>(); 
-            services.AddSingleton<IHeartbeatSender, HeartbeatService>(); 
+            
+            // HeartbeatService - hem IHeartbeatSender hem de concrete type olarak kaydet (tray için)
+            services.AddSingleton<HeartbeatService>();
+            services.AddSingleton<IHeartbeatSender>(sp => sp.GetRequiredService<HeartbeatService>());
+            
             services.AddSingleton<IWatchdogManager, WatchdogManager>();
             services.AddSingleton<ISystemInfoService, SystemInfoService>(); 
             services.AddSingleton<IRsaKeyService, RsaKeyService>(); 
             services.AddSingleton<IAesEncryptionService, AesEncryptionService>();
+            
+            // Tray Communication - Named Pipe Server
+            services.AddHostedService<PipeServer>();
 
             // RemoteDesktopService - Mode'a göre stream veya launch
             services.AddHostedService<RemoteDesktopService>();

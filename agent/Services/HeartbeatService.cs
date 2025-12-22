@@ -28,6 +28,10 @@ public sealed class HeartbeatService : IHeartbeatSender
     private readonly IAesEncryptionService _aes; 
     private readonly IDeviceIdentityProvider _identityProvider; 
 
+    // Status properties for tray app
+    public DateTime LastHeartbeatUtc { get; private set; } = DateTime.MinValue;
+    public bool IsConnected { get; private set; } = false; 
+
     public HeartbeatService(
         IHttpClientFactory httpFactory,
         IOptions<AgentConfig> config,
@@ -119,13 +123,21 @@ public sealed class HeartbeatService : IHeartbeatSender
             var resp = await _http.SendAsync(request, token);
 
             if (resp.IsSuccessStatusCode)
+            {
                 _logger.LogInformation("💓 Heartbeat OK → {Code}", resp.StatusCode);
+                LastHeartbeatUtc = DateTime.UtcNow;
+                IsConnected = true;
+            }
             else
+            {
                 _logger.LogWarning("💔 Heartbeat FAILED → {Code} - {Body}", resp.StatusCode, await resp.Content.ReadAsStringAsync(token));
+                IsConnected = false;
+            }
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Heartbeat ERROR");
+            IsConnected = false;
         }
     }
     
