@@ -83,7 +83,7 @@ $apps | Sort-Object DisplayName -Unique | ConvertTo-Json -Compress
                     setLoading(false);
                     setError("Timeout waiting for software list");
                 }
-            }, 2000);
+            }, 300); // Reduced from 2000ms
 
         } catch (err) {
             console.error("Failed to get software:", err);

@@ -55,7 +55,7 @@ const RunScriptPanel: React.FC<RunScriptPanelProps> = ({ deviceId }) => {
                 setPolling(false);
                 setOutput(`Timeout: Command ${commandId} did not complete within 60 seconds. The agent may be offline or busy.`);
             }
-        }, 2000);
+        }, 300); // Reduced from 2000ms
     };
 
     const runScript = async () => {

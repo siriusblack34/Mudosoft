@@ -65,7 +65,7 @@ const ServicesPanel: React.FC<ServicesPanelProps> = ({ deviceId }) => {
             } catch (ignore) {
                 // Ignore errors during polling
             }
-        }, 1000);
+        }, 300); // Reduced from 1000ms
     };
 
     const parseServiceData = (jsonString: string) => {
