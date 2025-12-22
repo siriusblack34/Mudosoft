@@ -84,7 +84,7 @@ const FileManagerPage: React.FC = () => {
                     }
                 }
 
-                if (attempts >= 100) { // Increased to 100 (30s total)
+                if (attempts >= 6000) { // Increased to 6000 (~30 minutes) - effectively unlimited
                     if (pollRef.current) clearInterval(pollRef.current);
                     setLoading(false);
                     setError("Timeout waiting for file list");
