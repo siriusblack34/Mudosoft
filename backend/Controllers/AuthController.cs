@@ -31,9 +31,13 @@ public class AuthController : ControllerBase
         }
 
         // TODO: Gerçek kullanıcı doğrulaması yapılmalı (database'den)
-        // Şimdilik basit bir kontrol
-        var validUsername = _configuration["Jwt:AdminUsername"] ?? "admin";
-        var validPassword = _configuration["Jwt:AdminPassword"] ?? "***REMOVED***";
+        // 🔒 SECURITY: Credentials MUST be set via config or environment
+        var validUsername = _configuration["Jwt:AdminUsername"] 
+            ?? Environment.GetEnvironmentVariable("ADMIN_USERNAME")
+            ?? throw new InvalidOperationException("ADMIN_USERNAME is not configured");
+        var validPassword = _configuration["Jwt:AdminPassword"] 
+            ?? Environment.GetEnvironmentVariable("ADMIN_PASSWORD")
+            ?? throw new InvalidOperationException("ADMIN_PASSWORD is not configured");
 
         if (request.Username != validUsername || request.Password != validPassword)
         {
@@ -64,8 +68,10 @@ public class AuthController : ControllerBase
             return BadRequest(new { error = "DeviceId and ApiKey are required" });
         }
 
-        // TODO: Agent API key doğrulaması
-        var validApiKey = _configuration["Jwt:AgentApiKey"] ?? "***REMOVED***";
+        // 🔒 SECURITY: Agent API key MUST be set via config or environment
+        var validApiKey = _configuration["Jwt:AgentApiKey"] 
+            ?? Environment.GetEnvironmentVariable("AGENT_API_KEY")
+            ?? throw new InvalidOperationException("AGENT_API_KEY is not configured");
 
         if (request.ApiKey != validApiKey)
         {
@@ -110,7 +116,9 @@ public class AuthController : ControllerBase
 
     private string GenerateJwtToken(string username)
     {
-        var key = _configuration["Jwt:Key"] ?? "***REMOVED***";
+        var key = _configuration["Jwt:Key"] 
+            ?? Environment.GetEnvironmentVariable("JWT_SECRET_KEY")
+            ?? throw new InvalidOperationException("JWT_SECRET_KEY is not configured");
         var issuer = _configuration["Jwt:Issuer"] ?? "MudoSoft";
         var audience = _configuration["Jwt:Audience"] ?? "MudoSoftUsers";
 
@@ -138,7 +146,9 @@ public class AuthController : ControllerBase
 
     private string GenerateAgentToken(string deviceId)
     {
-        var key = _configuration["Jwt:Key"] ?? "***REMOVED***";
+        var key = _configuration["Jwt:Key"] 
+            ?? Environment.GetEnvironmentVariable("JWT_SECRET_KEY")
+            ?? throw new InvalidOperationException("JWT_SECRET_KEY is not configured");
         var issuer = _configuration["Jwt:Issuer"] ?? "MudoSoft";
         var audience = _configuration["Jwt:Audience"] ?? "MudoSoftAgents";
 

@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using MudoSoft.Backend.Data;
 using MudoSoft.Backend.Models;
 
@@ -13,13 +14,19 @@ namespace MudoSoft.Backend.Services
     public class StoreDiscoveryService : IStoreDiscoveryService
     {
         private readonly MudoSoftDbContext _dbContext;
+        private readonly IConfiguration _configuration;
 
-        private const string DbUser = "GENIUS3";
-        private const string DbPass = "***REMOVED***";
+        // 🔒 Credentials from environment variables
+        private string DbUser => _configuration["GeniusDb:Username"] ?? 
+            Environment.GetEnvironmentVariable("GENIUS_DB_USER") ?? "GENIUS3";
+        private string DbPass => _configuration["GeniusDb:Password"] ?? 
+            Environment.GetEnvironmentVariable("GENIUS_DB_PASSWORD") ?? 
+            throw new InvalidOperationException("GENIUS_DB_PASSWORD environment variable is not set");
 
-        public StoreDiscoveryService(MudoSoftDbContext dbContext)
+        public StoreDiscoveryService(MudoSoftDbContext dbContext, IConfiguration configuration)
         {
             _dbContext = dbContext;
+            _configuration = configuration;
         }
 
         private string CalculateIpAddress(int storeCode, string deviceType)
