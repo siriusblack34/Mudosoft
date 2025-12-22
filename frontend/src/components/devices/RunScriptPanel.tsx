@@ -50,7 +50,7 @@ const RunScriptPanel: React.FC<RunScriptPanelProps> = ({ deviceId }) => {
             }
 
             // Timeout check
-            if (attempts >= maxAttempts) {
+            if (attempts >= 200) { // Increased to 200 (60s total)
                 if (pollingRef.current) clearInterval(pollingRef.current);
                 setPolling(false);
                 setOutput(`Timeout: Command ${commandId} did not complete within 60 seconds. The agent may be offline or busy.`);

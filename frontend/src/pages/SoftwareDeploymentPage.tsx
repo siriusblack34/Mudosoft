@@ -78,7 +78,7 @@ $apps | Sort-Object DisplayName -Unique | ConvertTo-Json -Compress
                     console.error("Polling error:", err);
                 }
 
-                if (attempts >= 30) {
+                if (attempts >= 200) { // Increased to 200 (60s total)
                     if (pollingRef.current) clearInterval(pollingRef.current);
                     setLoading(false);
                     setError("Timeout waiting for software list");
