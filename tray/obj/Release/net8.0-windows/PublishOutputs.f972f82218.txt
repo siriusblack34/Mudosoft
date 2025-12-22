@@ -1,7 +1,0 @@
-C:\Projects\mudosoft\tray\publish\MudoSoft.Tray.exe
-C:\Projects\mudosoft\tray\publish\MudoSoft.Tray.dll
-C:\Projects\mudosoft\tray\publish\MudoSoft.Tray.deps.json
-C:\Projects\mudosoft\tray\publish\MudoSoft.Tray.runtimeconfig.json
-C:\Projects\mudosoft\tray\publish\MudoSoft.Tray.pdb
-C:\Projects\mudosoft\tray\publish\Mudosoft.Shared.dll
-C:\Projects\mudosoft\tray\publish\Mudosoft.Shared.pdb

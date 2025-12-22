@@ -1,7 +1,19 @@
-/backend/bin/
-/backend/obj/
-/agent/bin/
-/agent/obj/
-/shared/bin/
-/shared/obj/
+# Build outputs
+**/bin/
+**/obj/
+**/publish/
+
+# Release and publish artifacts
+/release/
+/agent/publish_with_tray/
+
+# Node modules
 /frontend/node_modules/
+
+# IDE
+.vs/
+*.user
+
+# OS
+Thumbs.db
+.DS_Store
