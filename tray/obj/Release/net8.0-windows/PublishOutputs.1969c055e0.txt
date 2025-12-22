@@ -1,0 +1,7 @@
+C:\Projects\mudosoft\release\tray_temp\MudoSoft.Tray.exe
+C:\Projects\mudosoft\release\tray_temp\MudoSoft.Tray.dll
+C:\Projects\mudosoft\release\tray_temp\MudoSoft.Tray.deps.json
+C:\Projects\mudosoft\release\tray_temp\MudoSoft.Tray.runtimeconfig.json
+C:\Projects\mudosoft\release\tray_temp\MudoSoft.Tray.pdb
+C:\Projects\mudosoft\release\tray_temp\Mudosoft.Shared.dll
+C:\Projects\mudosoft\release\tray_temp\Mudosoft.Shared.pdb
