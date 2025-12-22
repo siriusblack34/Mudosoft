@@ -76,6 +76,7 @@ public class AgentController : ControllerBase
     }
 
     // 🧪 Test command enqueue
+    [AllowAnonymous] // Frontend access for testing
     [HttpPost("enqueue-test-command")]
     public IActionResult EnqueueTestCommand(string deviceId)
     {
@@ -91,6 +92,7 @@ public class AgentController : ControllerBase
     }
 
     // 🏆 Ön Uca: Son Komut Sonucu
+    [AllowAnonymous] // Frontend access for command results
     [HttpGet("command-results/latest")]
     public async Task<ActionResult<CommandResultRecord>> GetLatestCommandResult([FromQuery] string deviceId)
     {
@@ -113,6 +115,7 @@ public class AgentController : ControllerBase
     /// <summary>
     /// List directory contents
     /// </summary>
+    [AllowAnonymous] // Frontend File Manager access
     [HttpPost("files/list")]
     public IActionResult FileList([FromQuery] string deviceId, [FromQuery] string path)
     {
@@ -135,6 +138,7 @@ public class AgentController : ControllerBase
     /// <summary>
     /// Create a new folder
     /// </summary>
+    [AllowAnonymous] // Frontend File Manager access
     [HttpPost("files/mkdir")]
     public IActionResult FolderCreate([FromQuery] string deviceId, [FromQuery] string path)
     {
@@ -157,6 +161,7 @@ public class AgentController : ControllerBase
     /// <summary>
     /// Delete file or folder
     /// </summary>
+    [AllowAnonymous] // Frontend File Manager access
     [HttpDelete("files")]
     public IActionResult FileDelete([FromQuery] string deviceId, [FromQuery] string path)
     {
@@ -179,6 +184,7 @@ public class AgentController : ControllerBase
     /// <summary>
     /// Upload file (content as base64)
     /// </summary>
+    [AllowAnonymous] // Frontend File Manager access
     [HttpPost("files/upload")]
     public IActionResult FileUpload([FromQuery] string deviceId, [FromBody] FileUploadRequest request)
     {
@@ -203,6 +209,7 @@ public class AgentController : ControllerBase
     /// <summary>
     /// Download file (returns base64 content via command result)
     /// </summary>
+    [AllowAnonymous] // Frontend File Manager access
     [HttpPost("files/download")]
     public IActionResult FileDownload([FromQuery] string deviceId, [FromQuery] string path)
     {
@@ -225,6 +232,7 @@ public class AgentController : ControllerBase
     /// <summary>
     /// Get command result by ID (for file operations)
     /// </summary>
+    [AllowAnonymous] // Frontend access for polling command results
     [HttpGet("command-results/{commandId}")]
     public async Task<ActionResult<CommandResultRecord>> GetCommandResult(Guid commandId)
     {
