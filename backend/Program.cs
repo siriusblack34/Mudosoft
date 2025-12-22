@@ -24,12 +24,12 @@ builder.Services.Configure<IpRateLimitOptions>(options =>
     options.ClientIdHeader = "X-ClientId";
     options.GeneralRules = new List<RateLimitRule>
     {
-        // Genel API limiti: dakikada 100 istek
+        // Genel API limiti: dakikada 400 istek
         new RateLimitRule
         {
             Endpoint = "*",
             Period = "1m",
-            Limit = 100
+            Limit = 400
         },
         // Login endpoint: dakikada 10 deneme (brute-force koruması)
         new RateLimitRule
@@ -38,12 +38,12 @@ builder.Services.Configure<IpRateLimitOptions>(options =>
             Period = "1m",
             Limit = 10
         },
-        // SQL query: dakikada 30 istek
+        // SQL query: dakikada 400 istek (çoklu cihaz desteği için)
         new RateLimitRule
         {
             Endpoint = "*:/api/sqlquery/*",
             Period = "1m",
-            Limit = 30
+            Limit = 400
         }
     };
 });

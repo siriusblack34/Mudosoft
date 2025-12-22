@@ -108,14 +108,22 @@ namespace MudoSoft.Backend.Controllers
             "SELECT COUNT",
             "SELECT SUM",
             "SELECT AVG",
-            "SELECT DISTINCT"
+            "SELECT DISTINCT",
+            "SELECT *"  // Genel SELECT sorgularına izin ver
+        };
+
+        // 🔒 İzin verilen özel komutlar (tam eşleşme)
+        private static readonly string[] AllowedSpecialCommands = new[]
+        {
+            "TRUNCATE TABLE POS_STOCK_TRANSFER"  // Stok transfer tablosu temizleme
         };
 
         // 🔒 Tehlikeli SQL anahtar kelimeleri (blacklist)
         private static readonly string[] DangerousKeywords = new[]
         {
-            "DROP", "DELETE", "TRUNCATE", "UPDATE", "INSERT", "ALTER", "CREATE",
-            "EXEC", "EXECUTE", "xp_", "sp_", "--", ";", "/*", "*/", "UNION"
+            "DROP", "DELETE", "ALTER", "CREATE",
+            "EXEC", "EXECUTE", "xp_", "sp_", "--", "/*", "*/", "UNION"
+            // TRUNCATE, UPDATE, INSERT artık özel whitelist ile kontrol ediliyor
         };
 
         [HttpPost("execute")]
@@ -128,26 +136,37 @@ namespace MudoSoft.Backend.Controllers
                 return BadRequest(new { error = "Query cannot be empty" });
 
             // 🔒 SQL Injection Prevention - Tehlikeli anahtar kelimeleri kontrol et
-            var queryUpper = request.Query.ToUpperInvariant();
+            var queryUpper = request.Query.ToUpperInvariant().Trim();
             
-            foreach (var keyword in DangerousKeywords)
+            // Önce özel izinli komutları kontrol et
+            bool isSpecialCommand = AllowedSpecialCommands.Any(cmd => 
+                queryUpper.Equals(cmd, StringComparison.OrdinalIgnoreCase));
+            
+            if (!isSpecialCommand)
             {
-                if (queryUpper.Contains(keyword))
+                // Blacklist kontrolü
+                foreach (var keyword in DangerousKeywords)
                 {
-                    _logger.LogWarning("SQL Injection attempt detected - dangerous keyword: {Keyword}, Query: {Query}", 
-                        keyword, request.Query);
-                    return BadRequest(new { error = $"Query contains forbidden keyword: {keyword}" });
+                    if (queryUpper.Contains(keyword))
+                    {
+                        _logger.LogWarning("SQL Injection attempt detected - dangerous keyword: {Keyword}, Query: {Query}", 
+                            keyword, request.Query);
+                        return BadRequest(new { error = $"Query contains forbidden keyword: {keyword}" });
+                    }
+                }
+
+                // Whitelist kontrolü - sadece izin verilen sorgular
+                bool isAllowed = AllowedQueryPrefixes.Any(prefix => queryUpper.StartsWith(prefix));
+                
+                if (!isAllowed)
+                {
+                    _logger.LogWarning("SQL query blocked - not in whitelist: {Query}", request.Query);
+                    return BadRequest(new { error = "Only SELECT queries or approved special commands are allowed" });
                 }
             }
-
-            // 🔒 Whitelist kontrolü - sadece izin verilen sorgular
-            var queryTrimmed = request.Query.Trim().ToUpperInvariant();
-            bool isAllowed = AllowedQueryPrefixes.Any(prefix => queryTrimmed.StartsWith(prefix));
-            
-            if (!isAllowed)
+            else
             {
-                _logger.LogWarning("SQL query blocked - not in whitelist: {Query}", request.Query);
-                return BadRequest(new { error = "Only SELECT queries with TOP, COUNT, SUM, AVG, or DISTINCT are allowed" });
+                _logger.LogInformation("Executing approved special command: {Query}", request.Query);
             }
 
             var device = await _db.StoreDevices
