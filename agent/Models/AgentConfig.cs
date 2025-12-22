@@ -11,9 +11,9 @@ public sealed class AgentConfig
     // 🏆 KRİTİK EKLEME: StoreCode eklendi
     public string? StoreCode { get; set; } 
 
-    // ✅ AgentWorker'daki Hataları Çözen eski int tipleri
-    public int HeartbeatIntervalSeconds { get; set; } = 10;
-    public int CommandPollIntervalSeconds { get; set; } = 10;
+    // ✅ OPTIMIZED: Changed to double for sub-second intervals
+    public double HeartbeatIntervalSeconds { get; set; } = 5;
+    public double CommandPollIntervalSeconds { get; set; } = 0.5; // 500ms for fast File Manager
 
     // İstersen sabit IP override etmek için (opsiyonel)
     public string? IpAddress { get; set; }

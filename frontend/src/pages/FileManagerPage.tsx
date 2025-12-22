@@ -89,7 +89,7 @@ const FileManagerPage: React.FC = () => {
                     setLoading(false);
                     setError("Timeout waiting for file list");
                 }
-            }, 1000);
+            }, 300); // Reduced from 1000ms for faster response
 
         } catch (err: any) {
             console.error("Failed to list directory:", err);
@@ -135,7 +135,7 @@ const FileManagerPage: React.FC = () => {
             await apiClient.post(`/api/agent/files/mkdir?deviceId=${deviceId}&path=${encodeURIComponent(folderPath)}`);
             setShowNewFolderDialog(false);
             setNewFolderName("");
-            setTimeout(() => loadDirectory(currentPath), 1500);
+            setTimeout(() => loadDirectory(currentPath), 500); // Reduced from 1500ms
         } catch (err) {
             console.error("Failed to create folder:", err);
         }
@@ -148,7 +148,7 @@ const FileManagerPage: React.FC = () => {
 
         try {
             await apiClient.delete(`/api/agent/files?deviceId=${deviceId}&path=${encodeURIComponent(item.fullPath)}`);
-            setTimeout(() => loadDirectory(currentPath), 1500);
+            setTimeout(() => loadDirectory(currentPath), 500); // Reduced from 1500ms
         } catch (err) {
             console.error("Failed to delete:", err);
         }
@@ -165,7 +165,7 @@ const FileManagerPage: React.FC = () => {
             // Poll for result
             const checkResult = async () => {
                 for (let i = 0; i < 30; i++) {
-                    await new Promise(r => setTimeout(r, 1000));
+                    await new Promise(r => setTimeout(r, 300)); // Reduced from 1000ms
                     try {
                         const result = await apiClient.get<any>(`/api/agent/command-results/${res.commandId}`);
                         if (result && result.success) {
@@ -208,7 +208,7 @@ const FileManagerPage: React.FC = () => {
                     path: targetPath,
                     content: base64
                 });
-                setTimeout(() => loadDirectory(currentPath), 1500);
+                setTimeout(() => loadDirectory(currentPath), 500); // Reduced from 1500ms
             } catch (err) {
                 console.error("Failed to upload:", err);
             }
