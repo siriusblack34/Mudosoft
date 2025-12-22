@@ -9,6 +9,26 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using System.Text;
 using AspNetCoreRateLimit;
+using DotNetEnv;
+
+// 🔧 Load environment variables from .env file
+var backendEnvPath = Path.Combine(Directory.GetCurrentDirectory(), ".env");
+var rootEnvPath = Path.Combine(Directory.GetCurrentDirectory(), "..", ".env");
+
+if (File.Exists(backendEnvPath))
+{
+    Env.Load(backendEnvPath);
+    Console.WriteLine($"✅ Loaded .env from: {backendEnvPath}");
+}
+else if (File.Exists(rootEnvPath))
+{
+    Env.Load(rootEnvPath);
+    Console.WriteLine($"✅ Loaded .env from: {Path.GetFullPath(rootEnvPath)}");
+}
+else
+{
+    Console.WriteLine("⚠️ No .env file found. Using system environment variables.");
+}
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -116,10 +136,18 @@ builder.Services.AddCors(options =>
     });
 });
 
-// DB
+// DB - Build connection string with environment variable
+var dbPassword = Environment.GetEnvironmentVariable("DB_PASSWORD") 
+    ?? throw new InvalidOperationException("DB_PASSWORD environment variable is not set. Please configure it in .env file.");
+var connectionString = builder.Configuration.GetConnectionString("DefaultConnection")
+    ?.Replace("${DB_PASSWORD}", dbPassword)
+    ?? $"Host=localhost;Port=5432;Database=mudosoft;Username=postgres;Password={dbPassword};";
+
+Console.WriteLine($"🗄️ Database connection configured (password length: {dbPassword.Length} chars)");
+
 builder.Services.AddDbContext<MudoSoftDbContext>(options =>
 {
-    options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection"));
+    options.UseNpgsql(connectionString);
 });
 
 builder.Services.AddControllers();

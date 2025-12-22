@@ -33,6 +33,7 @@ namespace MudoSoft.Backend.Controllers
         // ===========================================================
         // 0) TÜM CİHAZLAR (ENVANTER)
         // ===========================================================
+        [AllowAnonymous] // Device list doesn't need authentication
         [HttpGet("devices/all")]
         public async Task<IActionResult> GetAllDevices()
         {
@@ -54,6 +55,7 @@ namespace MudoSoft.Backend.Controllers
         // ===========================================================
         // 1) TÜM CİHAZLAR + ONLINE / OFFLINE (TEK DOĞRU ENDPOINT)
         // ===========================================================
+        [AllowAnonymous] // Device status list doesn't need authentication
         [HttpGet("devices/with-status")]
         public async Task<IActionResult> GetDevicesWithStatus(
             [FromQuery] int timeoutMs = 500,
