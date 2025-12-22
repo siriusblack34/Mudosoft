@@ -8,8 +8,51 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using System.Text;
+using AspNetCoreRateLimit;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// ================== RATE LIMITING ==================
+// 🔒 SECURITY: API rate limiting to prevent abuse
+builder.Services.AddMemoryCache();
+builder.Services.Configure<IpRateLimitOptions>(options =>
+{
+    options.EnableEndpointRateLimiting = true;
+    options.StackBlockedRequests = false;
+    options.HttpStatusCode = 429;
+    options.RealIpHeader = "X-Real-IP";
+    options.ClientIdHeader = "X-ClientId";
+    options.GeneralRules = new List<RateLimitRule>
+    {
+        // Genel API limiti: dakikada 100 istek
+        new RateLimitRule
+        {
+            Endpoint = "*",
+            Period = "1m",
+            Limit = 100
+        },
+        // Login endpoint: dakikada 10 deneme (brute-force koruması)
+        new RateLimitRule
+        {
+            Endpoint = "*:/api/auth/login",
+            Period = "1m",
+            Limit = 10
+        },
+        // SQL query: dakikada 30 istek
+        new RateLimitRule
+        {
+            Endpoint = "*:/api/sqlquery/*",
+            Period = "1m",
+            Limit = 30
+        }
+    };
+});
+builder.Services.AddSingleton<IIpPolicyStore, MemoryCacheIpPolicyStore>();
+builder.Services.AddSingleton<IRateLimitCounterStore, MemoryCacheRateLimitCounterStore>();
+builder.Services.AddSingleton<IRateLimitConfiguration, RateLimitConfiguration>();
+builder.Services.AddSingleton<IProcessingStrategy, AsyncKeyLockProcessingStrategy>();
+builder.Services.AddInMemoryRateLimiting();
+
 
 // ================== JWT AUTHENTICATION ==================
 // 🔒 SECURITY: JWT key MUST be set via environment variable or config
@@ -58,14 +101,17 @@ builder.Services.AddAuthorization();
 
 // ================== SERVICES ==================
 
-// CORS
+// 🔒 SECURITY: Strict CORS Policy
+var allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() 
+    ?? new[] { "http://localhost:5173" };
+
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("MyCorsPolicy", policy =>
     {
-        policy.WithOrigins("http://localhost:5173")
-              .AllowAnyHeader()
-              .AllowAnyMethod()
+        policy.WithOrigins(allowedOrigins)
+              .WithMethods("GET", "POST", "PUT", "DELETE") // Sadece gerekli methodlar
+              .WithHeaders("Content-Type", "Authorization", "X-Encrypted", "X-ClientId") // Sadece gerekli header'lar
               .AllowCredentials(); // SignalR için ZORUNLU
     });
 });
@@ -122,6 +168,15 @@ if (app.Environment.IsDevelopment())
     app.UseSwagger();
     app.UseSwaggerUI();
 }
+else
+{
+    // 🔒 SECURITY: Force HTTPS in production
+    app.UseHttpsRedirection();
+    app.UseHsts();
+}
+
+// 🔒 SECURITY: Rate limiting (before routing)
+app.UseIpRateLimiting();
 
 app.UseRouting();
 app.UseCors("MyCorsPolicy");
