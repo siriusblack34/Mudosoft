@@ -128,6 +128,7 @@ namespace MudoSoft.Backend.Controllers
             // TRUNCATE, UPDATE, INSERT artık özel whitelist ile kontrol ediliyor
         };
 
+        [AllowAnonymous] // SQL execution allowed for frontend - queries are validated by whitelist
         [HttpPost("execute")]
         public async Task<IActionResult> ExecuteQuery([FromBody] ExecuteSqlQueryRequest request)
         {
