@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
 using Mudosoft.Shared.Dtos;
 using Mudosoft.Shared.Enums;
@@ -9,6 +10,7 @@ using MudoSoft.Backend.Models;
 namespace MudoSoft.Backend.Controllers;
 
 [ApiController]
+[Authorize] // 🔒 Authentication required by default
 [Route("api/agent")]
 public class AgentController : ControllerBase
 {
@@ -30,7 +32,8 @@ public class AgentController : ControllerBase
     }
 
     // ❤️ Heartbeat (decrypt edilmiş DTO middleware'den gelir)
-    // 🔥 DÜZELTME: Endpoint adı 'report' olarak değiştirildi (AgentWorker ile eşleşmesi için)
+    // 🔥 Agent'lar RSA/AES şifreleme ile authenticate oluyor
+    [AllowAnonymous] // Agent encrypted payload ile iletişim kuruyor
     [HttpPost("report")] 
     public async Task<IActionResult> Heartbeat([FromBody] DeviceHeartbeatDto dto)
     {
@@ -43,6 +46,7 @@ public class AgentController : ControllerBase
 
 
     // 📥 Commands Poll
+    [AllowAnonymous] // Agent encrypted payload ile iletişim kuruyor
     [HttpGet("commands")]
     public async Task<ActionResult<List<CommandDto>>> GetCommands([FromQuery] string deviceId)
     {
@@ -54,6 +58,7 @@ public class AgentController : ControllerBase
     }
 
     // 📤 Command Result
+    [AllowAnonymous] // Agent encrypted payload ile iletişim kuruyor
     [HttpPost("command-result")]
     public async Task<IActionResult> CommandResult([FromBody] CommandResultDto result)
     {
@@ -62,6 +67,7 @@ public class AgentController : ControllerBase
     }
 
     // 🚨 Events
+    [AllowAnonymous] // Agent encrypted payload ile iletişim kuruyor
     [HttpPost("events")]
     public async Task<IActionResult> Events([FromBody] DeviceEventDto evt)
     {

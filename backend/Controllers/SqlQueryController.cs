@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using MudoSoft.Backend.Data;
@@ -8,6 +9,7 @@ using MudoSoft.Backend.Services;
 namespace MudoSoft.Backend.Controllers
 {
     [ApiController]
+    [Authorize] // 🔒 Authentication required
     [Route("api/sqlquery")]
     public class SqlQueryController : ControllerBase
     {
@@ -96,13 +98,57 @@ namespace MudoSoft.Backend.Controllers
         }
 
         // ===========================================================
-        // 2) SQL SORGUSU ÇALIŞTIR
+        // 2) SQL SORGUSU ÇALIŞTIR (🔒 WHITELIST + VALIDATION)
         // ===========================================================
+        
+        // 🔒 İzin verilen SQL sorgu başlangıçları (whitelist)
+        private static readonly string[] AllowedQueryPrefixes = new[]
+        {
+            "SELECT TOP",
+            "SELECT COUNT",
+            "SELECT SUM",
+            "SELECT AVG",
+            "SELECT DISTINCT"
+        };
+
+        // 🔒 Tehlikeli SQL anahtar kelimeleri (blacklist)
+        private static readonly string[] DangerousKeywords = new[]
+        {
+            "DROP", "DELETE", "TRUNCATE", "UPDATE", "INSERT", "ALTER", "CREATE",
+            "EXEC", "EXECUTE", "xp_", "sp_", "--", ";", "/*", "*/", "UNION"
+        };
+
         [HttpPost("execute")]
         public async Task<IActionResult> ExecuteQuery([FromBody] ExecuteSqlQueryRequest request)
         {
             if (!ModelState.IsValid)
                 return BadRequest(new { error = "ModelState invalid" });
+
+            if (string.IsNullOrWhiteSpace(request.Query))
+                return BadRequest(new { error = "Query cannot be empty" });
+
+            // 🔒 SQL Injection Prevention - Tehlikeli anahtar kelimeleri kontrol et
+            var queryUpper = request.Query.ToUpperInvariant();
+            
+            foreach (var keyword in DangerousKeywords)
+            {
+                if (queryUpper.Contains(keyword))
+                {
+                    _logger.LogWarning("SQL Injection attempt detected - dangerous keyword: {Keyword}, Query: {Query}", 
+                        keyword, request.Query);
+                    return BadRequest(new { error = $"Query contains forbidden keyword: {keyword}" });
+                }
+            }
+
+            // 🔒 Whitelist kontrolü - sadece izin verilen sorgular
+            var queryTrimmed = request.Query.Trim().ToUpperInvariant();
+            bool isAllowed = AllowedQueryPrefixes.Any(prefix => queryTrimmed.StartsWith(prefix));
+            
+            if (!isAllowed)
+            {
+                _logger.LogWarning("SQL query blocked - not in whitelist: {Query}", request.Query);
+                return BadRequest(new { error = "Only SELECT queries with TOP, COUNT, SUM, AVG, or DISTINCT are allowed" });
+            }
 
             var device = await _db.StoreDevices
                 .AsNoTracking()
@@ -123,8 +169,9 @@ namespace MudoSoft.Backend.Controllers
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "SQL error");
-                return BadRequest(new { error = ex.Message });
+                _logger.LogError(ex, "SQL error for device {DeviceId}", request.DeviceId);
+                // 🔒 Don't expose internal error details
+                return BadRequest(new { error = "Query execution failed. Please check your query syntax." });
             }
         }
     }

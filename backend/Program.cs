@@ -3,10 +3,55 @@ using MudoSoft.Backend.Data;
 using MudoSoft.Backend.Models;
 using MudoSoft.Backend.Services;
 using MudoSoft.Backend.Crypto;
-using MudoSoft.Backend.Middleware; 
+using MudoSoft.Backend.Middleware;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.IdentityModel.Tokens;
+using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// ================== JWT AUTHENTICATION ==================
+var jwtKey = builder.Configuration["Jwt:Key"] ?? "***REMOVED***";
+var jwtIssuer = builder.Configuration["Jwt:Issuer"] ?? "MudoSoft";
+var jwtAudience = builder.Configuration["Jwt:Audience"] ?? "MudoSoftUsers";
+
+builder.Services.AddAuthentication(options =>
+{
+    options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
+    options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
+})
+.AddJwtBearer(options =>
+{
+    options.TokenValidationParameters = new TokenValidationParameters
+    {
+        ValidateIssuer = true,
+        ValidateAudience = true,
+        ValidateLifetime = true,
+        ValidateIssuerSigningKey = true,
+        ValidIssuer = jwtIssuer,
+        ValidAudience = jwtAudience,
+        IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey)),
+        ClockSkew = TimeSpan.Zero // Token expiry anında geçersiz olsun
+    };
+    
+    // SignalR için token desteği
+    options.Events = new JwtBearerEvents
+    {
+        OnMessageReceived = context =>
+        {
+            var accessToken = context.Request.Query["access_token"];
+            var path = context.HttpContext.Request.Path;
+            if (!string.IsNullOrEmpty(accessToken) && path.StartsWithSegments("/hubs"))
+            {
+                context.Token = accessToken;
+            }
+            return Task.CompletedTask;
+        }
+    };
+});
+
+builder.Services.AddAuthorization();
 
 // ================== SERVICES ==================
 
@@ -78,9 +123,21 @@ if (app.Environment.IsDevelopment())
 app.UseRouting();
 app.UseCors("MyCorsPolicy");
 
+// Security Headers
+app.Use(async (context, next) =>
+{
+    context.Response.Headers.Append("X-Content-Type-Options", "nosniff");
+    context.Response.Headers.Append("X-Frame-Options", "DENY");
+    context.Response.Headers.Append("X-XSS-Protection", "1; mode=block");
+    context.Response.Headers.Append("Referrer-Policy", "strict-origin-when-cross-origin");
+    await next();
+});
+
 // Şifre çözme işlemi, yetkilendirme ve kontrolörlere ulaşmadan önce burada gerçekleşir
 app.UseMiddleware<EncryptedPayloadMiddleware>(); 
 
+// Authentication & Authorization
+app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
 // Hub Mapping
