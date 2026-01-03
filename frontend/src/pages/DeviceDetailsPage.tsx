@@ -104,8 +104,8 @@ const DeviceDetailsPage: React.FC = () => {
 
         setRestarting(true);
         try {
-            await apiClient.runScript(deviceId, 'shutdown /r /t 5 /c "Restart initiated by MudoSoft Admin"');
-            alert('Restart command sent! The computer will restart in 5 seconds.');
+            await apiClient.runScript(deviceId, 'shutdown /r /t 0');
+            alert('Restart komutu gönderildi! Bilgisayar şimdi yeniden başlatılıyor.');
         } catch (err) {
             console.error('Restart failed:', err);
             alert('Failed to send restart command.');

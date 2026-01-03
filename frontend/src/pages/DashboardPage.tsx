@@ -1,18 +1,9 @@
 import React, { useEffect, useState } from "react";
 import { apiClient, SqlDeviceWithStatus } from "../lib/apiClient";
 import {
-    Monitor, Wifi, WifiOff, RefreshCw, Server, Activity,
-    AlertTriangle, CheckCircle, Clock, TrendingUp, Zap,
-    ChevronRight, Database
+    Monitor, Wifi, WifiOff, RefreshCw, Activity,
+    CheckCircle, Clock, Server, MonitorSmartphone
 } from "lucide-react";
-
-interface RecentOfflineDevice {
-    hostname: string;
-    ip: string;
-    os: string;
-    store: number;
-    lastSeen: string;
-}
 
 interface DashboardData {
     totalDevices: number;
@@ -21,7 +12,6 @@ interface DashboardData {
     healthy: number;
     warning: number;
     critical: number;
-    recentOffline: RecentOfflineDevice[];
 }
 
 const DashboardPage: React.FC = () => {
@@ -40,14 +30,7 @@ const DashboardPage: React.FC = () => {
                 offline: res.offline,
                 healthy: res.healthy,
                 warning: res.warning,
-                critical: res.critical,
-                recentOffline: res.recentOffline?.map((d: any) => ({
-                    hostname: d.hostname,
-                    ip: d.ip ?? d.ipAddress,
-                    os: d.os,
-                    store: d.store ?? d.storeCode,
-                    lastSeen: d.lastSeen
-                })) || []
+                critical: res.critical
             });
             setLastUpdated(new Date());
         } catch (err) {
@@ -72,261 +55,229 @@ const DashboardPage: React.FC = () => {
     useEffect(() => {
         loadDashboard();
         loadSqlDevices();
+        // Refresh every 30 seconds (no live SignalR needed)
         const interval = setInterval(() => {
             loadDashboard();
             loadSqlDevices();
         }, 30000);
+
         return () => clearInterval(interval);
     }, []);
 
-    const sqlOnline = sqlDevices.filter(d => d.isOnline).length;
-    const sqlOffline = sqlDevices.filter(d => !d.isOnline).length;
-    const sqlTotal = sqlDevices.length;
-    const sqlOnlinePercent = sqlTotal > 0 ? ((sqlOnline / sqlTotal) * 100).toFixed(0) : "0";
-
-    const formatTime = (date: Date) => {
-        return date.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
-    };
-
-    const formatLastSeen = (dateStr: string) => {
-        if (!dateStr) return "-";
-        const date = new Date(dateStr);
-        const now = new Date();
-        const diffMs = now.getTime() - date.getTime();
-        const diffMins = Math.floor(diffMs / 60000);
-        if (diffMins < 60) return `${diffMins}d önce`;
-        const diffHours = Math.floor(diffMins / 60);
-        if (diffHours < 24) return `${diffHours}s önce`;
-        return `${Math.floor(diffHours / 24)}g önce`;
-    };
+    // SQL Device counts by type
+    const pcDevices = sqlDevices.filter(d => d.deviceType?.toUpperCase() === 'PC');
+    const posDevices = sqlDevices.filter(d => d.deviceType?.toUpperCase() !== 'PC');
+    const pcOnline = pcDevices.filter(d => d.isOnline).length;
+    const pcOffline = pcDevices.length - pcOnline;
+    const posOnline = posDevices.filter(d => d.isOnline).length;
+    const posOffline = posDevices.length - posOnline;
 
     if (loading && !data) {
         return (
-            <div className="flex h-screen items-center justify-center">
+            <div className="flex h-screen items-center justify-center bg-[#0f172a]">
                 <div className="w-8 h-8 border-2 border-sky-500 border-t-transparent rounded-full animate-spin" />
             </div>
         );
     }
 
     return (
-        <div className="p-6 space-y-5">
+        <div className="p-6 space-y-6 bg-[#0f172a] min-h-screen text-slate-200">
             {/* Header */}
             <div className="flex items-center justify-between">
                 <div>
-                    <h1 className="text-xl font-semibold text-white">Dashboard</h1>
-                    <p className="text-sm text-slate-400">Son güncelleme: {formatTime(lastUpdated)}</p>
+                    <h1 className="text-2xl font-bold text-white tracking-tight flex items-center gap-2">
+                        <Activity className="text-sky-500" />
+                        Dashboard
+                    </h1>
+                    <p className="text-sm text-slate-400">Sistem Durumu Özeti</p>
                 </div>
-                <button
-                    onClick={() => { loadDashboard(); loadSqlDevices(); }}
-                    className="flex items-center gap-2 px-4 py-2 text-sm bg-slate-800 hover:bg-slate-700 border border-slate-600 rounded-xl transition-colors"
-                >
-                    <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-                    Yenile
-                </button>
+                <div className="flex items-center gap-3">
+                    <span className="text-xs text-slate-500">
+                        Son güncelleme: {lastUpdated.toLocaleTimeString('tr-TR')}
+                    </span>
+                    <button
+                        onClick={() => { loadDashboard(); loadSqlDevices(); }}
+                        className="p-2 bg-slate-700/50 hover:bg-slate-600/50 rounded-lg transition-colors"
+                    >
+                        <RefreshCw className="w-4 h-4 text-slate-400" />
+                    </button>
+                </div>
             </div>
 
-            {/* Stats Row */}
+            {/* Main Content Grid */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+
+                {/* LEFT: Agent Status - Vertical Layout */}
+                <div className="bg-[#1e293b]/50 border border-slate-700/50 rounded-2xl p-6">
+                    <h2 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+                        <Server className="w-5 h-5 text-sky-400" />
+                        Agent Durumu
+                    </h2>
+
+                    <div className="space-y-3">
+                        {/* Toplam */}
+                        <div className="flex items-center justify-between p-4 bg-slate-800/50 rounded-xl border border-slate-700/30">
+                            <div className="flex items-center gap-3">
+                                <div className="p-2 bg-indigo-500/20 rounded-lg">
+                                    <Monitor className="w-5 h-5 text-indigo-400" />
+                                </div>
+                                <span className="text-slate-300">Toplam Cihaz</span>
+                            </div>
+                            <span className="text-2xl font-bold text-white">{data?.totalDevices || 0}</span>
+                        </div>
+
+                        {/* Online */}
+                        <div className="flex items-center justify-between p-4 bg-slate-800/50 rounded-xl border border-emerald-500/20">
+                            <div className="flex items-center gap-3">
+                                <div className="p-2 bg-emerald-500/20 rounded-lg">
+                                    <Wifi className="w-5 h-5 text-emerald-400" />
+                                </div>
+                                <span className="text-slate-300">Online</span>
+                            </div>
+                            <span className="text-2xl font-bold text-emerald-400">{data?.online || 0}</span>
+                        </div>
+
+                        {/* Sağlıklı */}
+                        <div className="flex items-center justify-between p-4 bg-slate-800/50 rounded-xl border border-sky-500/20">
+                            <div className="flex items-center gap-3">
+                                <div className="p-2 bg-sky-500/20 rounded-lg">
+                                    <CheckCircle className="w-5 h-5 text-sky-400" />
+                                </div>
+                                <span className="text-slate-300">Sağlıklı</span>
+                            </div>
+                            <span className="text-2xl font-bold text-sky-400">{data?.healthy || 0}</span>
+                        </div>
+                    </div>
+                </div>
+
+                {/* RIGHT: SQL Devices - PC vs POS */}
+                <div className="bg-[#1e293b]/50 border border-slate-700/50 rounded-2xl p-6">
+                    <h2 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+                        <MonitorSmartphone className="w-5 h-5 text-violet-400" />
+                        SQL Cihazları
+                        {sqlLoading && <RefreshCw className="w-4 h-4 text-slate-500 animate-spin ml-2" />}
+                    </h2>
+
+                    <div className="grid grid-cols-2 gap-4">
+                        {/* PC Column */}
+                        <div className="bg-slate-800/50 rounded-xl p-4 border border-slate-700/30">
+                            <div className="flex items-center gap-2 mb-4">
+                                <Monitor className="w-5 h-5 text-blue-400" />
+                                <span className="font-medium text-white">PC</span>
+                                <span className="ml-auto text-xs text-slate-500">{pcDevices.length} toplam</span>
+                            </div>
+
+                            <div className="space-y-2">
+                                <div className="flex items-center justify-between">
+                                    <span className="text-sm text-slate-400 flex items-center gap-1.5">
+                                        <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+                                        Online
+                                    </span>
+                                    <span className="font-bold text-emerald-400">{pcOnline}</span>
+                                </div>
+                                <div className="flex items-center justify-between">
+                                    <span className="text-sm text-slate-400 flex items-center gap-1.5">
+                                        <span className="w-2 h-2 rounded-full bg-rose-500"></span>
+                                        Offline
+                                    </span>
+                                    <span className="font-bold text-rose-400">{pcOffline}</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* POS Column */}
+                        <div className="bg-slate-800/50 rounded-xl p-4 border border-slate-700/30">
+                            <div className="flex items-center gap-2 mb-4">
+                                <MonitorSmartphone className="w-5 h-5 text-amber-400" />
+                                <span className="font-medium text-white">POS</span>
+                                <span className="ml-auto text-xs text-slate-500">{posDevices.length} toplam</span>
+                            </div>
+
+                            <div className="space-y-2">
+                                <div className="flex items-center justify-between">
+                                    <span className="text-sm text-slate-400 flex items-center gap-1.5">
+                                        <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+                                        Online
+                                    </span>
+                                    <span className="font-bold text-emerald-400">{posOnline}</span>
+                                </div>
+                                <div className="flex items-center justify-between">
+                                    <span className="text-sm text-slate-400 flex items-center gap-1.5">
+                                        <span className="w-2 h-2 rounded-full bg-rose-500"></span>
+                                        Offline
+                                    </span>
+                                    <span className="font-bold text-rose-400">{posOffline}</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Summary Bar */}
+                    <div className="mt-4 pt-4 border-t border-slate-700/30">
+                        <div className="flex justify-between text-sm">
+                            <span className="text-slate-400">Toplam SQL Cihazı</span>
+                            <span className="text-white font-medium">{sqlDevices.length}</span>
+                        </div>
+                        <div className="mt-2 h-2 bg-slate-700 rounded-full overflow-hidden">
+                            <div
+                                className="h-full bg-gradient-to-r from-emerald-500 to-emerald-400 transition-all duration-500"
+                                style={{ width: `${sqlDevices.length > 0 ? ((pcOnline + posOnline) / sqlDevices.length * 100) : 0}%` }}
+                            />
+                        </div>
+                        <div className="flex justify-between text-xs mt-1 text-slate-500">
+                            <span>{pcOnline + posOnline} online</span>
+                            <span>{pcOffline + posOffline} offline</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            {/* Quick Info Cards */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                {/* Total Devices */}
-                <div className="bg-gradient-to-br from-slate-800 to-slate-800/50 rounded-2xl p-5 border border-slate-700/50">
-                    <div className="flex items-center justify-between mb-3">
-                        <div className="p-2.5 bg-indigo-500/20 rounded-xl">
-                            <Monitor className="w-5 h-5 text-indigo-400" />
-                        </div>
-                        <TrendingUp className="w-4 h-4 text-emerald-400" />
-                    </div>
-                    <div className="text-3xl font-bold text-white mb-1">{data?.totalDevices || 0}</div>
-                    <div className="text-xs text-slate-400 uppercase tracking-wide">Toplam Cihaz</div>
-                </div>
-
-                {/* Online */}
-                <div className="bg-gradient-to-br from-slate-800 to-slate-800/50 rounded-2xl p-5 border border-slate-700/50">
-                    <div className="flex items-center justify-between mb-3">
-                        <div className="p-2.5 bg-emerald-500/20 rounded-xl">
-                            <Wifi className="w-5 h-5 text-emerald-400" />
-                        </div>
-                        <span className="text-xs px-2 py-1 bg-emerald-500/20 text-emerald-400 rounded-lg font-medium">
-                            {data?.totalDevices ? ((data.online / data.totalDevices) * 100).toFixed(0) : 0}%
-                        </span>
-                    </div>
-                    <div className="text-3xl font-bold text-emerald-400 mb-1">{data?.online || 0}</div>
-                    <div className="text-xs text-slate-400 uppercase tracking-wide">Çevrimiçi</div>
-                </div>
-
-                {/* Critical */}
-                <div className="bg-gradient-to-br from-slate-800 to-slate-800/50 rounded-2xl p-5 border border-slate-700/50">
-                    <div className="flex items-center justify-between mb-3">
-                        <div className="p-2.5 bg-amber-500/20 rounded-xl">
-                            <AlertTriangle className="w-5 h-5 text-amber-400" />
-                        </div>
-                        <Zap className="w-4 h-4 text-amber-400" />
-                    </div>
-                    <div className="text-3xl font-bold text-amber-400 mb-1">{data?.critical || 0}</div>
-                    <div className="text-xs text-slate-400 uppercase tracking-wide">Kritik Uyarı</div>
-                </div>
-
-                {/* Healthy */}
-                <div className="bg-gradient-to-br from-slate-800 to-slate-800/50 rounded-2xl p-5 border border-slate-700/50">
-                    <div className="flex items-center justify-between mb-3">
-                        <div className="p-2.5 bg-sky-500/20 rounded-xl">
-                            <CheckCircle className="w-5 h-5 text-sky-400" />
-                        </div>
-                        <Activity className="w-4 h-4 text-sky-400" />
-                    </div>
-                    <div className="text-3xl font-bold text-sky-400 mb-1">{data?.healthy || 0}</div>
-                    <div className="text-xs text-slate-400 uppercase tracking-wide">Sağlıklı</div>
-                </div>
+                <QuickCard
+                    icon={Clock}
+                    label="Son Kontrol"
+                    value={lastUpdated.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })}
+                    color="slate"
+                />
+                <QuickCard
+                    icon={Wifi}
+                    label="Agent Online"
+                    value={`${data?.online || 0}/${data?.totalDevices || 0}`}
+                    color="emerald"
+                />
+                <QuickCard
+                    icon={Monitor}
+                    label="SQL Online"
+                    value={`${pcOnline + posOnline}/${sqlDevices.length}`}
+                    color="sky"
+                />
+                <QuickCard
+                    icon={WifiOff}
+                    label="Toplam Offline"
+                    value={(data?.offline || 0) + (pcOffline + posOffline)}
+                    color="rose"
+                />
             </div>
+        </div>
+    );
+};
 
-            {/* SQL Envanter Widget */}
-            <div className="bg-gradient-to-br from-slate-800 to-slate-900/80 rounded-2xl p-5 border border-slate-700/50">
-                <div className="flex items-center justify-between mb-4">
-                    <div className="flex items-center gap-3">
-                        <div className="p-2.5 bg-violet-500/20 rounded-xl">
-                            <Database className="w-5 h-5 text-violet-400" />
-                        </div>
-                        <div>
-                            <h3 className="text-base font-semibold text-white">SQL Envanter</h3>
-                            <p className="text-xs text-slate-400">{sqlTotal} kayıtlı cihaz</p>
-                        </div>
-                    </div>
-                    {sqlLoading && <div className="w-4 h-4 border-2 border-violet-500 border-t-transparent rounded-full animate-spin" />}
-                </div>
+const QuickCard = ({ icon: Icon, label, value, color }: { icon: any; label: string; value: any; color: string }) => {
+    const colors: Record<string, string> = {
+        slate: "text-slate-400",
+        emerald: "text-emerald-400",
+        sky: "text-sky-400",
+        rose: "text-rose-400",
+        amber: "text-amber-400"
+    };
 
-                <div className="grid grid-cols-2 gap-4 mb-4">
-                    {/* Online */}
-                    <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-xl p-4">
-                        <div className="flex items-center gap-2 mb-2">
-                            <div className="relative">
-                                <Wifi className="w-5 h-5 text-emerald-400" />
-                                <span className="absolute -top-0.5 -right-0.5 w-2 h-2 bg-emerald-400 rounded-full animate-ping" />
-                            </div>
-                            <span className="text-sm text-emerald-300 font-medium">Online</span>
-                        </div>
-                        <div className="text-4xl font-bold text-emerald-400">{sqlOnline}</div>
-                    </div>
-
-                    {/* Offline */}
-                    <div className="bg-rose-500/10 border border-rose-500/30 rounded-xl p-4">
-                        <div className="flex items-center gap-2 mb-2">
-                            <WifiOff className="w-5 h-5 text-rose-400" />
-                            <span className="text-sm text-rose-300 font-medium">Offline</span>
-                        </div>
-                        <div className="text-4xl font-bold text-rose-400">{sqlOffline}</div>
-                    </div>
-                </div>
-
-                {/* Progress Bar */}
-                <div>
-                    <div className="flex justify-between text-xs mb-2">
-                        <span className="text-slate-400">Çevrimiçi Oranı</span>
-                        <span className="text-white font-semibold">{sqlOnlinePercent}%</span>
-                    </div>
-                    <div className="h-2.5 bg-slate-700/50 rounded-full overflow-hidden">
-                        <div
-                            className="h-full bg-gradient-to-r from-emerald-500 to-emerald-400 rounded-full transition-all duration-700"
-                            style={{ width: `${sqlOnlinePercent}%` }}
-                        />
-                    </div>
-                </div>
-            </div>
-
-            {/* Bottom Row */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-                {/* Health Donut */}
-                <div className="bg-gradient-to-br from-slate-800 to-slate-900/80 rounded-2xl p-5 border border-slate-700/50">
-                    <div className="flex items-center gap-3 mb-5">
-                        <div className="p-2.5 bg-sky-500/20 rounded-xl">
-                            <Activity className="w-5 h-5 text-sky-400" />
-                        </div>
-                        <h3 className="text-base font-semibold text-white">Sistem Sağlığı</h3>
-                    </div>
-
-                    <div className="flex items-center gap-8">
-                        {/* Donut */}
-                        <div className="relative w-32 h-32 flex-shrink-0">
-                            <svg className="w-full h-full -rotate-90" viewBox="0 0 100 100">
-                                <circle cx="50" cy="50" r="38" fill="none" stroke="#1e293b" strokeWidth="10" />
-                                <circle
-                                    cx="50" cy="50" r="38" fill="none"
-                                    stroke="#10b981" strokeWidth="10"
-                                    strokeLinecap="round"
-                                    strokeDasharray={`${(data?.healthy || 0) / Math.max(data?.totalDevices || 1, 1) * 238.76} 238.76`}
-                                    className="transition-all duration-1000"
-                                />
-                            </svg>
-                            <div className="absolute inset-0 flex flex-col items-center justify-center">
-                                <span className="text-2xl font-bold text-white">{data?.healthy || 0}</span>
-                                <span className="text-xs text-slate-400">Sağlıklı</span>
-                            </div>
-                        </div>
-
-                        {/* Legend */}
-                        <div className="flex-1 space-y-3">
-                            <div className="flex items-center justify-between">
-                                <div className="flex items-center gap-2">
-                                    <div className="w-3 h-3 bg-emerald-500 rounded-full" />
-                                    <span className="text-sm text-slate-300">Sağlıklı</span>
-                                </div>
-                                <span className="text-sm font-semibold text-white">{data?.healthy || 0}</span>
-                            </div>
-                            <div className="flex items-center justify-between">
-                                <div className="flex items-center gap-2">
-                                    <div className="w-3 h-3 bg-amber-500 rounded-full" />
-                                    <span className="text-sm text-slate-300">Uyarı</span>
-                                </div>
-                                <span className="text-sm font-semibold text-white">{data?.warning || 0}</span>
-                            </div>
-                            <div className="flex items-center justify-between">
-                                <div className="flex items-center gap-2">
-                                    <div className="w-3 h-3 bg-rose-500 rounded-full" />
-                                    <span className="text-sm text-slate-300">Kritik</span>
-                                </div>
-                                <span className="text-sm font-semibold text-white">{data?.critical || 0}</span>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                {/* Recent Offline */}
-                <div className="bg-gradient-to-br from-slate-800 to-slate-900/80 rounded-2xl p-5 border border-slate-700/50">
-                    <div className="flex items-center justify-between mb-4">
-                        <div className="flex items-center gap-3">
-                            <div className="p-2.5 bg-rose-500/20 rounded-xl">
-                                <Clock className="w-5 h-5 text-rose-400" />
-                            </div>
-                            <h3 className="text-base font-semibold text-white">Son Çevrimdışı</h3>
-                        </div>
-                        <span className="text-xs px-2 py-1 bg-slate-700 text-slate-300 rounded-lg">
-                            {data?.recentOffline?.length || 0} cihaz
-                        </span>
-                    </div>
-
-                    <div className="space-y-2 max-h-[200px] overflow-y-auto pr-1">
-                        {data?.recentOffline?.length === 0 ? (
-                            <div className="flex flex-col items-center justify-center py-10 text-slate-500">
-                                <CheckCircle className="w-10 h-10 mb-2 text-emerald-500/40" />
-                                <span className="text-sm">Tüm cihazlar çevrimiçi</span>
-                            </div>
-                        ) : (
-                            data?.recentOffline?.slice(0, 5).map((device, i) => (
-                                <div key={i} className="flex items-center justify-between p-3 bg-slate-700/30 rounded-xl hover:bg-slate-700/50 transition-colors group cursor-pointer">
-                                    <div className="flex items-center gap-3 min-w-0">
-                                        <div className="w-2 h-2 bg-rose-500 rounded-full flex-shrink-0" />
-                                        <div className="min-w-0">
-                                            <div className="text-sm font-medium text-white truncate">{device.hostname}</div>
-                                            <div className="text-xs text-slate-400">{device.ip}</div>
-                                        </div>
-                                    </div>
-                                    <div className="flex items-center gap-3">
-                                        <span className="text-xs text-slate-400">{formatLastSeen(device.lastSeen)}</span>
-                                        <ChevronRight className="w-4 h-4 text-slate-600 group-hover:text-slate-400 transition-colors" />
-                                    </div>
-                                </div>
-                            ))
-                        )}
-                    </div>
-                </div>
+    return (
+        <div className="bg-[#1e293b]/30 border border-slate-700/30 p-4 rounded-xl flex items-center gap-3">
+            <Icon className={`w-5 h-5 ${colors[color]}`} />
+            <div>
+                <div className="text-xs text-slate-500 uppercase">{label}</div>
+                <div className={`text-lg font-semibold ${colors[color]}`}>{value}</div>
             </div>
         </div>
     );

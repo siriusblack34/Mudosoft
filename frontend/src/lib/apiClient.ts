@@ -148,4 +148,8 @@ export const apiClient = {
     getDashboard(): Promise<any> {
         return this.get("/api/dashboard/summary");
     },
+
+    getBaseUrl(): string {
+        return API_BASE_URL;
+    }
 };
