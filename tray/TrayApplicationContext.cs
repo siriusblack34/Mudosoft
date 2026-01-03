@@ -17,8 +17,13 @@ public class TrayApplicationContext : ApplicationContext
     private AgentStatus _previousStatus = AgentStatus.Disconnected;
     private string _agentVersion = "?";
     private string _deviceId = "?";
+    private string _backendUrl = "http://10.0.213.89:5102"; // Default, will be updated from Agent
     private DateTime _lastHeartbeat = DateTime.MinValue;
     private bool _firstCheck = true;
+    
+    // Remote Desktop Service
+    private RemoteDesktopService? _remoteDesktopService;
+    private bool _rdServiceStarted = false;
 
     public TrayApplicationContext()
     {
@@ -49,6 +54,71 @@ public class TrayApplicationContext : ApplicationContext
         
         // Show startup notification
         _trayIcon.ShowBalloonTip(2000, "MudoSoft", "Endpoint koruması aktif", ToolTipIcon.Info);
+    }
+    
+    private async Task StartRemoteDesktopService()
+    {
+        if (_rdServiceStarted || _deviceId == "?" || string.IsNullOrEmpty(_deviceId)) return;
+        
+        try
+        {
+            _remoteDesktopService = new RemoteDesktopService(_backendUrl, _deviceId);
+            _remoteDesktopService.OnLog += (msg) => Debug.WriteLine(msg);
+            _remoteDesktopService.OnConnectionChanged += (connected) =>
+            {
+                Debug.WriteLine($"Remote Desktop connection: {connected}");
+            };
+            
+            await _remoteDesktopService.StartAsync();
+            _rdServiceStarted = true;
+            Debug.WriteLine("🖥️ Remote Desktop Service started!");
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"Remote Desktop Service error: {ex.Message}");
+        }
+    }
+    
+    private async Task CheckForUpdates()
+    {
+        _trayIcon.ShowBalloonTip(2000, "Güncelleme", "Güncelleme kontrol ediliyor...", ToolTipIcon.Info);
+        
+        try
+        {
+            var updateService = new UpdateService(_backendUrl);
+            var (hasUpdate, version) = await updateService.CheckForUpdateAsync();
+            
+            if (hasUpdate && !string.IsNullOrEmpty(version))
+            {
+                var result = MessageBox.Show(
+                    $"Yeni versiyon mevcut: {version}\n\nGüncellemek istiyor musunuz?\n\nBu işlem Agent servisini ve Tray uygulamasını yeniden başlatacak.",
+                    "Güncelleme Mevcut",
+                    MessageBoxButtons.YesNo,
+                    MessageBoxIcon.Question);
+                
+                if (result == DialogResult.Yes)
+                {
+                    updateService.OnLog += (msg) => Debug.WriteLine(msg);
+                    updateService.OnComplete += (success, message) =>
+                    {
+                        if (!success)
+                        {
+                            _trayIcon.ShowBalloonTip(3000, "Güncelleme Hatası", message, ToolTipIcon.Error);
+                        }
+                    };
+                    
+                    await updateService.PerformUpdateAsync();
+                }
+            }
+            else
+            {
+                _trayIcon.ShowBalloonTip(2000, "Güncelleme", "En güncel versiyon kullanılıyor ✓", ToolTipIcon.Info);
+            }
+        }
+        catch (Exception ex)
+        {
+            _trayIcon.ShowBalloonTip(3000, "Hata", $"Güncelleme kontrolü başarısız: {ex.Message}", ToolTipIcon.Error);
+        }
     }
 
     private void EnsureAutoStart()
@@ -119,6 +189,8 @@ public class TrayApplicationContext : ApplicationContext
         actionsMenu.DropDownItems.Add("🔄 Servisi Yeniden Başlat", null, (s, e) => RestartService());
         actionsMenu.DropDownItems.Add("🌐 Backend Bağlantısını Test Et", null, async (s, e) => await TestBackendConnection());
         actionsMenu.DropDownItems.Add("📋 Cihaz ID'yi Kopyala", null, (s, e) => CopyDeviceId());
+        actionsMenu.DropDownItems.Add(new ToolStripSeparator());
+        actionsMenu.DropDownItems.Add("⬆️ Güncelleme Kontrolü", null, async (s, e) => await CheckForUpdates());
         menu.Items.Add(actionsMenu);
 
         menu.Items.Add("📊 Durum Penceresi", null, (s, e) => ShowStatusWindow());
@@ -175,6 +247,19 @@ public class TrayApplicationContext : ApplicationContext
                 _agentVersion = statusInfo.Version ?? "?";
                 _deviceId = statusInfo.DeviceId ?? "?";
                 _lastHeartbeat = statusInfo.LastHeartbeat;
+                
+                // Update backend URL from Agent
+                if (!string.IsNullOrEmpty(statusInfo.BackendUrl))
+                {
+                    _backendUrl = statusInfo.BackendUrl;
+                }
+                
+                // NOTE: Remote Desktop is now handled by RDHelper (elevated process)
+                // The following code is disabled - Agent's HelperLauncher manages RDHelper
+                // if (!_rdServiceStarted && _deviceId != "?" && !string.IsNullOrEmpty(_backendUrl))
+                // {
+                //     _ = StartRemoteDesktopService();
+                // }
 
                 var timeSinceHeartbeat = DateTime.UtcNow - _lastHeartbeat;
                 if (timeSinceHeartbeat.TotalSeconds < 60)
@@ -428,6 +513,7 @@ public class TrayApplicationContext : ApplicationContext
     {
         if (disposing)
         {
+            _remoteDesktopService?.Dispose();
             _trayIcon.Dispose();
             _contextMenu.Dispose();
             _statusTimer.Dispose();
@@ -449,6 +535,7 @@ public class AgentStatusResponse
     public string? DeviceId { get; set; }
     public DateTime LastHeartbeat { get; set; }
     public bool IsConnected { get; set; }
+    public string? BackendUrl { get; set; }
 }
 
 // Modern dark menu renderer
