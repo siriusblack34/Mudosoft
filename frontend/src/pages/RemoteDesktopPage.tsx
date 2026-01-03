@@ -1,18 +1,41 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { useParams } from 'react-router-dom';
 import { HubConnectionBuilder, HubConnection, HubConnectionState } from '@microsoft/signalr';
-import { Wifi, WifiOff, Loader2, MousePointer2, Keyboard, Command, AlertTriangle } from 'lucide-react';
+import { Wifi, WifiOff, Loader2, MousePointer2, Keyboard, Video, AlertTriangle } from 'lucide-react';
 import { API_BASE_URL } from '../lib/apiClient';
+
+// ICE Servers for WebRTC (STUN + local TURN)
+// NOTE: Change IPs for production deployment
+const ICE_SERVERS: RTCIceServer[] = [
+    { urls: 'stun:stun.l.google.com:19302' },
+    // Local TURN server
+    {
+        urls: 'turn:127.0.0.1:3478',
+        username: 'mudosoft',
+        credential: 'Mudo2024Turn!'
+    },
+    {
+        urls: 'turn:127.0.0.1:3478?transport=tcp',
+        username: 'mudosoft',
+        credential: 'Mudo2024Turn!'
+    }
+];
 
 const RemoteDesktopPage: React.FC = () => {
     const { deviceId } = useParams<{ deviceId: string }>();
     const canvasRef = useRef<HTMLCanvasElement>(null);
+    const videoRef = useRef<HTMLVideoElement>(null);
     const [connection, setConnection] = useState<HubConnection | null>(null);
-    const [status, setStatus] = useState<'connecting' | 'connected' | 'disconnected' | 'error'>('connecting');
+    const [status, setStatus] = useState<'connecting' | 'connected' | 'webrtc' | 'disconnected' | 'error'>('connecting');
     const [fps, setFps] = useState(0);
     const frameCountRef = useRef(0);
     const [controlEnabled, setControlEnabled] = useState(false);
     const lastMouseMoveRef = useRef<number>(0);
+
+    // WebRTC state
+    const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
+    const dataChannelRef = useRef<RTCDataChannel | null>(null);
+    const [useWebRTC, setUseWebRTC] = useState(true); // Try WebRTC first
 
     // FPS Meter
     useEffect(() => {
@@ -22,6 +45,81 @@ const RemoteDesktopPage: React.FC = () => {
         }, 1000);
         return () => clearInterval(interval);
     }, []);
+
+    // WebRTC Setup
+    const setupWebRTC = useCallback(async (hub: HubConnection) => {
+        console.log('🔧 Setting up WebRTC...');
+
+        // Use all transport methods (STUN + TURN)
+        const pc = new RTCPeerConnection({
+            iceServers: ICE_SERVERS
+        });
+        peerConnectionRef.current = pc;
+        console.log('✅ PeerConnection created');
+
+        // Handle incoming video track
+        pc.ontrack = (event) => {
+            console.log('📺 Received video track from WebRTC');
+            if (videoRef.current && event.streams[0]) {
+                videoRef.current.srcObject = event.streams[0];
+                setStatus('webrtc');
+            }
+        };
+
+        // Handle ICE candidates
+        pc.onicecandidate = (event) => {
+            if (event.candidate && hub) {
+                const candidateJson = JSON.stringify({
+                    candidate: event.candidate.candidate,
+                    sdpMid: event.candidate.sdpMid,
+                    sdpMLineIndex: event.candidate.sdpMLineIndex
+                });
+                hub.invoke('SendIceCandidate', deviceId, candidateJson);
+            }
+        };
+
+        // Handle connection state changes
+        pc.onconnectionstatechange = () => {
+            console.log(`🔗 WebRTC state: ${pc.connectionState}`);
+            if (pc.connectionState === 'connected') {
+                setStatus('webrtc');
+            } else if (pc.connectionState === 'failed') {
+                console.log('⚠️ WebRTC failed, falling back to SignalR');
+                setUseWebRTC(false);
+            }
+        };
+
+        // Handle data channel for input
+        pc.ondatachannel = (event) => {
+            console.log('📡 Data channel established');
+            dataChannelRef.current = event.channel;
+        };
+
+        // Listen for WebRTC answer
+        hub.on('ReceiveAnswer', async (sdp: string) => {
+            console.log('📥 Received WebRTC answer');
+            if (pc && pc.signalingState !== 'closed') {
+                await pc.setRemoteDescription({ type: 'answer', sdp });
+            }
+        });
+
+        hub.on('ReceiveIceCandidate', async (candidateJson: string) => {
+            if (pc && pc.signalingState !== 'closed') {
+                const candidate = JSON.parse(candidateJson);
+                await pc.addIceCandidate(candidate);
+            }
+        });
+
+        // Add transceiver for receiving video
+        pc.addTransceiver('video', { direction: 'recvonly' });
+
+        // Create and send offer
+        const offer = await pc.createOffer();
+        await pc.setLocalDescription(offer);
+        await hub.invoke('SendOffer', deviceId, offer.sdp);
+        console.log('📤 Sent WebRTC offer');
+
+    }, [deviceId]);
 
     // Connection Logic
     useEffect(() => {
@@ -33,28 +131,42 @@ const RemoteDesktopPage: React.FC = () => {
             .build();
 
         newConnection.start()
-            .then(() => {
+            .then(async () => {
                 console.log("Connected to Remote Desktop Hub");
                 setStatus('connected');
-                newConnection.invoke("JoinSession", deviceId);
+                await newConnection.invoke("JoinSession", deviceId);
+
+                // Try WebRTC if enabled
+                if (useWebRTC) {
+                    try {
+                        await setupWebRTC(newConnection);
+                    } catch (err) {
+                        console.error('WebRTC setup failed:', err);
+                        setUseWebRTC(false);
+                    }
+                }
             })
             .catch(err => {
                 console.error("Connection failed: ", err);
                 setStatus('error');
             });
 
+        // Legacy frame receiver (fallback)
         newConnection.on("ReceiveFrame", (base64Content: string) => {
-            frameCountRef.current++;
-            drawFrame(base64Content);
+            if (!useWebRTC || status !== 'webrtc') {
+                frameCountRef.current++;
+                drawFrame(base64Content);
+            }
         });
 
         newConnection.onclose(() => setStatus('disconnected'));
         setConnection(newConnection);
 
         return () => {
+            peerConnectionRef.current?.close();
             newConnection.stop();
         };
-    }, [deviceId]);
+    }, [deviceId, setupWebRTC, useWebRTC]);
 
     // Helpers
     const drawFrame = (base64: string) => {
@@ -75,53 +187,99 @@ const RemoteDesktopPage: React.FC = () => {
     };
 
     const sendInput = (type: string, data: any) => {
-        if (!connection || connection.state !== HubConnectionState.Connected || !controlEnabled) return;
+        if (!controlEnabled) return;
 
         const payload = {
             Type: ['MouseMove', 'MouseDown', 'MouseUp', 'KeyDown', 'KeyUp', 'Scroll'].indexOf(type),
             ...data
         };
-        connection.invoke("SendInput", deviceId, payload).catch(err => console.error(err));
+
+        // Prefer data channel if available
+        if (dataChannelRef.current?.readyState === 'open') {
+            dataChannelRef.current.send(JSON.stringify(payload));
+        } else if (connection && connection.state === HubConnectionState.Connected) {
+            connection.invoke("SendInput", deviceId, payload).catch(err => console.error(err));
+        }
+    };
+
+    // Calculate proper coordinates accounting for object-contain scaling
+    const getRelativeCoords = (e: React.MouseEvent) => {
+        const element = useWebRTC && status === 'webrtc' ? videoRef.current : canvasRef.current;
+        if (!element) return null;
+
+        const rect = element.getBoundingClientRect();
+        const elementWidth = element instanceof HTMLVideoElement ? element.videoWidth : (element as HTMLCanvasElement).width || 1;
+        const elementHeight = element instanceof HTMLVideoElement ? element.videoHeight : (element as HTMLCanvasElement).height || 1;
+
+        const displayAspect = rect.width / rect.height;
+        const imageAspect = elementWidth / elementHeight;
+
+        let imageDisplayWidth, imageDisplayHeight, offsetX, offsetY;
+
+        if (displayAspect > imageAspect) {
+            imageDisplayHeight = rect.height;
+            imageDisplayWidth = rect.height * imageAspect;
+            offsetX = (rect.width - imageDisplayWidth) / 2;
+            offsetY = 0;
+        } else {
+            imageDisplayWidth = rect.width;
+            imageDisplayHeight = rect.width / imageAspect;
+            offsetX = 0;
+            offsetY = (rect.height - imageDisplayHeight) / 2;
+        }
+
+        const relX = (e.clientX - rect.left - offsetX) / imageDisplayWidth;
+        const relY = (e.clientY - rect.top - offsetY) / imageDisplayHeight;
+
+        return {
+            X: Math.max(0, Math.min(1, relX)),
+            Y: Math.max(0, Math.min(1, relY))
+        };
     };
 
     // Events
     const handleMouseMove = (e: React.MouseEvent) => {
         const now = Date.now();
-        if (now - lastMouseMoveRef.current < 10) return; // 10ms throttle
+        if (now - lastMouseMoveRef.current < 10) return;
         lastMouseMoveRef.current = now;
-        const rect = canvasRef.current?.getBoundingClientRect();
-        if (!rect) return;
-        sendInput('MouseMove', { X: (e.clientX - rect.left) / rect.width, Y: (e.clientY - rect.top) / rect.height, Button: 0 });
+        const coords = getRelativeCoords(e);
+        if (!coords) return;
+        sendInput('MouseMove', { ...coords, Button: 0 });
     };
 
     const handleMouseDown = (e: React.MouseEvent) => {
-        const rect = canvasRef.current?.getBoundingClientRect();
-        if (!rect) return;
-        sendInput('MouseDown', { X: (e.clientX - rect.left) / rect.width, Y: (e.clientY - rect.top) / rect.height, Button: e.button });
+        const coords = getRelativeCoords(e);
+        if (!coords) return;
+        sendInput('MouseDown', { ...coords, Button: e.button });
     };
 
     const handleMouseUp = (e: React.MouseEvent) => {
-        const rect = canvasRef.current?.getBoundingClientRect();
-        if (!rect) return;
-        sendInput('MouseUp', { X: (e.clientX - rect.left) / rect.width, Y: (e.clientY - rect.top) / rect.height, Button: e.button });
+        const coords = getRelativeCoords(e);
+        if (!coords) return;
+        sendInput('MouseUp', { ...coords, Button: e.button });
     };
 
     const handleKeyDown = (e: React.KeyboardEvent) => {
-        sendInput('KeyDown', { Key: e.key, Ctrl: e.ctrlKey, Alt: e.altKey, Shift: e.shiftKey });
+        sendInput('KeyDown', { Key: e.key, Ctrl: e.ctrlKey, Alt: e.altKey, Shift: e.shiftKey, X: 0, Y: 0 });
         e.preventDefault();
     };
 
     const handleKeyUp = (e: React.KeyboardEvent) => {
-        sendInput('KeyUp', { Key: e.key, Ctrl: e.ctrlKey, Alt: e.altKey, Shift: e.shiftKey });
+        sendInput('KeyUp', { Key: e.key, Ctrl: e.ctrlKey, Alt: e.altKey, Shift: e.shiftKey, X: 0, Y: 0 });
         e.preventDefault();
     };
 
-    // Special Keys
     const sendSpecialKey = (key: string) => {
         if (!controlEnabled) return;
-        // Simulate press and release
-        sendInput('KeyDown', { Key: key });
-        setTimeout(() => sendInput('KeyUp', { Key: key }), 100);
+        sendInput('KeyDown', { Key: key, X: 0, Y: 0 });
+        setTimeout(() => sendInput('KeyUp', { Key: key, X: 0, Y: 0 }), 100);
+    };
+
+    const handleScroll = (e: React.WheelEvent) => {
+        const coords = getRelativeCoords(e);
+        if (!coords) return;
+        const scrollY = e.deltaY > 0 ? -0.1 : 0.1;
+        sendInput('Scroll', { X: coords.X, Y: scrollY });
     };
 
     return (
@@ -134,9 +292,15 @@ const RemoteDesktopPage: React.FC = () => {
             {/* Toolbar */}
             <div className="h-12 bg-slate-900 border-b border-slate-700 flex items-center justify-between px-4 shrink-0 shadow-md z-10">
                 <div className="flex items-center gap-3">
-                    <div className={`w-2 h-2 rounded-full ${status === 'connected' ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]' : 'bg-rose-500'}`} />
+                    <div className={`w-2 h-2 rounded-full ${status === 'webrtc' ? 'bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.5)]' :
+                        status === 'connected' ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]' :
+                            'bg-rose-500'
+                        }`} />
                     <span className="text-slate-200 font-semibold tracking-wide text-sm">{deviceId}</span>
-                    <span className="text-slate-500 text-xs font-mono bg-slate-800 px-2 py-0.5 rounded">{fps} FPS</span>
+                    <span className={`text-xs font-mono px-2 py-0.5 rounded ${status === 'webrtc' ? 'bg-blue-900 text-blue-300' : 'bg-slate-800 text-slate-500'
+                        }`}>
+                        {status === 'webrtc' ? '🚀 P2P' : '📡 Relay'} | {fps} FPS
+                    </span>
                 </div>
 
                 <div className="flex items-center gap-2">
@@ -169,8 +333,8 @@ const RemoteDesktopPage: React.FC = () => {
                 </div>
             </div>
 
-            {/* Canvas Area */}
-            <div className="flex-1 relative flex items-center justify-center bg-zinc-900/50">
+            {/* Video/Canvas Area */}
+            <div className="flex-1 relative flex items-center justify-center bg-zinc-900/50 overflow-hidden">
                 {status === 'connecting' && (
                     <div className="absolute flex flex-col items-center gap-2 text-emerald-500">
                         <Loader2 className="w-8 h-8 animate-spin" />
@@ -178,13 +342,36 @@ const RemoteDesktopPage: React.FC = () => {
                     </div>
                 )}
 
-                <canvas
-                    ref={canvasRef}
-                    className="max-w-full max-h-full object-contain shadow-2xl"
-                    style={{ cursor: 'default' }}
+                {/* WebRTC Video Element (hidden when not using WebRTC) */}
+                <video
+                    ref={videoRef}
+                    autoPlay
+                    playsInline
+                    muted
+                    className="w-full h-full object-contain shadow-2xl"
+                    style={{
+                        cursor: 'default',
+                        display: (useWebRTC && status === 'webrtc') ? 'block' : 'none'
+                    }}
                     onMouseMove={handleMouseMove}
                     onMouseDown={handleMouseDown}
                     onMouseUp={handleMouseUp}
+                    onWheel={handleScroll}
+                    onContextMenu={(e) => e.preventDefault()}
+                />
+
+                {/* Legacy Canvas Element (fallback) */}
+                <canvas
+                    ref={canvasRef}
+                    className="w-full h-full object-contain shadow-2xl"
+                    style={{
+                        cursor: 'default',
+                        display: (useWebRTC && status === 'webrtc') ? 'none' : 'block'
+                    }}
+                    onMouseMove={handleMouseMove}
+                    onMouseDown={handleMouseDown}
+                    onMouseUp={handleMouseUp}
+                    onWheel={handleScroll}
                     onContextMenu={(e) => e.preventDefault()}
                 />
             </div>
