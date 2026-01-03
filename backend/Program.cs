@@ -32,6 +32,19 @@ else
 
 var builder = WebApplication.CreateBuilder(args);
 
+// ================== KESTREL LIMITS ==================
+// Allow large file uploads (200MB) for agent updates
+builder.WebHost.ConfigureKestrel(options =>
+{
+    options.Limits.MaxRequestBodySize = 200 * 1024 * 1024; // 200MB
+});
+
+// Configure form options for large file uploads
+builder.Services.Configure<Microsoft.AspNetCore.Http.Features.FormOptions>(options =>
+{
+    options.MultipartBodyLengthLimit = 200 * 1024 * 1024; // 200MB
+});
+
 // ================== RATE LIMITING ==================
 // 🔒 SECURITY: API rate limiting to prevent abuse
 builder.Services.AddMemoryCache();
@@ -131,7 +144,7 @@ builder.Services.AddCors(options =>
     {
         policy.WithOrigins(allowedOrigins)
               .WithMethods("GET", "POST", "PUT", "DELETE") // Sadece gerekli methodlar
-              .WithHeaders("Content-Type", "Authorization", "X-Encrypted", "X-ClientId") // Sadece gerekli header'lar
+              .WithHeaders("Content-Type", "Authorization", "X-Encrypted", "X-ClientId", "X-Requested-With", "x-signalr-user-agent") // Sadece gerekli header'lar
               .AllowCredentials(); // SignalR için ZORUNLU
     });
 });
@@ -228,6 +241,7 @@ app.UseAuthorization();
 app.MapControllers();
 // Hub Mapping
 app.MapHub<MudoSoft.Backend.Hubs.RemoteDesktopHub>("/hubs/desktop");
+app.MapHub<MudoSoft.Backend.Hubs.DashboardHub>("/hubs/dashboard");
 
 // ================== SEED (SADECE DEVELOPMENT) ==================
 if (app.Environment.IsDevelopment())
