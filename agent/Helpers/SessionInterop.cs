@@ -118,49 +118,161 @@ public static class SessionInterop
     {
         void Log(string msg) => System.IO.File.AppendAllText(@"C:\mudosoft_session.log", $"{DateTime.Now}: {msg}{Environment.NewLine}");
         
-        // schtasks.exe kullanarak kullanıcı oturumunda process başlat
-        // Bu yöntem CreateProcessAsUser'dan daha güvenilir çalışır
-        
-        string taskName = $"MudosoftHelper_{Guid.NewGuid():N}";
-        string exePath = commandLine.Trim('"').Split('"')[0]; // İlk quoted path'i al
-        
-        // Eğer commandLine quotes içindeyse, bütün halinde kullan
-        if (commandLine.StartsWith("\""))
-        {
-            var parts = commandLine.Split(new[] { "\" " }, 2, StringSplitOptions.None);
-            exePath = parts[0].Trim('"');
-        }
-        
-        Log($"Creating scheduled task: {taskName}");
-        Log($"Command: {commandLine}");
+        IntPtr hToken = IntPtr.Zero;
+        IntPtr hDupToken = IntPtr.Zero;
+        IntPtr pEnv = IntPtr.Zero;
         
         try
         {
-            // Doğrudan schtasks ile çalıştır (PowerShell wrapper kaldırıldı - quote sorunları yarattı)
+            // 1. Aktif konsol session'ını bul
+            uint sessionId = WTSGetActiveConsoleSessionId();
+            Log($"Active console session: {sessionId}");
+            
+            if (sessionId == 0xFFFFFFFF)
+            {
+                Log("No active console session found!");
+                return;
+            }
+            
+            // 2. Session'ın kullanıcı token'ını al
+            if (!WTSQueryUserToken(sessionId, out hToken))
+            {
+                int err = Marshal.GetLastWin32Error();
+                Log($"WTSQueryUserToken failed: {err}");
+                
+                // Fallback: schtasks yöntemi
+                LaunchViaSchtasks(commandLine);
+                return;
+            }
+            Log($"Got user token: {hToken}");
+            
+            // 3. Token'ı duplicate et (primary token olarak)
+            if (!DuplicateTokenEx(hToken, MAXIMUM_ALLOWED, IntPtr.Zero,
+                (int)SECURITY_IMPERSONATION_LEVEL.SecurityIdentification,
+                (int)TOKEN_TYPE.TokenPrimary, out hDupToken))
+            {
+                int err = Marshal.GetLastWin32Error();
+                Log($"DuplicateTokenEx failed: {err}");
+                CloseHandle(hToken);
+                return;
+            }
+            Log($"Duplicated token: {hDupToken}");
+            
+            // 4. Kullanıcı environment block'unu oluştur
+            if (!CreateEnvironmentBlock(out pEnv, hDupToken, false))
+            {
+                Log("CreateEnvironmentBlock failed, continuing without environment");
+                pEnv = IntPtr.Zero;
+            }
+            
+            // 5. STARTUPINFO hazırla
+            var si = new STARTUPINFO();
+            si.cb = Marshal.SizeOf(si);
+            si.lpDesktop = @"winsta0\default"; // Default desktop
+            si.dwFlags = 0x00000001; // STARTF_USESHOWWINDOW
+            si.wShowWindow = 0; // SW_HIDE - hidden window
+            
+            // 6. Process'i kullanıcı oturumunda başlat
+            var pi = new PROCESS_INFORMATION();
+            
+            // CREATE_UNICODE_ENVIRONMENT | CREATE_NEW_CONSOLE | NORMAL_PRIORITY_CLASS
+            int creationFlags = 0x00000400 | 0x00000010 | 0x00000020;
+            
+            string? workDir = System.IO.Path.GetDirectoryName(commandLine.Trim('"').Split('"')[0]);
+            
+            Log($"Creating process: {commandLine}");
+            Log($"Working dir: {workDir}");
+            
+            bool result = CreateProcessAsUser(
+                hDupToken,
+                null,
+                commandLine,
+                IntPtr.Zero,
+                IntPtr.Zero,
+                false,
+                creationFlags,
+                pEnv,
+                workDir,
+                ref si,
+                out pi
+            );
+            
+            if (!result)
+            {
+                int err = Marshal.GetLastWin32Error();
+                Log($"CreateProcessAsUser failed: {err}");
+                
+                // Fallback: schtasks
+                LaunchViaSchtasks(commandLine);
+                return;
+            }
+            
+            Log($"Process created! PID: {pi.dwProcessId}");
+            
+            // Handle'ları kapat
+            CloseHandle(pi.hProcess);
+            CloseHandle(pi.hThread);
+        }
+        catch (Exception ex)
+        {
+            Log($"CreateProcessInConsoleSession exception: {ex}");
+            throw;
+        }
+        finally
+        {
+            if (pEnv != IntPtr.Zero) DestroyEnvironmentBlock(pEnv);
+            if (hDupToken != IntPtr.Zero) CloseHandle(hDupToken);
+            if (hToken != IntPtr.Zero) CloseHandle(hToken);
+        }
+    }
+    
+    private static void LaunchViaSchtasks(string commandLine)
+    {
+        void Log(string msg) => System.IO.File.AppendAllText(@"C:\mudosoft_session.log", $"{DateTime.Now}: [SCHTASKS] {msg}{Environment.NewLine}");
+        
+        string taskName = $"MudosoftHelper_{Guid.NewGuid():N}";
+        
+        // Extract exe path from command line
+        string exePath;
+        if (commandLine.StartsWith("\""))
+        {
+            var endQuote = commandLine.IndexOf('"', 1);
+            exePath = commandLine.Substring(1, endQuote - 1);
+        }
+        else
+        {
+            exePath = commandLine.Split(' ')[0];
+        }
+        
+        Log($"Creating scheduled task: {taskName}");
+        Log($"Exe path: {exePath}");
+        
+        try
+        {
+            // Create task
             var createProc = new System.Diagnostics.Process();
             createProc.StartInfo.FileName = "schtasks.exe";
-            createProc.StartInfo.Arguments = $"/Create /TN \"{taskName}\" /TR \"\\\"{commandLine.Split(' ')[0].Trim('\"')}\\\" --desktop-helper\" /SC ONCE /ST 00:00 /F /RL HIGHEST";
+            createProc.StartInfo.Arguments = $"/Create /TN \"{taskName}\" /TR \"\\\"{exePath}\\\" --desktop-helper\" /SC ONCE /ST 00:00 /F /RL HIGHEST";
             createProc.StartInfo.UseShellExecute = false;
             createProc.StartInfo.CreateNoWindow = true;
             createProc.StartInfo.RedirectStandardOutput = true;
             createProc.StartInfo.RedirectStandardError = true;
             createProc.Start();
+            var createErr = createProc.StandardError.ReadToEnd();
             createProc.WaitForExit(5000);
-            Log($"Task created, exit code: {createProc.ExitCode}");
+            Log($"Task created, exit: {createProc.ExitCode}, err: {createErr}");
             
-            // Task'ı hemen çalıştır
+            // Run task
             var runProc = new System.Diagnostics.Process();
             runProc.StartInfo.FileName = "schtasks.exe";
             runProc.StartInfo.Arguments = $"/Run /TN \"{taskName}\"";
             runProc.StartInfo.UseShellExecute = false;
             runProc.StartInfo.CreateNoWindow = true;
-            runProc.StartInfo.RedirectStandardOutput = true;
-            runProc.StartInfo.RedirectStandardError = true;
             runProc.Start();
             runProc.WaitForExit(5000);
-            Log($"Task run triggered, exit code: {runProc.ExitCode}");
+            Log($"Task run, exit: {runProc.ExitCode}");
             
-            // Task'ı sil (temizlik)
+            // Delete task async
             System.Threading.Tasks.Task.Run(async () =>
             {
                 await System.Threading.Tasks.Task.Delay(5000);
@@ -178,7 +290,7 @@ public static class SessionInterop
         }
         catch (Exception ex)
         {
-            Log($"Scheduled task error: {ex.Message}");
+            Log($"Schtasks error: {ex.Message}");
             throw;
         }
     }

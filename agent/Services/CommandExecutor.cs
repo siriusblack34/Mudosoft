@@ -398,19 +398,51 @@ public sealed class CommandExecutor : ICommandExecutor
             System.IO.Compression.ZipFile.ExtractToDirectory(zipPath, extractDir, true);
 
             // Use PowerShell scheduled task approach for Session 0 compatibility
-            var serviceName = "MudoSoftAgent";
+            var serviceName = "MudosoftAgentService";
             var taskName = "MudoSoftAgentUpdater";
             
             // PowerShell script that will be run by the scheduled task
             var psScriptPath = Path.Combine(tempDir, "updater.ps1");
             var psContent = $@"
+# MudoSoft Agent Updater Script
 Start-Sleep -Seconds 3
+
+# 1. Stop Tray first (taskkill works across all user sessions)
+Write-Host 'Stopping Tray...'
+taskkill /F /IM MudoSoft.Tray.exe 2>$null
+Start-Sleep -Seconds 2
+
+# 2. Stop Agent Service
+Write-Host 'Stopping Agent service...'
 Stop-Service -Name '{serviceName}' -Force -ErrorAction SilentlyContinue
 Start-Sleep -Seconds 2
+
+# 3. Copy all files (Agent + Tray)
+Write-Host 'Copying update files...'
 Copy-Item -Path '{extractDir}\*' -Destination '{currentDir}' -Force -Recurse
+
+# 4. Restart Agent Service
+Write-Host 'Starting Agent service...'
 Start-Service -Name '{serviceName}'
+
+# 5. Restart Tray and RDHelper for logged-in users
+Write-Host 'Starting Tray and RDHelper for users...'
+$trayPath = Join-Path '{currentDir}' 'MudoSoft.Tray.exe'
+$helperPath = Join-Path '{currentDir}' 'MudoSoft.RDHelper.exe'
+
+# Simple start - Registry will auto-start on next login if this fails
+if (Test-Path $trayPath) {{
+    Start-Process -FilePath $trayPath -WindowStyle Hidden -ErrorAction SilentlyContinue
+}}
+if (Test-Path $helperPath) {{
+    Start-Process -FilePath $helperPath -WindowStyle Hidden -ErrorAction SilentlyContinue
+}}
+
+# 6. Cleanup
 Unregister-ScheduledTask -TaskName '{taskName}' -Confirm:$false -ErrorAction SilentlyContinue
+Start-Sleep -Seconds 3
 Remove-Item -Path '{tempDir}' -Recurse -Force -ErrorAction SilentlyContinue
+Write-Host 'Update complete!'
 ";
             File.WriteAllText(psScriptPath, psContent);
 

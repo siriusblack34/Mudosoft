@@ -72,30 +72,72 @@ namespace Mudosoft.Agent.Services
                 {
                     if (OperatingSystem.IsWindows())
                     {
-                        // CPU Model
-                        using (var searcher = new ManagementObjectSearcher("SELECT Name FROM Win32_Processor"))
+                        // CPU Model - try WMI first, then Registry fallback
+                        try
                         {
-                            foreach (var item in searcher.Get())
+                            using (var searcher = new ManagementObjectSearcher("SELECT Name FROM Win32_Processor"))
                             {
-                                _cachedCpuModel = item["Name"]?.ToString()?.Trim();
-                                break;
-                            }
-                        }
-
-                        // Total RAM
-                        using (var searcher = new ManagementObjectSearcher("SELECT TotalPhysicalMemory FROM Win32_ComputerSystem"))
-                        {
-                            foreach (var item in searcher.Get())
-                            {
-                                if (ulong.TryParse(item["TotalPhysicalMemory"]?.ToString(), out var bytes))
+                                foreach (var item in searcher.Get())
                                 {
-                                    _cachedTotalRamMB = (long)(bytes / 1024 / 1024);
+                                    _cachedCpuModel = item["Name"]?.ToString()?.Trim();
+                                    break;
                                 }
-                                break;
+                            }
+                        }
+                        catch (Exception wmEx)
+                        {
+                            _logger.LogWarning("WMI CPU query failed, trying Registry: {Msg}", wmEx.Message);
+                        }
+                        
+                        // CPU Fallback: Registry
+                        if (string.IsNullOrEmpty(_cachedCpuModel))
+                        {
+                            try
+                            {
+                                using var key = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(@"HARDWARE\DESCRIPTION\System\CentralProcessor\0");
+                                _cachedCpuModel = key?.GetValue("ProcessorNameString")?.ToString()?.Trim();
+                                _logger.LogInformation("CPU from Registry: {Cpu}", _cachedCpuModel);
+                            }
+                            catch (Exception regEx)
+                            {
+                                _logger.LogWarning("Registry CPU query failed: {Msg}", regEx.Message);
                             }
                         }
 
-                        // Total Disk (System drive)
+                        // Total RAM - try WMI first
+                        try
+                        {
+                            using (var searcher = new ManagementObjectSearcher("SELECT TotalPhysicalMemory FROM Win32_ComputerSystem"))
+                            {
+                                foreach (var item in searcher.Get())
+                                {
+                                    if (ulong.TryParse(item["TotalPhysicalMemory"]?.ToString(), out var bytes))
+                                    {
+                                        _cachedTotalRamMB = (long)(bytes / 1024 / 1024);
+                                    }
+                                    break;
+                                }
+                            }
+                        }
+                        catch (Exception wmEx)
+                        {
+                            _logger.LogWarning("WMI RAM query failed: {Msg}", wmEx.Message);
+                        }
+                        
+                        // RAM Fallback: Use GC.GetGCMemoryInfo as approximation (not perfect but better than 0)
+                        if (_cachedTotalRamMB == 0)
+                        {
+                            try
+                            {
+                                // Try PerformanceCounter for available memory and estimate
+                                var gcInfo = GC.GetGCMemoryInfo();
+                                _cachedTotalRamMB = (long)(gcInfo.TotalAvailableMemoryBytes / 1024 / 1024);
+                                _logger.LogInformation("RAM from GC: {Ram}MB", _cachedTotalRamMB);
+                            }
+                            catch { }
+                        }
+
+                        // Total Disk (System drive) - this already uses DriveInfo, should work
                         var systemDrive = Path.GetPathRoot(Environment.SystemDirectory) ?? "C:";
                         var drive = new DriveInfo(systemDrive);
                         if (drive.IsReady)
@@ -103,13 +145,35 @@ namespace Mudosoft.Agent.Services
                             _cachedTotalDiskGB = drive.TotalSize / 1024 / 1024 / 1024;
                         }
 
-                        // GPU Model
-                        using (var searcher = new ManagementObjectSearcher("SELECT Name FROM Win32_VideoController"))
+                        // GPU Model - try WMI first, then Registry fallback
+                        try
                         {
-                            foreach (var item in searcher.Get())
+                            using (var searcher = new ManagementObjectSearcher("SELECT Name FROM Win32_VideoController"))
                             {
-                                _cachedGpuModel = item["Name"]?.ToString()?.Trim();
-                                break; // Get first GPU
+                                foreach (var item in searcher.Get())
+                                {
+                                    _cachedGpuModel = item["Name"]?.ToString()?.Trim();
+                                    break;
+                                }
+                            }
+                        }
+                        catch (Exception wmEx)
+                        {
+                            _logger.LogWarning("WMI GPU query failed: {Msg}", wmEx.Message);
+                        }
+                        
+                        // GPU Fallback: Registry
+                        if (string.IsNullOrEmpty(_cachedGpuModel))
+                        {
+                            try
+                            {
+                                using var key = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(@"SYSTEM\CurrentControlSet\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}\0000");
+                                _cachedGpuModel = key?.GetValue("DriverDesc")?.ToString()?.Trim();
+                                _logger.LogInformation("GPU from Registry: {Gpu}", _cachedGpuModel);
+                            }
+                            catch (Exception regEx)
+                            {
+                                _logger.LogWarning("Registry GPU query failed: {Msg}", regEx.Message);
                             }
                         }
 
@@ -120,10 +184,19 @@ namespace Mudosoft.Agent.Services
                 catch (Exception ex)
                 {
                     _logger.LogError("Hardware info caching failed: {Message}", ex.Message);
+                    // Don't set _hardwareInfoCached = true, so we can retry next time
+                    return;
                 }
-                finally
+                
+                // Only mark as cached if we actually got some data
+                if (!string.IsNullOrEmpty(_cachedCpuModel) && _cachedCpuModel != "Unknown")
                 {
                     _hardwareInfoCached = true;
+                    _logger.LogInformation("Hardware info cached successfully");
+                }
+                else
+                {
+                    _logger.LogWarning("Hardware info incomplete, will retry on next call");
                 }
             }
         }
@@ -191,20 +264,57 @@ namespace Mudosoft.Agent.Services
             {
                 if (OperatingSystem.IsWindows())
                 {
-                    using var searcher = new ManagementObjectSearcher("SELECT Caption FROM Win32_OperatingSystem");
-                    foreach (var item in searcher.Get())
+                    var arch = Environment.Is64BitOperatingSystem ? "64-bit" : "32-bit";
+                    
+                    // Try WMI first for full name
+                    try
                     {
-                        var caption = item["Caption"]?.ToString();
-                        if (!string.IsNullOrWhiteSpace(caption))
+                        using var searcher = new ManagementObjectSearcher("SELECT Caption FROM Win32_OperatingSystem");
+                        foreach (var item in searcher.Get())
                         {
-                            return caption;
+                            var caption = item["Caption"]?.ToString()?.Trim();
+                            if (!string.IsNullOrWhiteSpace(caption))
+                            {
+                                return $"{caption} - {arch}";
+                            }
                         }
                     }
+                    catch (Exception wmEx)
+                    {
+                        _logger.LogWarning("WMI OS query failed, using Registry: {Msg}", wmEx.Message);
+                    }
+                    
+                    // Fallback: Get ProductName from Registry for edition info
+                    string? productName = null;
+                    try
+                    {
+                        using var key = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(@"SOFTWARE\Microsoft\Windows NT\CurrentVersion");
+                        productName = key?.GetValue("ProductName")?.ToString()?.Trim();
+                    }
+                    catch { }
+                    
+                    if (!string.IsNullOrEmpty(productName))
+                    {
+                        return $"{productName} - {arch}";
+                    }
+                    
+                    // Last fallback: Map version number to friendly name
+                    var ver = Environment.OSVersion.Version;
+                    var friendlyName = (ver.Major, ver.Minor) switch
+                    {
+                        (6, 1) => "Windows 7",
+                        (6, 2) => "Windows 8",
+                        (6, 3) => "Windows 8.1",
+                        (10, 0) when ver.Build >= 22000 => "Windows 11",
+                        (10, 0) => "Windows 10",
+                        _ => $"Windows {ver.Major}.{ver.Minor}"
+                    };
+                    return $"{friendlyName} - {arch}";
                 }
             }
             catch (Exception ex)
             {
-                _logger.LogWarning("WMI ile OS bilgisi alınamadı: {Message}", ex.Message);
+                _logger.LogWarning("OS bilgisi alınamadı: {Message}", ex.Message);
             }
             return Environment.OSVersion.ToString();
         }

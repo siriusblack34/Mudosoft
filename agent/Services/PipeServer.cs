@@ -121,13 +121,15 @@ public class PipeServer : IHostedService
                 // Get status info - use interfaces directly
                 var identityProvider = _services.GetService<Mudosoft.Agent.Interfaces.IDeviceIdentityProvider>();
                 var heartbeatService = _services.GetService<HeartbeatService>();
+                var config = _services.GetService<IConfiguration>();
 
                 var response = new
                 {
                     version = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version?.ToString() ?? "?",
                     deviceId = identityProvider?.GetDeviceId() ?? "?",
                     lastHeartbeat = heartbeatService?.LastHeartbeatUtc ?? DateTime.MinValue,
-                    isConnected = heartbeatService?.IsConnected ?? false
+                    isConnected = heartbeatService?.IsConnected ?? false,
+                    backendUrl = config?["Agent:BackendUrl"] ?? "http://localhost:5102"
                 };
 
                 return Task.FromResult(JsonSerializer.Serialize(response));

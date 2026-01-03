@@ -6,6 +6,16 @@
 # Release and publish artifacts
 /release/
 /agent/publish_with_tray/
+**/publish_single_exe/
+**/publish_debug/
+**/publish_new/
+**/publish_update_fix/
+**/installer_output/
+
+# Update packages (large zip files)
+**/update_package/
+**/update_package_small/
+backend/updates/*.zip
 
 # Node modules
 /frontend/node_modules/

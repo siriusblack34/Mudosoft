@@ -5,14 +5,15 @@ namespace Mudosoft.Agent.Services;
 
 public sealed class DeviceIdentityProvider : IDeviceIdentityProvider
 {
-    // ID'yi depolayacağımız dosya adı
-    private const string DeviceIdFilePath = "device_id.txt";
+    // ID'yi depolayacağımız dosya - mutlak yol (servis için kritik!)
+    private static readonly string DeviceIdFilePath = Path.Combine(AppContext.BaseDirectory, "device_id.txt");
     private readonly ILogger<DeviceIdentityProvider> _logger;
     private readonly string _deviceId;
 
     public DeviceIdentityProvider(ILogger<DeviceIdentityProvider> logger)
     {
         _logger = logger;
+        _logger.LogInformation("Device ID file path: {Path}", DeviceIdFilePath);
         _deviceId = GetOrCreateDeviceId();
     }
 

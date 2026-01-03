@@ -148,7 +148,7 @@ if (cliArgs.Any(a => a.Equals("/Install", StringComparison.OrdinalIgnoreCase)))
     Console.WriteLine("  2. MudosoftAgentService → Özellikler → Oturum Aç");
     Console.WriteLine("  3. 'Bu hesap' seçip domain admin bilgilerini girin");
     Console.WriteLine("========================================");
-    Console.ReadKey();
+    // Console.ReadKey(); // Removed: blocks installer in hidden mode
     return 0;
 }
 
@@ -165,7 +165,7 @@ if (cliArgs.Any(a => a.Equals("/Uninstall", StringComparison.OrdinalIgnoreCase))
     CleanLegacyServices();
     
     Console.WriteLine("Kaldırma işlemi tamamlandı. Pencereyi kapatabilirsiniz.");
-    Console.ReadKey();
+    // Console.ReadKey(); // Removed: blocks uninstaller in hidden mode
     return 0;
 }
 
@@ -239,11 +239,17 @@ var hostBuilder = Host.CreateDefaultBuilder(args)
             services.AddSingleton<IRsaKeyService, RsaKeyService>(); 
             services.AddSingleton<IAesEncryptionService, AesEncryptionService>();
             
+            // HelperLauncher for elevated Remote Desktop (runs as BackgroundService)
+            services.AddHostedService<HelperLauncher>();
+            
             // Tray Communication - Named Pipe Server
             services.AddHostedService<PipeServer>();
 
             // RemoteDesktopService - Mode'a göre stream veya launch
             services.AddHostedService<RemoteDesktopService>();
+            
+            // 8. Telemetry Service (Real-time Dashboard)
+            services.AddHostedService<TelemetryService>();
         }
     });
 
