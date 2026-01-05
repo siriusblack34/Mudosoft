@@ -14,7 +14,7 @@ class Program
     private static readonly string ConfigPath = @"C:\Program Files\MudoSoft\Agent\appsettings.json";
     
     private static string _deviceId = "";
-    private static string _backendUrl = "http://localhost:5102";
+    private static string _backendUrl = "http://10.0.213.89:5102";
     private static Rectangle _screenBounds = new(0, 0, 1920, 1080);
     
     static async Task Main(string[] args)

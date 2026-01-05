@@ -33,21 +33,20 @@ public class WebRTCService : IDisposable
     private VpxVideoEncoder? _videoEncoder;
     private MediaStreamTrack? _videoTrack;
     
-    // ICE servers (STUN + local TURN)
-    // NOTE: Change IPs for production deployment
+    // ICE servers (STUN + TURN on backend server)
     private readonly List<RTCIceServer> _iceServers = new()
     {
         new RTCIceServer { urls = "stun:stun.l.google.com:19302" },
-        // Local TURN server
+        // TURN server on backend
         new RTCIceServer 
         { 
-            urls = "turn:127.0.0.1:3478",
+            urls = "turn:10.0.213.89:3478",
             username = "mudosoft",
             credential = "Mudo2024Turn!"
         },
         new RTCIceServer 
         { 
-            urls = "turn:127.0.0.1:3478?transport=tcp",
+            urls = "turn:10.0.213.89:3478?transport=tcp",
             username = "mudosoft",
             credential = "Mudo2024Turn!"
         }

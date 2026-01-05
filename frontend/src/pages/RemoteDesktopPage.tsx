@@ -4,18 +4,17 @@ import { HubConnectionBuilder, HubConnection, HubConnectionState } from '@micros
 import { Wifi, WifiOff, Loader2, MousePointer2, Keyboard, Video, AlertTriangle } from 'lucide-react';
 import { API_BASE_URL } from '../lib/apiClient';
 
-// ICE Servers for WebRTC (STUN + local TURN)
-// NOTE: Change IPs for production deployment
+// ICE Servers for WebRTC (STUN + TURN on backend)
 const ICE_SERVERS: RTCIceServer[] = [
     { urls: 'stun:stun.l.google.com:19302' },
-    // Local TURN server
+    // TURN server on backend
     {
-        urls: 'turn:127.0.0.1:3478',
+        urls: 'turn:10.0.213.89:3478',
         username: 'mudosoft',
         credential: 'Mudo2024Turn!'
     },
     {
-        urls: 'turn:127.0.0.1:3478?transport=tcp',
+        urls: 'turn:10.0.213.89:3478?transport=tcp',
         username: 'mudosoft',
         credential: 'Mudo2024Turn!'
     }
