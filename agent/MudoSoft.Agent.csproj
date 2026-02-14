@@ -13,9 +13,9 @@
     <Description>Mudosoft Level 3 Retail POS Agent</Description>
     
     <!-- Agent Version - Önemli: Her güncellemede artır! -->
-    <Version>1.0.0.11</Version>
-    <AssemblyVersion>1.0.0.11</AssemblyVersion>
-    <FileVersion>1.0.0.11</FileVersion>
+    <Version>1.0.0.21</Version>
+    <AssemblyVersion>1.0.0.21</AssemblyVersion>
+    <FileVersion>1.0.0.21</FileVersion>
 
     <GenerateEmbeddedFilesManifest>true</GenerateEmbeddedFilesManifest>
   </PropertyGroup>

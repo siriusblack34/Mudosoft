@@ -4,7 +4,7 @@ import Spinner from "../components/ui/Spinner";
 import * as Icons from "../components/icons/Icons";
 import { Check, Terminal, Play, RotateCcw, Monitor, Server, XCircle, AlertCircle } from "lucide-react";
 
-type FilterType = "ALL" | "PC" | "POS";
+type FilterType = "ALL" | "PC" | "POS" | "GECICI";
 
 interface QueryResult {
     deviceId: string;
@@ -75,10 +75,12 @@ const SQLQueryPage: React.FC = () => {
     // =====================================================
     const isPc = (d: SqlDeviceWithStatus) => (d.deviceType ?? "").toLowerCase() === "pc";
     const isPos = (d: SqlDeviceWithStatus) => (d.deviceType ?? "").toLowerCase().includes("kasa");
+    const isGecici = (d: SqlDeviceWithStatus) => (d.deviceType ?? "").toLowerCase() === "gecici";
 
     const matchesSegment = (d: SqlDeviceWithStatus) => {
         if (filterType === "PC") return isPc(d);
         if (filterType === "POS") return isPos(d);
+        if (filterType === "GECICI") return isGecici(d);
         return true;
     };
 
@@ -181,6 +183,10 @@ const SQLQueryPage: React.FC = () => {
     const posOnline = posDevices.filter(d => d.isOnline).length;
     const posOffline = posDevices.length - posOnline;
 
+    const geciciDevices = devices.filter(isGecici);
+    const geciciOnline = geciciDevices.filter(d => d.isOnline).length;
+    const geciciOffline = geciciDevices.length - geciciOnline;
+
     const selectedCount = selectedDeviceIds.size;
 
     return (
@@ -223,6 +229,23 @@ const SQLQueryPage: React.FC = () => {
                             </span>
                         </div>
                     </div>
+
+                    <div className="w-px h-8 bg-slate-800"></div>
+
+                    {/* GECICI Stats */}
+                    <div className="flex flex-col items-end">
+                        <span className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-0.5">Geçici PC</span>
+                        <div className="flex items-center gap-3 text-sm">
+                            <span className="flex items-center gap-1.5 text-emerald-400">
+                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                                {geciciOnline}
+                            </span>
+                            <span className="flex items-center gap-1.5 text-slate-500">
+                                <span className="w-1.5 h-1.5 rounded-full bg-slate-600"></span>
+                                {geciciOffline}
+                            </span>
+                        </div>
+                    </div>
                 </div>
             </div>
 
@@ -239,7 +262,7 @@ const SQLQueryPage: React.FC = () => {
                     <div className="p-4 border-b border-slate-700 bg-slate-800/30 space-y-3">
                         {/* Filters */}
                         <div className="flex gap-2">
-                            {(["ALL", "PC", "POS"] as FilterType[]).map(t => (
+                            {(["ALL", "PC", "POS", "GECICI"] as FilterType[]).map(t => (
                                 <button
                                     key={t}
                                     onClick={() => setFilterType(t)}
@@ -248,7 +271,7 @@ const SQLQueryPage: React.FC = () => {
                                         : "bg-slate-800 text-slate-400 hover:bg-slate-700"
                                         }`}
                                 >
-                                    {t}
+                                    {t === "GECICI" ? "GEÇİCİ" : t}
                                 </button>
                             ))}
                         </div>

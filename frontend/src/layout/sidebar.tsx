@@ -3,7 +3,7 @@ import React from "react";
 import { NavLink } from "react-router-dom";
 // Tüm ikonları bir namespace altında alıyoruz (Icons dosyanın doğru export'ları içerdiğinden emin ol)
 import * as Icons from "../components/icons/Icons";
-import { LogOut } from "lucide-react";
+import { LogOut, Trash2 } from "lucide-react";
 
 const Sidebar: React.FC = () => {
   const linkClasses = ({ isActive }: { isActive: boolean }) =>
@@ -36,9 +36,14 @@ const Sidebar: React.FC = () => {
           SQL Query
         </NavLink>
 
-        <NavLink to="/actions" className={linkClasses}>
-          <Icons.ClockIcon className="w-5 h-5" />
-          Action History
+        <NavLink to="/kasa" className={linkClasses}>
+          <Icons.ServerIcon className="w-5 h-5" />
+          KASA
+        </NavLink>
+
+        <NavLink to="/inbox-cleanup" className={linkClasses}>
+          <Trash2 className="w-5 h-5" />
+          Inbox Temizlik
         </NavLink>
 
         <NavLink to="/settings" className={linkClasses}>

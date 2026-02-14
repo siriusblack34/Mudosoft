@@ -5,12 +5,14 @@ import DeviceDetailsPage from "./pages/DeviceDetailsPage";
 import ActionsHistoryPage from "./pages/ActionsHistoryPage";
 import SettingsPage from "./pages/SettingsPage";
 import SQLQueryPage from "./pages/SQLQueryPage";
+import KasaPage from "./pages/KasaPage";
 import RemoteDesktopPage from "./pages/RemoteDesktopPage";
 import ServicesPage from "./pages/ServicesPage";
 import FileManagerPage from "./pages/FileManagerPage";
 import SoftwareDeploymentPage from "./pages/SoftwareDeploymentPage";
 import ScriptPage from "./pages/ScriptPage";
 import AgentUpdatePage from "./pages/AgentUpdatePage";
+import InboxCleanupPage from "./pages/InboxCleanupPage";
 
 import AuthGuard from "./layout/AuthGuard";
 import LoginPage from "./pages/LoginPage";
@@ -117,10 +119,26 @@ const routes = [
                 ),
             },
             {
+                path: "/kasa",
+                element: (
+                    <ShellLayout>
+                        <KasaPage />
+                    </ShellLayout>
+                ),
+            },
+            {
                 path: "/agent-update",
                 element: (
                     <ShellLayout>
                         <AgentUpdatePage />
+                    </ShellLayout>
+                ),
+            },
+            {
+                path: "/inbox-cleanup",
+                element: (
+                    <ShellLayout>
+                        <InboxCleanupPage />
                     </ShellLayout>
                 ),
             },

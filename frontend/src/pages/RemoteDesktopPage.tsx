@@ -36,6 +36,9 @@ const RemoteDesktopPage: React.FC = () => {
     const dataChannelRef = useRef<RTCDataChannel | null>(null);
     const [useWebRTC, setUseWebRTC] = useState(true); // Try WebRTC first
 
+    // Monitor selection state (-1 = all, 0+ = specific monitor)
+    const [selectedMonitor, setSelectedMonitor] = useState(-1);
+
     // FPS Meter
     useEffect(() => {
         const interval = setInterval(() => {
@@ -281,6 +284,14 @@ const RemoteDesktopPage: React.FC = () => {
         sendInput('Scroll', { X: coords.X, Y: scrollY });
     };
 
+    // Monitor selection function
+    const selectMonitor = (monitorIndex: number) => {
+        setSelectedMonitor(monitorIndex);
+        if (connection && connection.state === HubConnectionState.Connected) {
+            connection.invoke("SelectMonitor", deviceId, monitorIndex).catch(err => console.error(err));
+        }
+    };
+
     return (
         <div
             className="w-screen h-screen bg-black flex flex-col overflow-hidden outline-none"
@@ -316,6 +327,31 @@ const RemoteDesktopPage: React.FC = () => {
                         </button>
                         <button onClick={() => sendSpecialKey("Tab")} className="px-3 py-1 text-xs font-mono text-slate-300 hover:bg-slate-700 hover:text-white rounded transition-colors" disabled={!controlEnabled}>
                             TAB
+                        </button>
+                    </div>
+
+                    {/* Monitor Selection Group */}
+                    <div className="flex items-center bg-slate-800 rounded-lg p-1 gap-1 mr-4 border border-slate-700">
+                        <button
+                            onClick={() => selectMonitor(-1)}
+                            className={`px-3 py-1 text-xs font-mono rounded transition-colors ${selectedMonitor === -1 ? 'bg-blue-600 text-white' : 'text-slate-300 hover:bg-slate-700 hover:text-white'}`}
+                            title="All Monitors"
+                        >
+                            ALL
+                        </button>
+                        <button
+                            onClick={() => selectMonitor(0)}
+                            className={`px-3 py-1 text-xs font-mono rounded transition-colors ${selectedMonitor === 0 ? 'bg-blue-600 text-white' : 'text-slate-300 hover:bg-slate-700 hover:text-white'}`}
+                            title="Monitor 1"
+                        >
+                            MON1
+                        </button>
+                        <button
+                            onClick={() => selectMonitor(1)}
+                            className={`px-3 py-1 text-xs font-mono rounded transition-colors ${selectedMonitor === 1 ? 'bg-blue-600 text-white' : 'text-slate-300 hover:bg-slate-700 hover:text-white'}`}
+                            title="Monitor 2"
+                        >
+                            MON2
                         </button>
                     </div>
 

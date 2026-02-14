@@ -142,6 +142,10 @@ export const apiClient = {
         return this.post("/api/actions/run-script", { deviceId, script });
     },
 
+    folderCleanup(deviceId: string, path: string): Promise<{ commandId: string }> {
+        return this.post("/api/actions/folder-cleanup", { deviceId, path });
+    },
+
     // ==========================
     // DASHBOARD
     // ==========================

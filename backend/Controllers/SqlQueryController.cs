@@ -111,7 +111,8 @@ namespace MudoSoft.Backend.Controllers
             "SELECT SUM",
             "SELECT AVG",
             "SELECT DISTINCT",
-            "SELECT *"  // Genel SELECT sorgularına izin ver
+            "SELECT *",  // Genel SELECT sorgularına izin ver
+            "UPDATE"     // UPDATE sorgularına izin ver
         };
 
         // 🔒 İzin verilen özel komutlar (tam eşleşme)
@@ -124,7 +125,7 @@ namespace MudoSoft.Backend.Controllers
         private static readonly string[] DangerousKeywords = new[]
         {
             "DROP", "DELETE", "ALTER", "CREATE",
-            "EXEC", "EXECUTE", "xp_", "sp_", "--", "/*", "*/", "UNION"
+            "EXEC", "EXECUTE", "xp_", "sp_", "/*", "*/", "UNION"
             // TRUNCATE, UPDATE, INSERT artık özel whitelist ile kontrol ediliyor
         };
 

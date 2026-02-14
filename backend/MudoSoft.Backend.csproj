@@ -18,11 +18,11 @@
     <PackageReference Include="Npgsql" Version="8.0.3" />
     <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="8.0.0" />
     <PackageReference Include="Swashbuckle.AspNetCore" Version="6.4.0" />
+    <PackageReference Include="System.Management" Version="10.0.2" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\shared\Mudosoft.Shared.csproj" />
-    <ProjectReference Include="..\agent\MudoSoft.Agent.csproj" />
   </ItemGroup>
 
   <!-- BU BLOK KALDIRILDI, ÇÜNKÜ .NET SDK BU DOSYALARI ZATEN OTOMATİK OLARAK DAHİL EDİYOR.

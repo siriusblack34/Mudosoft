@@ -37,6 +37,11 @@ namespace MudoSoft.Backend.Services
                 if (deviceType.StartsWith("KK")) return "192.168.125.235";
             }
 
+            if (storeCode == 196 && deviceType == "PC")
+            {
+                return "192.168.196.5";
+            }
+
             var lastOctet = deviceType switch
             {
                 "PC" => 2,

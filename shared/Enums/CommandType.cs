@@ -13,6 +13,7 @@ public enum CommandType
     FileWrite = 12,
     FileDelete = 13,
     FolderCreate = 14,
+    FolderCleanup = 15,  // Klasör içeriğini temizle (klasörü silme)
     
     // Agent Management
     UpdateAgent = 20

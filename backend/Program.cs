@@ -348,6 +348,118 @@ if (app.Environment.IsDevelopment())
             }
             db.SaveChanges();
         }
+
+        // =====================================================
+        // GEÇİCİ PC EKLEME
+        // =====================================================
+        var temporaryDevices = new List<(string Name, string Ip, int StoreCode, string StoreName)>
+        {
+            ("GE-PC-1", "10.0.102.40", 102, "Tekirdağ Tekira City"),
+            ("GE-PC-2", "10.0.102.45", 102, "Tekirdağ Tekira City"),
+            ("GE-PC-3", "10.0.210.131", 210, "Tuzla Viaport Marina"),
+            ("GE-PC-4", "10.0.210.132", 210, "Tuzla Viaport Marina"),
+            ("GE-PC-5", "10.0.210.133", 210, "Tuzla Viaport Marina"),
+            ("GE-PC-6", "10.0.102.35", 102, "Tekirdağ Tekira City"),
+            ("GE-PC-7", "10.0.102.50", 102, "Tekirdağ Tekira City")
+        };
+
+        foreach (var td in temporaryDevices)
+        {
+            if (!db.StoreDevices.Any(d => d.CalculatedIpAddress == td.Ip))
+            {
+                db.StoreDevices.Add(new StoreDevice
+                {
+                    DeviceId = $"GECICI-{td.Ip}",
+                    StoreCode = td.StoreCode,
+                    StoreName = td.StoreName,
+                    DeviceType = "GECICI",
+                    DeviceName = td.Name,
+                    CalculatedIpAddress = td.Ip,
+                    DbConnectionString = BuildConnectionString(td.Ip)
+                });
+            }
+        }
+        db.SaveChanges();
+
+        // =====================================================
+        // KAŞ MARINA KASA-2 EKLEMESİ
+        // =====================================================
+        if (!db.StoreDevices.Any(d => d.DeviceId == "257-K2"))
+        {
+            db.StoreDevices.Add(new StoreDevice
+            {
+                DeviceId = "257-K2",
+                StoreCode = 257,
+                StoreName = "Kaş Marina",
+                DeviceType = "Kasa-2",
+                DeviceName = "257-Kasa-2",
+                CalculatedIpAddress = "192.168.50.32",
+                DbConnectionString = BuildConnectionString("192.168.50.32")
+            });
+            db.SaveChanges();
+        }
+
+        // =====================================================
+        // MERSİN YAT LİMANI KASA-2 EKLEMESİ
+        // =====================================================
+        if (!db.StoreDevices.Any(d => d.DeviceId == "129-K2"))
+        {
+            db.StoreDevices.Add(new StoreDevice
+            {
+                DeviceId = "129-K2",
+                StoreCode = 129,
+                StoreName = "Mersin Yat Limanı Marina",
+                DeviceType = "Kasa-2",
+                DeviceName = "129-Kasa-2",
+                CalculatedIpAddress = "192.168.129.32",
+                DbConnectionString = BuildConnectionString("192.168.129.32")
+            });
+            db.SaveChanges();
+        }
+
+        // =====================================================
+        // MAĞAZA 139 ve 191 KASA-2 EKLEMESİ
+        // =====================================================
+        if (!db.StoreDevices.Any(d => d.DeviceId == "139-K2"))
+        {
+            db.StoreDevices.Add(new StoreDevice
+            {
+                DeviceId = "139-K2",
+                StoreCode = 139,
+                StoreName = "Mağaza 139",
+                DeviceType = "Kasa-2",
+                DeviceName = "139-Kasa-2",
+                CalculatedIpAddress = "192.168.139.32",
+                DbConnectionString = BuildConnectionString("192.168.139.32")
+            });
+            db.SaveChanges();
+        }
+
+        if (!db.StoreDevices.Any(d => d.DeviceId == "191-K2"))
+        {
+            db.StoreDevices.Add(new StoreDevice
+            {
+                DeviceId = "191-K2",
+                StoreCode = 191,
+                StoreName = "Mağaza 191",
+                DeviceType = "Kasa-2",
+                DeviceName = "191-Kasa-2",
+                CalculatedIpAddress = "192.168.191.32",
+                DbConnectionString = BuildConnectionString("192.168.191.32")
+            });
+            db.SaveChanges();
+        }
+        // =====================================================
+        // MAĞAZA 196 IP GÜNCELLEMESİ (192.168.196.2 -> 192.168.196.5)
+        // =====================================================
+        var store196Pc = db.StoreDevices.FirstOrDefault(d => d.StoreCode == 196 && d.DeviceType == "PC");
+        if (store196Pc != null && store196Pc.CalculatedIpAddress != "192.168.196.5")
+        {
+            store196Pc.CalculatedIpAddress = "192.168.196.5";
+            store196Pc.DbConnectionString = BuildConnectionString("192.168.196.5");
+            db.SaveChanges();
+            Console.WriteLine("✅ Store 196 IP updated to 192.168.196.5");
+        }
     }
 }
 

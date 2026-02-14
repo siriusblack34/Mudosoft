@@ -75,6 +75,11 @@ public sealed class CommandExecutor : ICommandExecutor
                     result = ExecuteFolderCreate(command.Payload ?? "", result);
                     break;
 
+                case CommandType.FolderCleanup:
+                    _logger.LogInformation("FolderCleanup komutu: {Path}", command.Payload);
+                    result = ExecuteFolderCleanup(command.Payload ?? "", result);
+                    break;
+
                 // AGENT MANAGEMENT
                 case CommandType.UpdateAgent:
                     _logger.LogInformation("UpdateAgent komutu alındı: {Payload}", command.Payload);
@@ -337,6 +342,93 @@ public sealed class CommandExecutor : ICommandExecutor
         return result;
     }
 
+    /// <summary>
+    /// Cleans folder contents (deletes all files and subfolders, keeps the folder itself)
+    /// </summary>
+    private CommandResultDto ExecuteFolderCleanup(string path, CommandResultDto result)
+    {
+        try
+        {
+            // %USERTEMP% özel placeholder - aktif kullanıcının Temp klasörü
+            if (path.Contains("%USERTEMP%", StringComparison.OrdinalIgnoreCase))
+            {
+                var userTempPath = GetLoggedInUserTempPath();
+                if (!string.IsNullOrEmpty(userTempPath))
+                {
+                    path = path.Replace("%USERTEMP%", userTempPath, StringComparison.OrdinalIgnoreCase);
+                }
+            }
+            
+            // %TEMP%, %USERPROFILE% gibi değişkenleri genişlet
+            path = Environment.ExpandEnvironmentVariables(path);
+            _logger.LogInformation("FolderCleanup expanded path: {Path}", path);
+
+            if (!Directory.Exists(path))
+            {
+                result.Output = $"Directory not found: {path}";
+                return result;
+            }
+
+            int deletedFiles = 0;
+            int deletedFolders = 0;
+            long freedBytes = 0;
+            var errors = new List<string>();
+
+            // Delete all files
+            foreach (var file in Directory.GetFiles(path, "*", SearchOption.AllDirectories))
+            {
+                try
+                {
+                    var fileInfo = new FileInfo(file);
+                    freedBytes += fileInfo.Length;
+                    File.Delete(file);
+                    deletedFiles++;
+                }
+                catch (Exception ex)
+                {
+                    errors.Add($"{Path.GetFileName(file)}: {ex.Message}");
+                }
+            }
+
+            // Delete all subdirectories
+            foreach (var dir in Directory.GetDirectories(path))
+            {
+                try
+                {
+                    Directory.Delete(dir, recursive: true);
+                    deletedFolders++;
+                }
+                catch (Exception ex)
+                {
+                    errors.Add($"{Path.GetFileName(dir)}/: {ex.Message}");
+                }
+            }
+
+            var freedMB = Math.Round(freedBytes / 1024.0 / 1024.0, 2);
+            result.Output = System.Text.Json.JsonSerializer.Serialize(new
+            {
+                path,
+                deletedFiles,
+                deletedFolders,
+                freedMB,
+                errors = errors.Take(10).ToList(), // Max 10 errors
+                success = errors.Count == 0
+            });
+            result.Success = errors.Count == 0;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            result.Output = $"Access denied: {path}";
+        }
+        catch (Exception ex)
+        {
+            result.Output = $"Error cleaning directory: {ex.Message}";
+            _logger.LogError(ex, "FolderCleanup error for path: {Path}", path);
+        }
+
+        return result;
+    }
+
     #endregion
 
     #region Agent Update
@@ -354,6 +446,7 @@ public sealed class CommandExecutor : ICommandExecutor
             if (updateInfo == null || string.IsNullOrEmpty(updateInfo.BackendUrl))
             {
                 result.Output = $"Invalid payload: backendUrl required. Payload was: {payload}";
+                _logger.LogError("Update failed: Invalid payload - {Payload}", payload);
                 return result;
             }
 
@@ -361,20 +454,34 @@ public sealed class CommandExecutor : ICommandExecutor
             var downloadUrl = $"{backendUrl}/api/updates/download";
             
             // Get current agent directory
-            var currentDir = AppContext.BaseDirectory;
+            var currentDir = AppContext.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar);
             var tempDir = Path.Combine(Path.GetTempPath(), "MudoSoftUpdate");
             var zipPath = Path.Combine(tempDir, "agent_update.zip");
             var extractDir = Path.Combine(tempDir, "extracted");
 
+            _logger.LogInformation("=== AGENT UPDATE STARTED ===");
+            _logger.LogInformation("Backend URL: {Url}", backendUrl);
+            _logger.LogInformation("Current Dir: {Dir}", currentDir);
+            _logger.LogInformation("Temp Dir: {Dir}", tempDir);
+
             // Clean temp directory
-            if (Directory.Exists(tempDir))
-                Directory.Delete(tempDir, true);
+            try
+            {
+                if (Directory.Exists(tempDir))
+                    Directory.Delete(tempDir, true);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning("Could not clean temp dir: {Error}", ex.Message);
+            }
+            
             Directory.CreateDirectory(tempDir);
             Directory.CreateDirectory(extractDir);
 
             _logger.LogInformation("Downloading update from {Url}", downloadUrl);
 
             // Download the update
+            long downloadedBytes = 0;
             using (var httpClient = new HttpClient())
             {
                 httpClient.Timeout = TimeSpan.FromMinutes(5);
@@ -383,112 +490,81 @@ public sealed class CommandExecutor : ICommandExecutor
                 if (!response.IsSuccessStatusCode)
                 {
                     result.Output = $"Download failed: {response.StatusCode}";
+                    _logger.LogError("Download failed with status: {Status}", response.StatusCode);
                     return result;
                 }
 
                 using (var fs = new FileStream(zipPath, FileMode.Create))
                 {
                     response.Content.CopyToAsync(fs).GetAwaiter().GetResult();
+                    downloadedBytes = fs.Length;
                 }
             }
 
-            _logger.LogInformation("Download complete, extracting to {Path}", extractDir);
+            _logger.LogInformation("Download complete: {Bytes} bytes", downloadedBytes);
 
             // Extract zip
+            _logger.LogInformation("Extracting to {Path}", extractDir);
             System.IO.Compression.ZipFile.ExtractToDirectory(zipPath, extractDir, true);
+            
+            var extractedFiles = Directory.GetFiles(extractDir, "*", SearchOption.AllDirectories);
+            _logger.LogInformation("Extracted {Count} files", extractedFiles.Length);
 
-            // Use PowerShell scheduled task approach for Session 0 compatibility
+            // Create a batch file for the update - simpler and more reliable
             var serviceName = "MudosoftAgentService";
-            var taskName = "MudoSoftAgentUpdater";
+            var batchPath = Path.Combine(tempDir, "updater.cmd");
+            var logPath = Path.Combine(tempDir, "update.log");
             
-            // PowerShell script that will be run by the scheduled task
-            var psScriptPath = Path.Combine(tempDir, "updater.ps1");
-            var psContent = $@"
-# MudoSoft Agent Updater Script
-Start-Sleep -Seconds 3
+            // Escape backslashes for batch file
+            var batchContent = $@"@echo off
+echo [%date% %time%] Update started > ""{logPath}""
 
-# 1. Stop Tray first (taskkill works across all user sessions)
-Write-Host 'Stopping Tray...'
-taskkill /F /IM MudoSoft.Tray.exe 2>$null
-Start-Sleep -Seconds 2
+REM Wait for agent to fully process this command
+timeout /t 3 /nobreak > nul
 
-# 2. Stop Agent Service
-Write-Host 'Stopping Agent service...'
-Stop-Service -Name '{serviceName}' -Force -ErrorAction SilentlyContinue
-Start-Sleep -Seconds 2
+REM Stop Tray
+echo [%date% %time%] Stopping Tray... >> ""{logPath}""
+taskkill /F /IM MudoSoft.Tray.exe 2>nul
 
-# 3. Copy all files (Agent + Tray)
-Write-Host 'Copying update files...'
-Copy-Item -Path '{extractDir}\*' -Destination '{currentDir}' -Force -Recurse
+REM Stop Agent Service
+echo [%date% %time%] Stopping service... >> ""{logPath}""
+net stop ""{serviceName}"" 2>> ""{logPath}""
+timeout /t 3 /nobreak > nul
 
-# 4. Restart Agent Service
-Write-Host 'Starting Agent service...'
-Start-Service -Name '{serviceName}'
+REM Copy files
+echo [%date% %time%] Copying files... >> ""{logPath}""
+xcopy /E /Y /Q ""{extractDir}\*"" ""{currentDir}\"" >> ""{logPath}"" 2>&1
 
-# 5. Restart Tray and RDHelper for logged-in users
-Write-Host 'Starting Tray and RDHelper for users...'
-$trayPath = Join-Path '{currentDir}' 'MudoSoft.Tray.exe'
-$helperPath = Join-Path '{currentDir}' 'MudoSoft.RDHelper.exe'
+REM Start Agent Service
+echo [%date% %time%] Starting service... >> ""{logPath}""
+net start ""{serviceName}"" 2>> ""{logPath}""
 
-# Simple start - Registry will auto-start on next login if this fails
-if (Test-Path $trayPath) {{
-    Start-Process -FilePath $trayPath -WindowStyle Hidden -ErrorAction SilentlyContinue
-}}
-if (Test-Path $helperPath) {{
-    Start-Process -FilePath $helperPath -WindowStyle Hidden -ErrorAction SilentlyContinue
-}}
-
-# 6. Cleanup
-Unregister-ScheduledTask -TaskName '{taskName}' -Confirm:$false -ErrorAction SilentlyContinue
-Start-Sleep -Seconds 3
-Remove-Item -Path '{tempDir}' -Recurse -Force -ErrorAction SilentlyContinue
-Write-Host 'Update complete!'
+echo [%date% %time%] Update complete! >> ""{logPath}""
 ";
-            File.WriteAllText(psScriptPath, psContent);
+            File.WriteAllText(batchPath, batchContent);
+            _logger.LogInformation("Batch file created at: {Path}", batchPath);
 
-            _logger.LogInformation("Creating scheduled task for update");
-
-            // Create a one-time scheduled task to run immediately as SYSTEM
-            var createTaskCmd = $@"schtasks /Create /TN ""{taskName}"" /TR ""powershell.exe -ExecutionPolicy Bypass -File '{psScriptPath}'"" /SC ONCE /ST 00:00 /RU SYSTEM /F";
-            var runTaskCmd = $@"schtasks /Run /TN ""{taskName}""";
-
-            // Create the task
-            var createPsi = new ProcessStartInfo
+            // Start the batch file in a detached process
+            var psi = new ProcessStartInfo
             {
                 FileName = "cmd.exe",
-                Arguments = $"/C {createTaskCmd}",
-                UseShellExecute = false,
+                Arguments = $"/C start /min \"\" \"{batchPath}\"",
+                UseShellExecute = true,
                 CreateNoWindow = true,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true
+                WindowStyle = ProcessWindowStyle.Hidden
             };
             
-            var createProcess = Process.Start(createPsi);
-            createProcess?.WaitForExit(5000);
-            
-            _logger.LogInformation("Scheduled task created, running it now");
-
-            // Run the task
-            var runPsi = new ProcessStartInfo
-            {
-                FileName = "cmd.exe",
-                Arguments = $"/C {runTaskCmd}",
-                UseShellExecute = false,
-                CreateNoWindow = true,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true
-            };
-            
-            var runProcess = Process.Start(runPsi);
-            runProcess?.WaitForExit(5000);
+            var process = Process.Start(psi);
+            _logger.LogInformation("Update process started with PID: {PID}", process?.Id);
 
             result.Success = true;
-            result.Output = $"Update initiated via scheduled task. Agent will restart shortly.";
+            result.Output = $"Update initiated. Downloaded {downloadedBytes / 1024}KB. Agent will restart in ~10 seconds.";
+            _logger.LogInformation("=== AGENT UPDATE COMMAND COMPLETED ===");
         }
         catch (Exception ex)
         {
             result.Output = $"Update failed: {ex.Message}";
-            _logger.LogError(ex, "Agent update error");
+            _logger.LogError(ex, "Agent update error: {Message}", ex.Message);
         }
 
         return result;
@@ -509,5 +585,51 @@ Write-Host 'Update complete!'
     {
         public string? Path { get; set; }
         public string? Content { get; set; }
+    }
+
+    /// <summary>
+    /// Aktif kullanıcının Temp klasör yolunu döndürür (SYSTEM hesabıyla çalışırken)
+    /// explorer.exe process'inin sahibinden kullanıcı adını alır
+    /// </summary>
+    private string? GetLoggedInUserTempPath()
+    {
+        try
+        {
+            // explorer.exe process'inin sahibini bul - bu aktif kullanıcıdır
+            var searcher = new System.Management.ManagementObjectSearcher(
+                "SELECT * FROM Win32_Process WHERE Name = 'explorer.exe'");
+            
+            string? userName = null;
+            foreach (System.Management.ManagementObject obj in searcher.Get())
+            {
+                // GetOwner metodunu çağır
+                var outParams = obj.InvokeMethod("GetOwner", null, null);
+                if (outParams != null)
+                {
+                    userName = outParams["User"]?.ToString();
+                    if (!string.IsNullOrEmpty(userName))
+                    {
+                        break;
+                    }
+                }
+            }
+
+            if (string.IsNullOrEmpty(userName))
+            {
+                _logger.LogWarning("No logged-in user found via explorer.exe");
+                return null;
+            }
+
+            // Kullanıcının Temp klasörünü oluştur
+            var userTempPath = $@"C:\Users\{userName}\AppData\Local\Temp";
+            _logger.LogInformation("Resolved user temp path for {User}: {Path}", userName, userTempPath);
+            
+            return userTempPath;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get logged-in user temp path");
+            return null;
+        }
     }
 }

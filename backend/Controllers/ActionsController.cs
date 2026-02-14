@@ -64,4 +64,37 @@ public class ActionsController : ControllerBase
         // Komutun benzersiz kimliğini döndürerek Frontend'in sonucu takip etmesini sağlarız.
         return Accepted(new { commandId = commandId.ToString() }); 
     }
+
+    /// <summary>
+    /// Belirtilen cihazda klasör içeriğini temizleme komutunu kuyruğa alır.
+    /// </summary>
+    [HttpPost("folder-cleanup")]
+    public IActionResult FolderCleanup([FromBody] FolderCleanupRequest request)
+    {
+        if (string.IsNullOrWhiteSpace(request.Path))
+        {
+            return BadRequest("Path boş olamaz.");
+        }
+
+        var commandId = Guid.NewGuid();
+        _queue.Enqueue(new CommandDto
+        {
+            Id = commandId,
+            DeviceId = request.DeviceId,
+            Type = CommandType.FolderCleanup,
+            Payload = request.Path,
+            CreatedAtUtc = DateTime.UtcNow
+        });
+
+        _logger.LogInformation("FolderCleanup komutu kuyruğa alındı: {DeviceId}, Path: {Path}, CommandId: {CommandId}", 
+                               request.DeviceId, request.Path, commandId);
+        
+        return Accepted(new { commandId = commandId.ToString() }); 
+    }
+}
+
+public class FolderCleanupRequest
+{
+    public string DeviceId { get; set; } = "";
+    public string Path { get; set; } = "";
 }

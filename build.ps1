@@ -81,11 +81,19 @@ Write-Host "  README olusturuldu" -ForegroundColor Green
 # Create ZIP if requested
 if ($Zip) {
     Write-Host "[5/5] ZIP olusturuluyor..."
+    
+    # Remove old nested publish folders that cause issues
+    Get-ChildItem $OutputDir -Directory | ForEach-Object {
+        Remove-Item $_.FullName -Recurse -Force -ErrorAction SilentlyContinue
+    }
+    
     $zipName = "MudoSoft-Agent-v$agentVersion.zip"
     $zipPath = Join-Path $RootDir $zipName
     
     if (Test-Path $zipPath) { Remove-Item $zipPath -Force }
-    Compress-Archive -Path (Join-Path $OutputDir "*") -DestinationPath $zipPath -Force
+    
+    # Only compress files (not directories)
+    Get-ChildItem $OutputDir -File | Compress-Archive -DestinationPath $zipPath -Force
     
     Write-Host "  ZIP: $zipName" -ForegroundColor Green
 }

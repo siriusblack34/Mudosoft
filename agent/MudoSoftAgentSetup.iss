@@ -7,7 +7,7 @@
 #define MyAppPublisher "MudoSoft"
 #define MyAppExeName "MudoSoft.Agent.exe"
 #define TrayExeName "MudoSoft.Tray.exe"
-#define HelperExeName "MudoSoft.RDHelper.exe"
+#define OldHelperExeName "MudoSoft.RDHelper.exe"
 #define ServiceName "MudosoftAgentService"
 #define HelperTaskName "MudoSoftRDHelper"
 
@@ -41,8 +41,8 @@ Source: "publish_single_exe\appsettings.Development.json"; DestDir: "{app}"; Fla
 ; Tray Application
 Source: "..\tray\publish_single_exe\MudoSoft.Tray.exe"; DestDir: "{app}"; Flags: ignoreversion
 
-; RDHelper (Elevated Remote Desktop Helper - runs as SYSTEM via scheduled task)
-Source: "..\helper\MudoSoft.RDHelper\publish_single_exe\MudoSoft.RDHelper.exe"; DestDir: "{app}"; Flags: ignoreversion
+; NOTE: RDHelper is now integrated into MudoSoft.Agent.exe via --desktop-helper arg.
+; We no longer deploy a separate MudoSoft.RDHelper.exe.
 
 [Icons]
 ; Start Menu shortcut for Tray
@@ -67,22 +67,37 @@ Filename: "schtasks.exe"; Parameters: "/Delete /TN ""{#HelperTaskName}"" /F"; Fl
 ; Stop and remove the service before uninstallation
 Filename: "sc.exe"; Parameters: "stop {#ServiceName}"; Flags: runhidden waituntilterminated; RunOnceId: "StopService"
 Filename: "sc.exe"; Parameters: "delete {#ServiceName}"; Flags: runhidden waituntilterminated; RunOnceId: "DeleteService"
-; Kill Tray and RDHelper if running
+; Kill Tray and Helper if running
 Filename: "taskkill.exe"; Parameters: "/F /IM {#TrayExeName}"; Flags: runhidden; RunOnceId: "KillTray"
-Filename: "taskkill.exe"; Parameters: "/F /IM {#HelperExeName}"; Flags: runhidden; RunOnceId: "KillHelper"
+Filename: "taskkill.exe"; Parameters: "/F /IM {#MyAppExeName}"; Flags: runhidden; RunOnceId: "KillAgent"
+Filename: "taskkill.exe"; Parameters: "/F /IM {#OldHelperExeName}"; Flags: runhidden; RunOnceId: "KillOldHelper"
 
 [Code]
+// Helper to delete the old RDHelper exe if it exists
+procedure DeleteOldHelper();
+var
+  OldPath: String;
+begin
+  OldPath := ExpandConstant('{app}\{#OldHelperExeName}');
+  if FileExists(OldPath) then
+  begin
+    Log('Deleting old helper file: ' + OldPath);
+    DeleteFile(OldPath);
+  end;
+end;
+
 procedure CreateRDHelperScheduledTask();
 var
   ResultCode: Integer;
   TaskXml: String;
   XmlPath: String;
-  HelperPath: String;
+  AgentPath: String;
 begin
-  HelperPath := ExpandConstant('{app}\{#HelperExeName}');
+  AgentPath := ExpandConstant('{app}\{#MyAppExeName}');
   XmlPath := ExpandConstant('{tmp}\rdhelper_task.xml');
   
   // Create XML for scheduled task
+  // IMPORTANT: We now run the MAIN Agent EXE with the --desktop-helper argument!
   TaskXml := '<?xml version="1.0" encoding="UTF-16"?>' + #13#10 +
     '<Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">' + #13#10 +
     '  <RegistrationInfo>' + #13#10 +
@@ -116,7 +131,8 @@ begin
     '  </Settings>' + #13#10 +
     '  <Actions Context="Author">' + #13#10 +
     '    <Exec>' + #13#10 +
-    '      <Command>"' + HelperPath + '"</Command>' + #13#10 +
+    '      <Command>"' + AgentPath + '"</Command>' + #13#10 +
+    '      <Arguments>--desktop-helper</Arguments>' + #13#10 +
     '    </Exec>' + #13#10 +
     '  </Actions>' + #13#10 +
     '</Task>';
@@ -143,6 +159,12 @@ end;
 
 procedure CurStepChanged(CurStep: TSetupStep);
 begin
+  if CurStep = ssInstall then
+  begin
+     // Delete old helper before installing new files (to avoid conflicts)
+     DeleteOldHelper();
+  end;
+
   if CurStep = ssPostInstall then
   begin
     CreateRDHelperScheduledTask();
@@ -160,7 +182,8 @@ begin
   Exec('sc.exe', 'stop {#ServiceName}', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
   // Kill existing Tray and RDHelper
   Exec('taskkill.exe', '/F /IM {#TrayExeName}', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
-  Exec('taskkill.exe', '/F /IM {#HelperExeName}', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  Exec('taskkill.exe', '/F /IM {#MyAppExeName}', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  Exec('taskkill.exe', '/F /IM {#OldHelperExeName}', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
   Sleep(2000); // Wait for processes to stop
   Result := True;
 end;

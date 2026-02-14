@@ -5,7 +5,7 @@ import { apiClient } from "../lib/apiClient";
 import type { Device, DeviceMetric, OsInfo } from "../types";
 import {
     MonitorPlay, Cpu, HardDrive, MemoryStick, Monitor,
-    Power, Settings, FolderOpen, Package, ArrowLeft, User, Clock, Terminal
+    Power, Settings, FolderOpen, Package, ArrowLeft, User, Clock, Terminal, Trash2, Activity
 } from "lucide-react";
 
 // UTC to Local Time formatter
@@ -67,6 +67,10 @@ const DeviceDetailsPage: React.FC = () => {
     const [deviceData, setDeviceData] = useState<Device | null>(null);
     const [loading, setLoading] = useState(true);
     const [restarting, setRestarting] = useState(false);
+    const [cleanupPaths, setCleanupPaths] = useState<string[]>([]);
+    const [customPath, setCustomPath] = useState('');
+    const [cleaning, setCleaning] = useState(false);
+    const [cleanupResult, setCleanupResult] = useState<string | null>(null);
 
     useEffect(() => {
         if (!deviceId) {
@@ -114,12 +118,77 @@ const DeviceDetailsPage: React.FC = () => {
         }
     };
 
+    const predefinedPaths = [
+        { label: 'Windows Temp', path: 'C:\\Windows\\Temp' },
+        { label: 'User Temp', path: '%USERTEMP%' },
+        { label: 'Prefetch', path: 'C:\\Windows\\Prefetch' },
+    ];
+
+    const togglePath = (path: string) => {
+        setCleanupPaths(prev =>
+            prev.includes(path)
+                ? prev.filter(p => p !== path)
+                : [...prev, path]
+        );
+    };
+
+    const handleCleanup = async () => {
+        if (!deviceId) return;
+
+        const pathsToClean = [...cleanupPaths];
+        if (customPath.trim()) {
+            pathsToClean.push(customPath.trim());
+        }
+
+        if (pathsToClean.length === 0) {
+            alert('Lütfen en az bir klasör seçin veya path girin.');
+            return;
+        }
+
+        const confirmed = window.confirm(`${pathsToClean.length} klasör temizlenecek. Onaylıyor musunuz?`);
+        if (!confirmed) return;
+
+        setCleaning(true);
+        setCleanupResult(null);
+
+        try {
+            const results: string[] = [];
+            for (const path of pathsToClean) {
+                const { commandId } = await apiClient.folderCleanup(deviceId, path);
+                results.push(`✓ ${path} (Command: ${commandId.substring(0, 8)}...)`);
+            }
+            setCleanupResult(results.join('\n'));
+            setCleanupPaths([]);
+            setCustomPath('');
+        } catch (err) {
+            console.error('Cleanup failed:', err);
+            setCleanupResult('❌ Temizlik komutu gönderilemedi!');
+        } finally {
+            setCleaning(false);
+        }
+    };
+
     if (loading || !deviceId) {
-        return <div className="p-4 text-ms-text">Loading device details…</div>;
+        return (
+            <div className="flex items-center justify-center min-h-[400px]">
+                <div className="w-8 h-8 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin" />
+            </div>
+        );
     }
 
     if (!deviceData) {
-        return <div className="p-4 text-red-500">Could not load device details for {deviceId}.</div>;
+        return (
+            <div className="flex flex-col items-center justify-center min-h-[400px] text-gray-400">
+                <Monitor className="w-16 h-16 mb-4 opacity-50" />
+                <p>Could not load device details for {deviceId}.</p>
+                <button
+                    onClick={() => navigate('/devices')}
+                    className="mt-4 px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg"
+                >
+                    Back to Devices
+                </button>
+            </div>
+        );
     }
 
     const metrics: DeviceMetric[] = deviceData.metrics || [];
@@ -132,191 +201,247 @@ const DeviceDetailsPage: React.FC = () => {
     const latestDisk = deviceData.diskUsage ?? 0;
 
     return (
-        <div className="space-y-6 p-4">
-            {/* Header with Back Button and Actions */}
-            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-                <div className="flex items-center gap-3">
+        <div className="space-y-6">
+            {/* Header */}
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                <div className="flex items-center gap-4">
                     <button
                         onClick={() => navigate('/devices')}
-                        className="p-2 hover:bg-slate-700 rounded-lg transition-colors"
+                        className="p-2 hover:bg-gray-700/50 rounded-xl transition-colors"
                     >
-                        <ArrowLeft className="w-5 h-5" />
+                        <ArrowLeft className="w-5 h-5 text-gray-400" />
                     </button>
-                    <h1 className="text-2xl font-semibold">{deviceData.hostname}</h1>
-                    <span className={`px-2 py-1 rounded-full text-xs font-medium ${deviceData.online ? 'bg-emerald-500/20 text-emerald-400' : 'bg-red-500/20 text-red-400'}`}>
-                        {deviceData.online ? 'Online' : 'Offline'}
-                    </span>
+                    <div>
+                        <div className="flex items-center gap-3">
+                            <h1 className="text-2xl font-bold text-white">{deviceData.hostname}</h1>
+                            <span className={`px-3 py-1 rounded-full text-xs font-semibold ${deviceData.online
+                                    ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                                    : 'bg-red-500/20 text-red-400 border border-red-500/30'
+                                }`}>
+                                {deviceData.online ? '● Online' : '○ Offline'}
+                            </span>
+                        </div>
+                        <p className="text-sm text-gray-500 mt-1">{deviceData.ipAddress} • {deviceData.storeCode || 'No Store'}</p>
+                    </div>
                 </div>
 
+                {/* Action Buttons */}
                 <div className="flex flex-wrap gap-2">
-                    <button
-                        onClick={() => window.open(`/remote/${deviceId}`, '_blank')}
-                        className="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors shadow-lg shadow-emerald-900/20 text-sm"
-                    >
-                        <MonitorPlay className="w-4 h-4" />
-                        Remote View
-                    </button>
-                    <button
-                        onClick={() => navigate(`/devices/${deviceId}/services`)}
-                        className="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors text-sm"
-                    >
-                        <Settings className="w-4 h-4" />
-                        Services
-                    </button>
-                    <button
-                        onClick={() => navigate(`/devices/${deviceId}/files`)}
-                        className="bg-violet-600 hover:bg-violet-500 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors text-sm"
-                    >
-                        <FolderOpen className="w-4 h-4" />
-                        Files
-                    </button>
-                    <button
-                        onClick={() => navigate(`/devices/${deviceId}/software`)}
-                        className="bg-fuchsia-600 hover:bg-fuchsia-500 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors text-sm"
-                    >
-                        <Package className="w-4 h-4" />
-                        Software
-                    </button>
-                    <button
-                        onClick={() => navigate(`/devices/${deviceId}/script`)}
-                        className="bg-amber-600 hover:bg-amber-500 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors text-sm"
-                    >
-                        <Terminal className="w-4 h-4" />
-                        Script
-                    </button>
-                    <button
+                    <ActionButton icon={MonitorPlay} label="Remote View" color="emerald" onClick={() => window.open(`/remote/${deviceId}`, '_blank')} />
+                    <ActionButton icon={Settings} label="Services" color="indigo" onClick={() => navigate(`/devices/${deviceId}/services`)} />
+                    <ActionButton icon={FolderOpen} label="Files" color="violet" onClick={() => navigate(`/devices/${deviceId}/files`)} />
+                    <ActionButton icon={Package} label="Software" color="fuchsia" onClick={() => navigate(`/devices/${deviceId}/software`)} />
+                    <ActionButton icon={Terminal} label="Script" color="amber" onClick={() => navigate(`/devices/${deviceId}/script`)} />
+                    <ActionButton
+                        icon={Power}
+                        label={restarting ? 'Sending...' : 'Restart'}
+                        color="red"
                         onClick={handleRestart}
                         disabled={restarting || !deviceData.online}
-                        className="bg-orange-600 hover:bg-orange-500 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors text-sm disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                        <Power className="w-4 h-4" />
-                        {restarting ? 'Sending...' : 'Restart'}
-                    </button>
+                    />
                 </div>
             </div>
 
-            {/* Main Grid: Device Info + Hardware Inventory */}
+            {/* Main Grid */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-
                 {/* Device Information */}
-                <section className="bg-ms-panel p-6 rounded-2xl border border-ms-border shadow-lg">
-                    <h2 className="text-lg font-medium mb-4 flex items-center gap-2">
-                        <Monitor className="w-5 h-5 text-slate-400" />
+                <div className="p-6 rounded-2xl bg-gradient-to-br from-gray-800/80 to-gray-900/80 border border-gray-700/50">
+                    <h2 className="text-lg font-semibold mb-5 flex items-center gap-2 text-white">
+                        <div className="p-2 rounded-lg bg-emerald-500/10">
+                            <Monitor className="w-5 h-5 text-emerald-400" />
+                        </div>
                         Device Information
                     </h2>
-                    <div className="space-y-3 text-sm">
-                        <div className="flex justify-between">
-                            <span className="text-ms-text-muted">Hostname:</span>
-                            <span className="font-medium">{deviceData.hostname}</span>
-                        </div>
-                        <div className="flex justify-between">
-                            <span className="text-ms-text-muted">IP Address:</span>
-                            <span>{deviceData.ipAddress}</span>
-                        </div>
-                        <div className="flex justify-between">
-                            <span className="text-ms-text-muted">OS:</span>
-                            <span className="text-right">
-                                {deviceData.os?.version && deviceData.os.version !== '-'
-                                    ? deviceData.os.version
-                                    : formatOsName(deviceData.os)}
-                            </span>
-                        </div>
-                        <div className="flex justify-between">
-                            <span className="text-ms-text-muted">Store Code:</span>
-                            <span>{deviceData.storeCode ?? 'N/A'}</span>
-                        </div>
-                        <div className="flex justify-between">
-                            <span className="text-ms-text-muted">Agent Version:</span>
-                            <span>{deviceData.agentVersion ?? 'N/A'}</span>
-                        </div>
-                        <hr className="border-slate-700" />
-                        <div className="flex justify-between items-center">
-                            <span className="text-ms-text-muted flex items-center gap-1">
-                                <Clock className="w-4 h-4" /> Uptime:
-                            </span>
-                            <span className="text-emerald-400 font-medium">{formatUptime(deviceData.systemBootTime)}</span>
-                        </div>
-                        <div className="flex justify-between items-center">
-                            <span className="text-ms-text-muted flex items-center gap-1">
-                                <User className="w-4 h-4" /> Logged In User:
-                            </span>
-                            <span>{deviceData.lastLoggedInUser ?? 'N/A'}</span>
-                        </div>
-                        <div className="flex justify-between">
-                            <span className="text-ms-text-muted">Last Seen:</span>
-                            <span className="text-right text-xs">{formatTimeLocal(deviceData.lastSeen)}</span>
-                        </div>
+                    <div className="space-y-4">
+                        <InfoRow label="Hostname" value={deviceData.hostname} />
+                        <InfoRow label="IP Address" value={deviceData.ipAddress} />
+                        <InfoRow label="OS" value={deviceData.os?.version && deviceData.os.version !== '-' ? deviceData.os.version : formatOsName(deviceData.os)} />
+                        <InfoRow label="Store Code" value={deviceData.storeCode ?? 'N/A'} />
+                        <InfoRow label="Agent Version" value={deviceData.agentVersion ?? 'N/A'} highlight />
+                        <div className="h-px bg-gray-700/50 my-4" />
+                        <InfoRow label="Uptime" value={formatUptime(deviceData.systemBootTime)} icon={Clock} valueClass="text-emerald-400" />
+                        <InfoRow label="Logged In User" value={deviceData.lastLoggedInUser ?? 'N/A'} icon={User} />
+                        <InfoRow label="Last Seen" value={formatTimeLocal(deviceData.lastSeen)} small />
                     </div>
-                </section>
+                </div>
 
                 {/* Hardware Inventory */}
-                <section className="bg-ms-panel p-6 rounded-2xl border border-ms-border shadow-lg">
-                    <h2 className="text-lg font-medium mb-4 flex items-center gap-2">
-                        <Cpu className="w-5 h-5 text-slate-400" />
+                <div className="p-6 rounded-2xl bg-gradient-to-br from-gray-800/80 to-gray-900/80 border border-gray-700/50">
+                    <h2 className="text-lg font-semibold mb-5 flex items-center gap-2 text-white">
+                        <div className="p-2 rounded-lg bg-blue-500/10">
+                            <Cpu className="w-5 h-5 text-blue-400" />
+                        </div>
                         Hardware Inventory
                     </h2>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        <div className="bg-slate-800/50 p-4 rounded-xl border border-slate-700">
-                            <div className="flex items-center gap-2 text-slate-400 text-xs mb-1">
-                                <Cpu className="w-4 h-4" /> PROCESSOR
-                            </div>
-                            <div className="text-sm font-medium truncate" title={deviceData.cpuModel}>
-                                {deviceData.cpuModel ?? 'N/A'}
-                            </div>
-                        </div>
-                        <div className="bg-slate-800/50 p-4 rounded-xl border border-slate-700">
-                            <div className="flex items-center gap-2 text-slate-400 text-xs mb-1">
-                                <MemoryStick className="w-4 h-4" /> MEMORY
-                            </div>
-                            <div className="text-sm font-medium">
-                                {formatRam(deviceData.totalRamMB)}
-                            </div>
-                        </div>
-                        <div className="bg-slate-800/50 p-4 rounded-xl border border-slate-700">
-                            <div className="flex items-center gap-2 text-slate-400 text-xs mb-1">
-                                <HardDrive className="w-4 h-4" /> STORAGE
-                            </div>
-                            <div className="text-sm font-medium">
-                                {deviceData.totalDiskGB ? (
-                                    <>
-                                        <span className="text-amber-400">
-                                            {Math.round((deviceData.totalDiskGB * (deviceData.diskUsage || 0)) / 100)} GB
-                                        </span>
-                                        <span className="text-slate-500"> / {deviceData.totalDiskGB} GB</span>
-                                    </>
-                                ) : 'N/A'}
-                            </div>
-                        </div>
-                        <div className="bg-slate-800/50 p-4 rounded-xl border border-slate-700">
-                            <div className="flex items-center gap-2 text-slate-400 text-xs mb-1">
-                                <Monitor className="w-4 h-4" /> GRAPHICS
-                            </div>
-                            <div className="text-sm font-medium truncate" title={deviceData.gpuModel ?? undefined}>
-                                {deviceData.gpuModel ?? 'N/A'}
-                            </div>
-                        </div>
+                    <div className="grid grid-cols-2 gap-4">
+                        <HardwareCard icon={Cpu} label="PROCESSOR" value={deviceData.cpuModel ?? 'N/A'} color="blue" />
+                        <HardwareCard icon={MemoryStick} label="MEMORY" value={formatRam(deviceData.totalRamMB)} color="purple" />
+                        <HardwareCard
+                            icon={HardDrive}
+                            label="STORAGE"
+                            value={deviceData.totalDiskGB ? `${Math.round((deviceData.totalDiskGB * (deviceData.diskUsage || 0)) / 100)} / ${deviceData.totalDiskGB} GB` : 'N/A'}
+                            color="amber"
+                        />
+                        <HardwareCard icon={Monitor} label="GRAPHICS" value={deviceData.gpuModel ?? 'N/A'} color="green" />
                     </div>
-                </section>
+                </div>
+            </div>
+
+            {/* Quick Cleanup */}
+            <div className="p-6 rounded-2xl bg-gradient-to-br from-gray-800/80 to-gray-900/80 border border-gray-700/50">
+                <h2 className="text-lg font-semibold mb-5 flex items-center gap-2 text-white">
+                    <div className="p-2 rounded-lg bg-rose-500/10">
+                        <Trash2 className="w-5 h-5 text-rose-400" />
+                    </div>
+                    Quick Cleanup
+                </h2>
+                <div className="space-y-4">
+                    <div className="flex flex-wrap gap-2">
+                        {predefinedPaths.map(({ label, path }) => (
+                            <button
+                                key={path}
+                                onClick={() => togglePath(path)}
+                                className={`px-4 py-2 rounded-xl text-sm font-medium transition-all duration-200 ${cleanupPaths.includes(path)
+                                        ? 'bg-rose-500 text-white shadow-lg shadow-rose-500/25'
+                                        : 'bg-gray-700/50 text-gray-300 hover:bg-gray-600/50 border border-gray-600/50'
+                                    }`}
+                            >
+                                {cleanupPaths.includes(path) ? '✓ ' : ''}{label}
+                            </button>
+                        ))}
+                    </div>
+
+                    <div className="flex gap-3">
+                        <input
+                            type="text"
+                            value={customPath}
+                            onChange={(e) => setCustomPath(e.target.value)}
+                            placeholder="Özel path girin (örn: C:\Users\...\Downloads)"
+                            className="flex-1 px-4 py-3 rounded-xl bg-gray-800/50 border border-gray-600/50 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-rose-500/50 focus:ring-1 focus:ring-rose-500/25 transition-all"
+                        />
+                        <button
+                            onClick={handleCleanup}
+                            disabled={cleaning || !deviceData.online || (cleanupPaths.length === 0 && !customPath.trim())}
+                            className="px-6 py-3 bg-rose-600 hover:bg-rose-500 text-white rounded-xl flex items-center gap-2 transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-rose-900/20"
+                        >
+                            <Trash2 className="w-4 h-4" />
+                            {cleaning ? 'Temizleniyor...' : 'Temizle'}
+                        </button>
+                    </div>
+
+                    {cleanupResult && (
+                        <div className="p-4 rounded-xl bg-gray-800/50 border border-gray-600/50 text-sm whitespace-pre-line text-gray-300">
+                            {cleanupResult}
+                        </div>
+                    )}
+
+                    {!deviceData.online && (
+                        <p className="text-sm text-amber-400 flex items-center gap-2">
+                            <Activity className="w-4 h-4" />
+                            Cihaz offline - temizlik komutu gönderilemez.
+                        </p>
+                    )}
+                </div>
             </div>
 
             {/* Performance Metrics */}
-            <section>
-                <h2 className="text-lg font-medium mb-4">Performance Metrics (Last 24 Hours)</h2>
+            <div className="space-y-4">
+                <h2 className="text-lg font-semibold text-white flex items-center gap-2">
+                    <Activity className="w-5 h-5 text-emerald-400" />
+                    Performance Metrics
+                    <span className="text-xs text-gray-500 font-normal ml-2">Last 24 Hours</span>
+                </h2>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <div className="p-3 bg-ms-panel rounded-2xl border border-ms-border shadow-sm">
-                        <MetricChart title="CPU Usage" data={cpuData} value={latestCpu} color="#f87171" height={150} />
-                    </div>
-                    <div className="p-3 bg-ms-panel rounded-2xl border border-ms-border shadow-sm">
-                        <MetricChart title="RAM Usage" data={ramData} value={latestRam} color="#60a5fa" height={150} />
-                    </div>
-                    <div className="p-3 bg-ms-panel rounded-2xl border border-ms-border shadow-sm">
-                        <MetricChart title="Disk Usage" data={diskData} value={latestDisk} color="#34d399" height={150} />
-                    </div>
+                    <MetricCard title="CPU Usage" data={cpuData} value={latestCpu} color="#f87171" />
+                    <MetricCard title="RAM Usage" data={ramData} value={latestRam} color="#60a5fa" />
+                    <MetricCard title="Disk Usage" data={diskData} value={latestDisk} color="#34d399" />
                 </div>
-            </section>
-
+            </div>
         </div>
     );
 };
+
+// Helper Components
+const ActionButton: React.FC<{
+    icon: React.FC<{ className?: string }>;
+    label: string;
+    color: string;
+    onClick: () => void;
+    disabled?: boolean;
+}> = ({ icon: Icon, label, color, onClick, disabled }) => {
+    const colorMap: Record<string, string> = {
+        emerald: 'bg-emerald-600 hover:bg-emerald-500 shadow-emerald-900/20',
+        indigo: 'bg-indigo-600 hover:bg-indigo-500 shadow-indigo-900/20',
+        violet: 'bg-violet-600 hover:bg-violet-500 shadow-violet-900/20',
+        fuchsia: 'bg-fuchsia-600 hover:bg-fuchsia-500 shadow-fuchsia-900/20',
+        amber: 'bg-amber-600 hover:bg-amber-500 shadow-amber-900/20',
+        red: 'bg-red-600 hover:bg-red-500 shadow-red-900/20',
+    };
+
+    return (
+        <button
+            onClick={onClick}
+            disabled={disabled}
+            className={`${colorMap[color]} text-white px-4 py-2 rounded-xl flex items-center gap-2 transition-all text-sm font-medium shadow-lg disabled:opacity-50 disabled:cursor-not-allowed`}
+        >
+            <Icon className="w-4 h-4" />
+            {label}
+        </button>
+    );
+};
+
+const InfoRow: React.FC<{
+    label: string;
+    value: string | null | undefined;
+    icon?: React.FC<{ className?: string }>;
+    valueClass?: string;
+    highlight?: boolean;
+    small?: boolean;
+}> = ({ label, value, icon: Icon, valueClass, highlight, small }) => (
+    <div className="flex justify-between items-center">
+        <span className="text-gray-500 flex items-center gap-2 text-sm">
+            {Icon && <Icon className="w-4 h-4" />}
+            {label}
+        </span>
+        <span className={`${valueClass || 'text-white'} ${highlight ? 'px-2 py-1 bg-emerald-500/10 rounded-md text-emerald-400' : ''} ${small ? 'text-xs text-gray-400' : 'font-medium'}`}>
+            {value || 'N/A'}
+        </span>
+    </div>
+);
+
+const HardwareCard: React.FC<{
+    icon: React.FC<{ className?: string }>;
+    label: string;
+    value: string;
+    color: string;
+}> = ({ icon: Icon, label, value, color }) => {
+    const colorMap: Record<string, string> = {
+        blue: 'bg-blue-500/10 text-blue-400',
+        purple: 'bg-purple-500/10 text-purple-400',
+        amber: 'bg-amber-500/10 text-amber-400',
+        green: 'bg-green-500/10 text-green-400',
+    };
+
+    return (
+        <div className="p-4 rounded-xl bg-gray-800/50 border border-gray-700/50">
+            <div className={`inline-flex p-2 rounded-lg ${colorMap[color]} mb-3`}>
+                <Icon className="w-4 h-4" />
+            </div>
+            <p className="text-xs text-gray-500 mb-1">{label}</p>
+            <p className="text-sm font-medium text-white truncate" title={value}>{value}</p>
+        </div>
+    );
+};
+
+const MetricCard: React.FC<{
+    title: string;
+    data: { name: string; value: number }[];
+    value: number;
+    color: string;
+}> = ({ title, data, value, color }) => (
+    <div className="p-4 rounded-2xl bg-gradient-to-br from-gray-800/80 to-gray-900/80 border border-gray-700/50">
+        <MetricChart title={title} data={data} value={value} color={color} height={150} />
+    </div>
+);
 
 export default DeviceDetailsPage;

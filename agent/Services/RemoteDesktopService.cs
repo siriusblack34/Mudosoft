@@ -28,6 +28,9 @@ public class RemoteDesktopService : BackgroundService
     
     private readonly RemoteDesktopConfig _rdConfig;
     private Process? _helperProcess;
+    
+    // Monitor selection: -1 = all monitors (virtual screen), 0+ = specific monitor index
+    private int _selectedMonitor = -1;
 
     public RemoteDesktopService(
         ILogger<RemoteDesktopService> logger,
@@ -68,16 +71,24 @@ public class RemoteDesktopService : BackgroundService
     private async Task RunHelperMode(CancellationToken stoppingToken)
     {
         LogDebug("Helper Mode initializing...");
-        var deviceId = _identityProvider.GetDeviceId();
-        var hubUrl = $"{_config.BackendUrl}/hubs/desktop";
+        
+        // Immediately write heartbeat so manager knows we're alive
+        UpdateHelperHeartbeat();
+        LogDebug("Heartbeat written immediately");
+        
+        try
+        {
+            var deviceId = _identityProvider.GetDeviceId();
+            var hubUrl = $"{_config.BackendUrl}/hubs/desktop";
+            LogDebug($"Connecting to hub: {hubUrl} with deviceId: {deviceId}");
 
-        _hubConnection = new HubConnectionBuilder()
-            .WithUrl(hubUrl, options =>
-            {
-                options.ApplicationMaxBufferSize = 5 * 1024 * 1024; // 5MB
-            })
-            .WithAutomaticReconnect()
-            .Build();
+            _hubConnection = new HubConnectionBuilder()
+                .WithUrl(hubUrl, options =>
+                {
+                    options.ApplicationMaxBufferSize = 5 * 1024 * 1024; // 5MB
+                })
+                .WithAutomaticReconnect()
+                .Build();
 
         // 0. Input Listener
         _hubConnection.On<InputEventDto>("PerformInput", (input) =>
@@ -103,6 +114,13 @@ public class RemoteDesktopService : BackgroundService
         {
             _logger.LogInformation("⏹️ Uzak masaüstü yayını DURDURULDU.");
             _isStreaming = false;
+        });
+
+        // Monitor selection handler (-1 = all, 0+ = specific monitor)
+        _hubConnection.On<int>("SelectMonitor", (monitorIndex) =>
+        {
+            _selectedMonitor = monitorIndex;
+            _logger.LogInformation("🖥️ Monitör seçildi: {Monitor}", monitorIndex == -1 ? "Tümü" : $"Monitör {monitorIndex + 1}");
         });
 
         // 2. Bağlan
@@ -142,10 +160,18 @@ public class RemoteDesktopService : BackgroundService
             }
             catch (Exception ex)
             {
+                LogDebug($"Helper loop error: {ex.Message}");
                 _logger.LogError(ex, "RemoteDesktop Helper hatası");
                 _isStreaming = false; 
+                UpdateHelperHeartbeat(); // Keep heartbeat even on error
                 await Task.Delay(5000, stoppingToken);
             }
+        }
+        }
+        catch (Exception ex)
+        {
+            LogDebug($"Helper FATAL error: {ex}");
+            _logger.LogError(ex, "Helper fatal error");
         }
     }
 
@@ -244,13 +270,11 @@ public class RemoteDesktopService : BackgroundService
             if (!OperatingSystem.IsWindows()) return;
 
             var bounds = GetScreenBounds();
-             // ...
-             // KODUN GERİ KALANI AYNI
-             // ...
             using var bitmap = new Bitmap(bounds.Width, bounds.Height);
             using (var g = Graphics.FromImage(bitmap))
             {
-                g.CopyFromScreen(Point.Empty, Point.Empty, bounds.Size);
+                // Use bounds.Location for correct capture of specific monitors
+                g.CopyFromScreen(bounds.Location, Point.Empty, bounds.Size);
             }
 
             using var resized = ResizeImage(bitmap, _targetWidth);
@@ -271,7 +295,60 @@ public class RemoteDesktopService : BackgroundService
         }
     }
     // ... (Helper Methods: GetScreenBounds, ResizeImage, SaveJpeg...)
+    
+    // P/Invoke for monitor enumeration (avoiding Windows Forms dependency)
+    private delegate bool MonitorEnumDelegate(IntPtr hMonitor, IntPtr hdcMonitor, ref RECT lprcMonitor, IntPtr dwData);
+    
+    [DllImport("user32.dll")]
+    private static extern bool EnumDisplayMonitors(IntPtr hdc, IntPtr lprcClip, MonitorEnumDelegate lpfnEnum, IntPtr dwData);
+    
+    [StructLayout(LayoutKind.Sequential)]
+    private struct RECT
+    {
+        public int Left;
+        public int Top;
+        public int Right;
+        public int Bottom;
+    }
+    
+    private static List<Rectangle> _monitorBounds = new();
+    
+    private void RefreshMonitorList()
+    {
+        _monitorBounds.Clear();
+        EnumDisplayMonitors(IntPtr.Zero, IntPtr.Zero, (IntPtr hMonitor, IntPtr hdcMonitor, ref RECT lprcMonitor, IntPtr dwData) =>
+        {
+            _monitorBounds.Add(new Rectangle(
+                lprcMonitor.Left,
+                lprcMonitor.Top,
+                lprcMonitor.Right - lprcMonitor.Left,
+                lprcMonitor.Bottom - lprcMonitor.Top));
+            return true;
+        }, IntPtr.Zero);
+    }
+    
     private Rectangle GetScreenBounds()
+    {
+        // If specific monitor selected, enumerate monitors
+        if (_selectedMonitor >= 0)
+        {
+            RefreshMonitorList();
+            if (_selectedMonitor < _monitorBounds.Count)
+            {
+                return _monitorBounds[_selectedMonitor];
+            }
+            // Fallback to first monitor if index out of range
+            if (_monitorBounds.Count > 0)
+            {
+                return _monitorBounds[0];
+            }
+        }
+        
+        // Default: all monitors (virtual screen)
+        return GetVirtualScreenBounds();
+    }
+    
+    private Rectangle GetVirtualScreenBounds()
     {
         int vLeft = InputSimulator.GetSystemMetrics(InputSimulator.SM_XVIRTUALSCREEN);
         int vTop = InputSimulator.GetSystemMetrics(InputSimulator.SM_YVIRTUALSCREEN);
@@ -282,6 +359,18 @@ public class RemoteDesktopService : BackgroundService
         if (vHeight == 0) vHeight = InputSimulator.GetSystemMetrics(1);
 
         return new Rectangle(vLeft, vTop, vWidth, vHeight);
+    }
+    
+    // Helper to get monitor count for frontend
+    public static int GetMonitorCount()
+    {
+        var count = 0;
+        EnumDisplayMonitors(IntPtr.Zero, IntPtr.Zero, (IntPtr hMonitor, IntPtr hdcMonitor, ref RECT lprcMonitor, IntPtr dwData) =>
+        {
+            count++;
+            return true;
+        }, IntPtr.Zero);
+        return count;
     }
 
     private Bitmap ResizeImage(Bitmap image, int width)

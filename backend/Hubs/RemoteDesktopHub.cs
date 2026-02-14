@@ -138,6 +138,21 @@ public class RemoteDesktopHub : Hub
         await Clients.Group($"AvailableViewers_{deviceId}").SendAsync("ReceiveFrame", base64);
     }
     
+    // 5. Viewer çağırır: "Şu monitörü seç" (-1 = tümü, 0+ = tek monitör)
+    public async Task SelectMonitor(string deviceId, int monitorIndex)
+    {
+        _logger.LogInformation("🖥️ SelectMonitor: Device {DeviceId} switching to monitor {Monitor}", deviceId, monitorIndex);
+        
+        if (_deviceAgentConnections.TryGetValue(deviceId, out var agentConnectionId))
+        {
+            await Clients.Client(agentConnectionId).SendAsync("SelectMonitor", monitorIndex);
+        }
+        else
+        {
+            _logger.LogWarning("⚠️ SelectMonitor: Device {DeviceId} not connected", deviceId);
+        }
+    }
+    
     #region WebRTC Signaling
     
     // Viewer -> Agent: WebRTC Offer gönder

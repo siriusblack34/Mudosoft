@@ -18,13 +18,20 @@ using System.Reflection;
 
 // 🔍 HELPER CRASH DEBUG - En başta log
 bool isHelperMode = args.Contains("--desktop-helper");
+System.IO.File.AppendAllText(@"C:\mudosoft_helper.log", $"{DateTime.Now}: Program started. Args: {string.Join(" ", args)}. isHelperMode: {isHelperMode}{Environment.NewLine}");
+
 if (isHelperMode)
 {
     try
     {
-        System.IO.File.AppendAllText(@"C:\mudosoft_helper.log", $"{DateTime.Now}: Helper started with args: {string.Join(" ", args)}{Environment.NewLine}");
+        // Hemen heartbeat yaz - manager'a hayatta olduğumuzu bildir
+        System.IO.File.WriteAllText(@"C:\MudoSoftAgent\helper_running.flag", DateTime.Now.ToString("o"));
+        System.IO.File.AppendAllText(@"C:\mudosoft_helper.log", $"{DateTime.Now}: Heartbeat written immediately in Program.cs{Environment.NewLine}");
     }
-    catch { }
+    catch (Exception ex)
+    {
+        System.IO.File.AppendAllText(@"C:\mudosoft_helper.log", $"{DateTime.Now}: ERROR writing heartbeat: {ex.Message}{Environment.NewLine}");
+    }
 }
 
 try  // Global try-catch for Helper crash detection
@@ -96,20 +103,127 @@ static int RunServiceCommand(string command, string serviceName, string? argumen
 }
 
 
-// 1.5. ESKİ/ÇAKIŞAN SERVİSLERİ TEMİZLEME
-static void CleanLegacyServices()
+// 1.5. ESKİ/ÇAKIŞAN TÜM MUDOSOFT BİLEŞENLERİNİ TEMİZLEME
+static void CleanAllMudoSoftComponents()
 {
-    string[] legacyNames = { "MudoSoftAgent", "MudosoftAgentService" };
-    foreach (var name in legacyNames)
+    Console.WriteLine("========================================");
+    Console.WriteLine("🧹 Eski MudoSoft bileşenleri temizleniyor...");
+    Console.WriteLine("========================================");
+    
+    // 1. Çalışan process'leri sonlandır
+    Console.WriteLine("\n[1/6] Çalışan process'ler sonlandırılıyor...");
+    try
     {
-        try 
+        foreach (var proc in Process.GetProcessesByName("MudoSoft.Agent"))
         {
-            Console.WriteLine($"Eski servis kontrol ediliyor: {name}...");
+            try { proc.Kill(); proc.WaitForExit(3000); Console.WriteLine("  ✓ MudoSoft.Agent.exe sonlandırıldı"); }
+            catch { }
+        }
+        foreach (var proc in Process.GetProcessesByName("MudoSoft.Tray"))
+        {
+            try { proc.Kill(); proc.WaitForExit(3000); Console.WriteLine("  ✓ MudoSoft.Tray.exe sonlandırıldı"); }
+            catch { }
+        }
+    }
+    catch { Console.WriteLine("  ⚠ Process sonlandırma hatası (yoksayıldı)"); }
+    
+    // 2. Servisleri kaldır
+    Console.WriteLine("\n[2/6] Servisler kaldırılıyor...");
+    string[] serviceNames = { "MudoSoftAgent", "MudosoftAgentService", "MudoSoftAgentService" };
+    foreach (var name in serviceNames)
+    {
+        try
+        {
             RunServiceCommand("stop", name);
             RunServiceCommand("delete", name);
         }
-        catch { /* Yoksay */}
+        catch { }
     }
+    
+    // 3. Scheduled Task'ları kaldır
+    Console.WriteLine("\n[3/6] Scheduled Task'lar kaldırılıyor...");
+    string[] taskNames = { "MudoSoftHelper", "MudosoftHelper", "MudoSoft Helper" };
+    foreach (var taskName in taskNames)
+    {
+        try
+        {
+            using var proc = new Process();
+            proc.StartInfo.FileName = "schtasks";
+            proc.StartInfo.Arguments = $"/delete /tn \"{taskName}\" /f";
+            proc.StartInfo.UseShellExecute = false;
+            proc.StartInfo.CreateNoWindow = true;
+            proc.StartInfo.RedirectStandardOutput = true;
+            proc.StartInfo.RedirectStandardError = true;
+            proc.Start();
+            proc.WaitForExit(5000);
+            if (proc.ExitCode == 0) Console.WriteLine($"  ✓ Task kaldırıldı: {taskName}");
+        }
+        catch { }
+    }
+    
+    // 4. Registry temizliği (Startup entries)
+    Console.WriteLine("\n[4/6] Registry kayıtları temizleniyor...");
+    string[] registryKeys = {
+        @"HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Run",
+        @"HKCU\SOFTWARE\Microsoft\Windows\CurrentVersion\Run"
+    };
+    string[] valueNames = { "MudoSoftHelper", "MudosoftHelper", "MudoSoft.Tray", "MudoSoftTray" };
+    
+    foreach (var key in registryKeys)
+    {
+        foreach (var valueName in valueNames)
+        {
+            try
+            {
+                using var proc = new Process();
+                proc.StartInfo.FileName = "reg";
+                proc.StartInfo.Arguments = $"delete \"{key}\" /v \"{valueName}\" /f";
+                proc.StartInfo.UseShellExecute = false;
+                proc.StartInfo.CreateNoWindow = true;
+                proc.StartInfo.RedirectStandardOutput = true;
+                proc.StartInfo.RedirectStandardError = true;
+                proc.Start();
+                proc.WaitForExit(3000);
+                if (proc.ExitCode == 0) Console.WriteLine($"  ✓ Registry silindi: {valueName}");
+            }
+            catch { }
+        }
+    }
+    
+    // 5. Eski klasörleri tara ve listele (silmeyiz, kullanıcıya bırakırız)
+    Console.WriteLine("\n[5/6] Eski kurulum klasörleri kontrol ediliyor...");
+    string[] possiblePaths = {
+        @"C:\MudoSoft",
+        @"C:\MudoSoft-Agent-v1.0.0.15",
+        @"C:\MudoSoft-Agent-v1.0.0.16",
+        @"C:\MudoSoft-Agent-v1.0.0.17",
+        @"C:\MudoSoft-Agent-v1.0.0.18",
+        @"C:\Program Files\MudoSoft",
+        @"C:\Program Files (x86)\MudoSoft"
+    };
+    
+    foreach (var path in possiblePaths)
+    {
+        if (Directory.Exists(path))
+        {
+            Console.WriteLine($"  ⚠ Eski klasör bulundu: {path}");
+        }
+    }
+    
+    // 6. VBS dosyalarını temizle
+    Console.WriteLine("\n[6/6] Helper script dosyaları temizleniyor...");
+    foreach (var path in possiblePaths)
+    {
+        string vbsPath = Path.Combine(path, "start-helper.vbs");
+        if (File.Exists(vbsPath))
+        {
+            try { File.Delete(vbsPath); Console.WriteLine($"  ✓ Silindi: {vbsPath}"); }
+            catch { Console.WriteLine($"  ⚠ Silinemedi: {vbsPath}"); }
+        }
+    }
+    
+    Console.WriteLine("\n✅ Temizlik tamamlandı!");
+    Console.WriteLine("========================================\n");
 }
 
 // 2. ARGÜMAN KONTROLÜ VE SERVİS YÖNETİMİ
@@ -124,12 +238,14 @@ if (cliArgs.Any(a => a.Equals("/Install", StringComparison.OrdinalIgnoreCase)))
         return 0; 
     }
 
-    Console.WriteLine("Mevcut/Eski servisler temizleniyor...");
-    CleanLegacyServices();
+    // Önce tüm eski bileşenleri temizle
+    CleanAllMudoSoftComponents();
 
     Console.WriteLine($"Windows Servisi kuruluyor: {DisplayName}...");
     
     string binPathArg = $"binPath= \"{Environment.ProcessPath} --service\"";
+    string installDir = AppDomain.CurrentDomain.BaseDirectory;
+    string exePath = Environment.ProcessPath ?? Path.Combine(installDir, "MudoSoft.Agent.exe");
     
     // type= interact type= own → Local System'ın desktop ile etkileşmesine izin verir
     RunServiceCommand("create", ServiceName, $"start= auto type= interact type= own {binPathArg}");
@@ -138,17 +254,81 @@ if (cliArgs.Any(a => a.Equals("/Install", StringComparison.OrdinalIgnoreCase)))
     Console.WriteLine($"Servis başlatılıyor: {ServiceName}...");
     RunServiceCommand("start", ServiceName);
 
+    // ========== HELPER AUTO-START KURULUMU ==========
+    Console.WriteLine("");
+    Console.WriteLine("Desktop Helper için otomatik başlatma ayarlanıyor...");
+    
+    // 1. VBS Helper Script oluştur (gizli pencere ile çalıştırma için)
+    // NOT: VBS'de tırnak escape: "" = tek tırnak, path'de 3 tırnak başta, 2 tırnak sonda
+    string vbsPath = Path.Combine(installDir, "start-helper.vbs");
+    string vbsLine1 = "Set WshShell = CreateObject(\"WScript.Shell\")";
+    string vbsLine2 = $"WshShell.Run \"\"\"{exePath}\"\" --desktop-helper\", 0, False";
+    string vbsContent = vbsLine1 + Environment.NewLine + vbsLine2;
+    
+    try
+    {
+        File.WriteAllText(vbsPath, vbsContent);
+        Console.WriteLine($"✓ Helper script oluşturuldu: {vbsPath}");
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"⚠ Helper script oluşturulamadı: {ex.Message}");
+    }
+
+    // 2. Registry ile otomatik başlatma (Scheduled Task yerine - Windows 7 uyumlu)
+    Console.WriteLine("Registry startup kayıtları ekleniyor...");
+    string wscriptCmd = $"wscript.exe \"{vbsPath}\"";
+    
+    // HKCU - mevcut kullanıcı için (her zaman çalışır)
+    try
+    {
+        using var regProc = new Process();
+        regProc.StartInfo.FileName = "reg";
+        regProc.StartInfo.Arguments = $"add \"HKCU\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run\" /v \"MudoSoftHelper\" /t REG_SZ /d \"{wscriptCmd}\" /f";
+        regProc.StartInfo.UseShellExecute = false;
+        regProc.StartInfo.CreateNoWindow = true;
+        regProc.StartInfo.RedirectStandardOutput = true;
+        regProc.Start();
+        regProc.WaitForExit();
+        if (regProc.ExitCode == 0)
+            Console.WriteLine("✓ Registry startup eklendi (HKCU)");
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"⚠ Registry hatası: {ex.Message}");
+    }
+
+    // 3. Helper'ı hemen şimdi başlat (kullanıcı tekrar login olmak zorunda kalmasın)
+    Console.WriteLine("");
+    Console.WriteLine("Desktop Helper şimdi başlatılıyor...");
+    try
+    {
+        var helperProc = new Process();
+        helperProc.StartInfo.FileName = "wscript.exe";
+        helperProc.StartInfo.Arguments = $"\"{vbsPath}\"";
+        helperProc.StartInfo.UseShellExecute = false;
+        helperProc.StartInfo.CreateNoWindow = true;
+        helperProc.Start();
+        Console.WriteLine("✓ Desktop Helper başlatıldı");
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"⚠ Helper başlatılamadı: {ex.Message}");
+        Console.WriteLine($"  Manuel başlatmak için: {exePath} --desktop-helper");
+    }
+
     Console.WriteLine("");
     Console.WriteLine("========================================");
-    Console.WriteLine("Kurulum tamamlandı!");
-    Console.WriteLine("");
-    Console.WriteLine("NOT: Remote Desktop çalışmazsa, servisi bir domain admin");
-    Console.WriteLine("hesabıyla çalıştırmanız gerekebilir:");
-    Console.WriteLine("  1. services.msc açın");
-    Console.WriteLine("  2. MudosoftAgentService → Özellikler → Oturum Aç");
-    Console.WriteLine("  3. 'Bu hesap' seçip domain admin bilgilerini girin");
+    Console.WriteLine("✅ KURULUM TAMAMLANDI!");
     Console.WriteLine("========================================");
-    // Console.ReadKey(); // Removed: blocks installer in hidden mode
+    Console.WriteLine("");
+    Console.WriteLine("Kurulan bileşenler:");
+    Console.WriteLine("  ✓ Windows Servisi: MudosoftAgentService (Arka plan yönetimi)");
+    Console.WriteLine("  ✓ Desktop Helper: Otomatik başlatma (Registry startup)");
+    Console.WriteLine("  ✓ Remote Desktop: Hazır");
+    Console.WriteLine("");
+    Console.WriteLine("Kurulum klasörü: " + installDir);
+    Console.WriteLine("========================================");
     return 0;
 }
 
@@ -161,17 +341,51 @@ if (cliArgs.Any(a => a.Equals("/Uninstall", StringComparison.OrdinalIgnoreCase))
         return 0; 
     }
 
-    Console.WriteLine("Servisler kaldırılıyor...");
-    CleanLegacyServices();
+    // Tüm MudoSoft bileşenlerini temizle
+    CleanAllMudoSoftComponents();
     
-    Console.WriteLine("Kaldırma işlemi tamamlandı. Pencereyi kapatabilirsiniz.");
-    // Console.ReadKey(); // Removed: blocks uninstaller in hidden mode
+    Console.WriteLine("");
+    Console.WriteLine("========================================");
+    Console.WriteLine("✅ KALDIRMA TAMAMLANDI!");
+    Console.WriteLine("========================================");
+    Console.WriteLine("");
+    Console.WriteLine("Kalan dosyaları manuel olarak silebilirsiniz:");
+    Console.WriteLine("  C:\\MudoSoft klasörü");
+    Console.WriteLine("========================================");
     return 0;
 }
 
 
 // 3. NORMAL ÇALIŞMA VEYA WINDOWS SERVİSİ OLARAK ÇALIŞMA (Varsayılan Akış)
 
+// ========== HELPER MODE: Minimal Host (WMI-free) ==========
+if (isHelperMode)
+{
+    System.IO.File.AppendAllText(@"C:\mudosoft_helper.log", $"{DateTime.Now}: Starting minimal helper host{Environment.NewLine}");
+    
+    var helperHost = Host.CreateDefaultBuilder(args)
+        .ConfigureAppConfiguration((hostContext, config) =>
+        {
+            var basePath = AppDomain.CurrentDomain.BaseDirectory;
+            config.SetBasePath(basePath);
+            config.AddJsonFile("appsettings.json", optional: false, reloadOnChange: false);
+        })
+        .ConfigureServices((hostContext, services) =>
+        {
+            // ONLY minimal services for helper - NO WMI dependencies
+            services.Configure<AgentConfig>(hostContext.Configuration.GetSection("Agent"));
+            services.AddSingleton<IDeviceIdentityProvider, DeviceIdentityProvider>();
+            services.AddSingleton(new RemoteDesktopConfig { Mode = "Helper" });
+            services.AddHostedService<RemoteDesktopService>();
+        })
+        .Build();
+    
+    System.IO.File.AppendAllText(@"C:\mudosoft_helper.log", $"{DateTime.Now}: Helper host built, running...{Environment.NewLine}");
+    helperHost.Run();
+    return 0;
+}
+
+// ========== NORMAL/SERVICE MODE: Full Host ==========
 var hostBuilder = Host.CreateDefaultBuilder(args)
     .UseWindowsService() 
     .ConfigureAppConfiguration((hostContext, config) =>
@@ -198,15 +412,8 @@ var hostBuilder = Host.CreateDefaultBuilder(args)
     .ConfigureServices((hostContext, services) =>
     {
         // Mode Detection:
-        // --desktop-helper = Helper (launched by service)
         // --service = Manager (service that launches helper)
-        // (nothing) = Helper (console mode, direct streaming)
-        bool isDesktopHelper = args.Contains("--desktop-helper");
         bool isService = args.Contains("--service");
-        
-        // Konsol modunda veya --desktop-helper ile: Helper (doğrudan streaming)
-        // Servis modunda (--service): Manager (helper başlatır)
-        bool shouldStream = isDesktopHelper || !isService;
 
         // Common Services
         services.Configure<AgentConfig>(hostContext.Configuration.GetSection("Agent"));
@@ -214,43 +421,34 @@ var hostBuilder = Host.CreateDefaultBuilder(args)
         services.AddHttpClient();
         
         // Pass Mode to Configuration
-        services.AddSingleton(new RemoteDesktopConfig { Mode = shouldStream ? "Helper" : "Manager" });
+        services.AddSingleton(new RemoteDesktopConfig { Mode = "Manager" });
 
-        if (isDesktopHelper)
-        {
-            // --- HELPER MODE (User Session - launched by service) ---
-            // Sadece streaming servisini çalıştır
-            services.AddHostedService<RemoteDesktopService>();
-        }
-        else
-        {
-            // --- NORMAL MODE (Console or Service) ---
-            // Tüm yönetim servisleri
-            services.AddHostedService<AgentWorker>();
-            services.AddSingleton<ICommandExecutor, CommandExecutor>();
-            services.AddSingleton<ICommandPoller, CommandPoller>(); 
-            
-            // HeartbeatService - hem IHeartbeatSender hem de concrete type olarak kaydet (tray için)
-            services.AddSingleton<HeartbeatService>();
-            services.AddSingleton<IHeartbeatSender>(sp => sp.GetRequiredService<HeartbeatService>());
-            
-            services.AddSingleton<IWatchdogManager, WatchdogManager>();
-            services.AddSingleton<ISystemInfoService, SystemInfoService>(); 
-            services.AddSingleton<IRsaKeyService, RsaKeyService>(); 
-            services.AddSingleton<IAesEncryptionService, AesEncryptionService>();
-            
-            // HelperLauncher for elevated Remote Desktop (runs as BackgroundService)
-            services.AddHostedService<HelperLauncher>();
-            
-            // Tray Communication - Named Pipe Server
-            services.AddHostedService<PipeServer>();
+        // --- NORMAL MODE (Console or Service) ---
+        // Tüm yönetim servisleri
+        services.AddHostedService<AgentWorker>();
+        services.AddSingleton<ICommandExecutor, CommandExecutor>();
+        services.AddSingleton<ICommandPoller, CommandPoller>(); 
+        
+        // HeartbeatService - hem IHeartbeatSender hem de concrete type olarak kaydet (tray için)
+        services.AddSingleton<HeartbeatService>();
+        services.AddSingleton<IHeartbeatSender>(sp => sp.GetRequiredService<HeartbeatService>());
+        
+        services.AddSingleton<IWatchdogManager, WatchdogManager>();
+        services.AddSingleton<ISystemInfoService, SystemInfoService>(); 
+        services.AddSingleton<IRsaKeyService, RsaKeyService>(); 
+        services.AddSingleton<IAesEncryptionService, AesEncryptionService>();
+        
+        // HelperLauncher for elevated Remote Desktop (runs as BackgroundService)
+        services.AddHostedService<HelperLauncher>();
+        
+        // Tray Communication - Named Pipe Server
+        services.AddHostedService<PipeServer>();
 
-            // RemoteDesktopService - Mode'a göre stream veya launch
-            services.AddHostedService<RemoteDesktopService>();
-            
-            // 8. Telemetry Service (Real-time Dashboard)
-            services.AddHostedService<TelemetryService>();
-        }
+        // RemoteDesktopService - Mode'a göre stream veya launch
+        services.AddHostedService<RemoteDesktopService>();
+        
+        // 8. Telemetry Service (Real-time Dashboard)
+        services.AddHostedService<TelemetryService>();
     });
 
 var host = hostBuilder.Build();
