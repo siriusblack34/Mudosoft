@@ -109,6 +109,9 @@ namespace MudoSoft.Backend.Migrations
                     b.Property<float>("CurrentCpuUsagePercent")
                         .HasColumnType("real");
 
+                    b.Property<float?>("CurrentDiskDUsagePercent")
+                        .HasColumnType("real");
+
                     b.Property<float>("CurrentDiskUsagePercent")
                         .HasColumnType("real");
 
@@ -164,6 +167,9 @@ namespace MudoSoft.Backend.Migrations
                     b.Property<DateTime?>("SystemBootTime")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<long?>("TotalDiskDGB")
+                        .HasColumnType("bigint");
+
                     b.Property<long>("TotalDiskGB")
                         .HasColumnType("bigint");
 
@@ -214,6 +220,74 @@ namespace MudoSoft.Backend.Migrations
                     b.HasIndex("DeviceId");
 
                     b.ToTable("DeviceMetrics");
+                });
+
+            modelBuilder.Entity("MudoSoft.Backend.Models.Note", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Content")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("Notes");
+                });
+
+            modelBuilder.Entity("MudoSoft.Backend.Models.ScheduledTask", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Frequency")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("LastResult")
+                        .HasColumnType("text");
+
+                    b.Property<DateTime?>("LastRunTime")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime>("NextRunTime")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("TargetDate")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<TimeSpan?>("TargetTime")
+                        .HasColumnType("interval");
+
+                    b.Property<string>("TaskType")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("ScheduledTasks");
                 });
 
             modelBuilder.Entity("MudoSoft.Backend.Models.StoreDevice", b =>

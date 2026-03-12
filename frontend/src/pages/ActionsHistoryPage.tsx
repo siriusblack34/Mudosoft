@@ -58,39 +58,39 @@ const ActionsHistoryPage: React.FC = () => {
     <div className="space-y-6">
       <h1 className="text-2xl font-semibold">Command History</h1>
 
-      <div className="overflow-hidden rounded-2xl border border-ms-border bg-ms-panel">
+      <div className="overflow-hidden rounded-2xl border-white/5 glass-card shadow-xl">
         <table className="w-full text-sm">
-          <thead className="bg-ms-bg-soft text-ms-text-muted">
+          <thead className="bg-white/5 text-slate-400 uppercase tracking-widest text-xs font-semibold border-b border-white/5">
             <tr>
-              <th className="text-left px-4 py-2 w-1/5">Hostname</th>
-              <th className="text-left px-4 py-2 w-1/10">Type</th>
-              <th className="text-left px-4 py-2 w-1/10">Status</th>
-              <th className="text-left px-4 py-2 w-1/5">Completed</th>
-              <th className="text-left px-4 py-2 w-2/5">Output Snippet</th>
-              <th className="text-left px-4 py-2 w-1/12"></th>
+              <th className="text-left px-5 py-4 w-1/5">Hostname</th>
+              <th className="text-left px-5 py-4 w-1/10">Type</th>
+              <th className="text-left px-5 py-4 w-1/10">Status</th>
+              <th className="text-left px-5 py-4 w-1/5">Completed</th>
+              <th className="text-left px-5 py-4 w-2/5">Output Snippet</th>
+              <th className="text-left px-5 py-4 w-1/12"></th>
             </tr>
           </thead>
 
           <tbody>
             {history.length > 0 ? (
               history.map((item) => (
-                <tr key={item.commandId} className="border-t border-ms-border/60">
-                  <td className="px-4 py-2 font-medium">{item.hostname}</td>
-                  <td className="px-4 py-2 text-ms-text-muted">{item.typeName}</td>
-                  <td className="px-4 py-2">
+                <tr key={item.commandId} className="border-t border-slate-700/50 hover:bg-slate-800/30 transition-colors">
+                  <td className="px-5 py-3 font-medium text-white">{item.hostname}</td>
+                  <td className="px-5 py-3 text-slate-400">{item.typeName}</td>
+                  <td className="px-5 py-3">
                     {/* PROP DÜZELTME: 'type' yerine 'tone' kullanıldı */}
                     <StatusPill tone={item.success ? 'success' : 'danger'} text={item.success ? 'SUCCESS' : 'FAILED'} />
                   </td>
-                  <td className="px-4 py-2 text-ms-text-muted">
+                  <td className="px-5 py-3 text-slate-400">
                     {formatDistanceToNow(new Date(item.completedAtUtc), { addSuffix: true })}
                   </td>
-                  <td className="px-4 py-2 font-mono text-xs text-ms-text-muted">
+                  <td className="px-5 py-3 font-mono text-xs text-slate-500 truncate max-w-[200px]" title={item.outputSnippet}>
                     {item.outputSnippet}
                   </td>
-                  <td className="px-4 py-2">
+                  <td className="px-5 py-3">
                     <button
                       onClick={() => viewDetails(item.commandId)}
-                      className="text-xs text-ms-primary hover:underline disabled:opacity-50"
+                      className="text-xs text-indigo-400 hover:text-indigo-300 font-medium disabled:opacity-50 transition-colors"
                       disabled={outputLoading}
                     >
                       {outputLoading ? 'Loading...' : 'Details'}
@@ -100,7 +100,7 @@ const ActionsHistoryPage: React.FC = () => {
               ))
             ) : (
               <tr>
-                <td colSpan={6} className="px-4 py-6 text-center text-ms-text-muted text-sm">
+                <td colSpan={6} className="px-5 py-12 text-center text-slate-500 text-sm">
                   No command history found 🎉
                 </td>
               </tr>

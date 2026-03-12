@@ -2,6 +2,7 @@
 **/bin/
 **/obj/
 **/publish/
+/frontend/dist/
 
 # Release and publish artifacts
 /release/
@@ -11,11 +12,33 @@
 **/publish_new/
 **/publish_update_fix/
 **/installer_output/
+/quick-release/
+/agent_v22/
+/m/
+
+# Deployment archives & installers
+*.zip
+*.7z
+*.msi
+*.wixpdb
+*.binlog
+.wix/
+
+# Build logs
+*.log
+build_*.txt
+wix_*.txt
+wixlog*.txt
+debug_error.txt
+debug_schema.txt
+startup_*.txt
+msbuild.log
+**/build_err.txt
+**/build_errors.txt
 
 # Update packages (large zip files)
 **/update_package/
 **/update_package_small/
-backend/updates/*.zip
 
 # Node modules
 /frontend/node_modules/

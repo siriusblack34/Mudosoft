@@ -4,7 +4,7 @@ import MetricChart from "../components/ui/MetricChart";
 import { apiClient } from "../lib/apiClient";
 import type { Device, DeviceMetric, OsInfo } from "../types";
 import {
-    MonitorPlay, Cpu, HardDrive, MemoryStick, Monitor,
+    Cpu, HardDrive, MemoryStick, Monitor,
     Power, Settings, FolderOpen, Package, ArrowLeft, User, Clock, Terminal, Trash2, Activity
 } from "lucide-react";
 
@@ -215,8 +215,8 @@ const DeviceDetailsPage: React.FC = () => {
                         <div className="flex items-center gap-3">
                             <h1 className="text-2xl font-bold text-white">{deviceData.hostname}</h1>
                             <span className={`px-3 py-1 rounded-full text-xs font-semibold ${deviceData.online
-                                    ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
-                                    : 'bg-red-500/20 text-red-400 border border-red-500/30'
+                                ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                                : 'bg-red-500/20 text-red-400 border border-red-500/30'
                                 }`}>
                                 {deviceData.online ? '● Online' : '○ Offline'}
                             </span>
@@ -227,7 +227,6 @@ const DeviceDetailsPage: React.FC = () => {
 
                 {/* Action Buttons */}
                 <div className="flex flex-wrap gap-2">
-                    <ActionButton icon={MonitorPlay} label="Remote View" color="emerald" onClick={() => window.open(`/remote/${deviceId}`, '_blank')} />
                     <ActionButton icon={Settings} label="Services" color="indigo" onClick={() => navigate(`/devices/${deviceId}/services`)} />
                     <ActionButton icon={FolderOpen} label="Files" color="violet" onClick={() => navigate(`/devices/${deviceId}/files`)} />
                     <ActionButton icon={Package} label="Software" color="fuchsia" onClick={() => navigate(`/devices/${deviceId}/software`)} />
@@ -245,9 +244,10 @@ const DeviceDetailsPage: React.FC = () => {
             {/* Main Grid */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 {/* Device Information */}
-                <div className="p-6 rounded-2xl bg-gradient-to-br from-gray-800/80 to-gray-900/80 border border-gray-700/50">
-                    <h2 className="text-lg font-semibold mb-5 flex items-center gap-2 text-white">
-                        <div className="p-2 rounded-lg bg-emerald-500/10">
+                <div className="p-6 rounded-2xl glass-card relative overflow-hidden group">
+                    <div className="absolute top-0 right-0 w-32 h-32 bg-emerald-500/10 rounded-full blur-3xl group-hover:bg-emerald-500/20 transition-all duration-500"></div>
+                    <h2 className="text-lg font-semibold mb-5 flex items-center gap-2 text-white relative z-10">
+                        <div className="p-2 rounded-xl bg-emerald-500/10 shadow-inner border border-white/5">
                             <Monitor className="w-5 h-5 text-emerald-400" />
                         </div>
                         Device Information
@@ -256,9 +256,9 @@ const DeviceDetailsPage: React.FC = () => {
                         <InfoRow label="Hostname" value={deviceData.hostname} />
                         <InfoRow label="IP Address" value={deviceData.ipAddress} />
                         <InfoRow label="OS" value={deviceData.os?.version && deviceData.os.version !== '-' ? deviceData.os.version : formatOsName(deviceData.os)} />
-                        <InfoRow label="Store Code" value={deviceData.storeCode ?? 'N/A'} />
-                        <InfoRow label="Agent Version" value={deviceData.agentVersion ?? 'N/A'} highlight />
-                        <div className="h-px bg-gray-700/50 my-4" />
+                        <InfoRow label="Store Code" value={deviceData.storeCode ? String(deviceData.storeCode) : 'N/A'} />
+                        <InfoRow label="Agent Version" value={deviceData.agentVersion ? String(deviceData.agentVersion) : 'N/A'} highlight />
+                        <div className="h-px bg-white/5 my-4" />
                         <InfoRow label="Uptime" value={formatUptime(deviceData.systemBootTime)} icon={Clock} valueClass="text-emerald-400" />
                         <InfoRow label="Logged In User" value={deviceData.lastLoggedInUser ?? 'N/A'} icon={User} />
                         <InfoRow label="Last Seen" value={formatTimeLocal(deviceData.lastSeen)} small />
@@ -266,9 +266,10 @@ const DeviceDetailsPage: React.FC = () => {
                 </div>
 
                 {/* Hardware Inventory */}
-                <div className="p-6 rounded-2xl bg-gradient-to-br from-gray-800/80 to-gray-900/80 border border-gray-700/50">
-                    <h2 className="text-lg font-semibold mb-5 flex items-center gap-2 text-white">
-                        <div className="p-2 rounded-lg bg-blue-500/10">
+                <div className="p-6 rounded-2xl glass-card relative overflow-hidden group">
+                    <div className="absolute -bottom-10 right-10 w-40 h-40 bg-blue-500/10 rounded-full blur-3xl group-hover:bg-blue-500/20 transition-all duration-500"></div>
+                    <h2 className="text-lg font-semibold mb-5 flex items-center gap-2 text-white relative z-10">
+                        <div className="p-2 rounded-xl bg-blue-500/10 shadow-inner border border-white/5">
                             <Cpu className="w-5 h-5 text-blue-400" />
                         </div>
                         Hardware Inventory
@@ -288,9 +289,10 @@ const DeviceDetailsPage: React.FC = () => {
             </div>
 
             {/* Quick Cleanup */}
-            <div className="p-6 rounded-2xl bg-gradient-to-br from-gray-800/80 to-gray-900/80 border border-gray-700/50">
-                <h2 className="text-lg font-semibold mb-5 flex items-center gap-2 text-white">
-                    <div className="p-2 rounded-lg bg-rose-500/10">
+            <div className="p-6 rounded-2xl glass-card relative overflow-hidden group">
+                <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-64 h-64 bg-rose-500/5 rounded-full blur-3xl group-hover:bg-rose-500/10 transition-all duration-500"></div>
+                <h2 className="text-lg font-semibold mb-5 flex items-center gap-2 text-white relative z-10">
+                    <div className="p-2 rounded-xl bg-rose-500/10 shadow-inner border border-white/5">
                         <Trash2 className="w-5 h-5 text-rose-400" />
                     </div>
                     Quick Cleanup
@@ -302,8 +304,8 @@ const DeviceDetailsPage: React.FC = () => {
                                 key={path}
                                 onClick={() => togglePath(path)}
                                 className={`px-4 py-2 rounded-xl text-sm font-medium transition-all duration-200 ${cleanupPaths.includes(path)
-                                        ? 'bg-rose-500 text-white shadow-lg shadow-rose-500/25'
-                                        : 'bg-gray-700/50 text-gray-300 hover:bg-gray-600/50 border border-gray-600/50'
+                                    ? 'bg-rose-500 text-white shadow-lg shadow-rose-500/25'
+                                    : 'bg-gray-700/50 text-gray-300 hover:bg-gray-600/50 border border-gray-600/50'
                                     }`}
                             >
                                 {cleanupPaths.includes(path) ? '✓ ' : ''}{label}
@@ -317,12 +319,12 @@ const DeviceDetailsPage: React.FC = () => {
                             value={customPath}
                             onChange={(e) => setCustomPath(e.target.value)}
                             placeholder="Özel path girin (örn: C:\Users\...\Downloads)"
-                            className="flex-1 px-4 py-3 rounded-xl bg-gray-800/50 border border-gray-600/50 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-rose-500/50 focus:ring-1 focus:ring-rose-500/25 transition-all"
+                            className="flex-1 px-4 py-3 rounded-xl glass-panel text-sm text-white placeholder-slate-400 focus-ring transition-all relative z-10"
                         />
                         <button
                             onClick={handleCleanup}
                             disabled={cleaning || !deviceData.online || (cleanupPaths.length === 0 && !customPath.trim())}
-                            className="px-6 py-3 bg-rose-600 hover:bg-rose-500 text-white rounded-xl flex items-center gap-2 transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-rose-900/20"
+                            className="px-6 py-3 bg-gradient-to-r from-rose-600 to-rose-500 hover:from-rose-500 hover:to-rose-400 text-white rounded-xl flex items-center gap-2 transition-all duration-300 hover:shadow-[0_0_20px_rgba(244,63,94,0.4)] disabled:opacity-50 disabled:cursor-not-allowed hover:-translate-y-0.5 relative z-10"
                         >
                             <Trash2 className="w-4 h-4" />
                             {cleaning ? 'Temizleniyor...' : 'Temizle'}
@@ -423,12 +425,12 @@ const HardwareCard: React.FC<{
     };
 
     return (
-        <div className="p-4 rounded-xl bg-gray-800/50 border border-gray-700/50">
-            <div className={`inline-flex p-2 rounded-lg ${colorMap[color]} mb-3`}>
+        <div className="p-4 rounded-xl glass-panel relative z-10 hover-lift">
+            <div className={`inline-flex p-2 rounded-lg ${colorMap[color]} mb-3 shadow-inner border border-white/5`}>
                 <Icon className="w-4 h-4" />
             </div>
-            <p className="text-xs text-gray-500 mb-1">{label}</p>
-            <p className="text-sm font-medium text-white truncate" title={value}>{value}</p>
+            <p className="text-[11px] font-semibold text-slate-400 mb-1 tracking-wider">{label}</p>
+            <p className="text-sm font-bold text-white truncate" title={value}>{value}</p>
         </div>
     );
 };
@@ -439,7 +441,7 @@ const MetricCard: React.FC<{
     value: number;
     color: string;
 }> = ({ title, data, value, color }) => (
-    <div className="p-4 rounded-2xl bg-gradient-to-br from-gray-800/80 to-gray-900/80 border border-gray-700/50">
+    <div className="p-4 rounded-2xl glass-card hover-lift">
         <MetricChart title={title} data={data} value={value} color={color} height={150} />
     </div>
 );

@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from "react";
-import { Upload, RefreshCcw, Rocket, Package, CheckCircle, AlertCircle } from "lucide-react";
+import React, { useState, useEffect, useCallback } from "react";
+import { Upload, RefreshCcw, Rocket, Package, CheckCircle, AlertCircle, MonitorSmartphone, History, Wifi, WifiOff, Hammer, Activity } from "lucide-react";
 import { API_BASE_URL } from "../lib/apiClient";
 
 interface LatestVersionInfo {
@@ -10,6 +10,22 @@ interface LatestVersionInfo {
     message?: string;
 }
 
+interface DeviceVersion {
+    id: string;
+    hostname: string;
+    online: boolean;
+    agentVersion: string | null;
+    storeCode: string | null;
+    lastSeen: string | null;
+}
+
+interface HistoryEntry {
+    version: string;
+    fileName: string;
+    uploadedAt: string;
+    sizeBytes: number;
+}
+
 const AgentUpdatePage: React.FC = () => {
     const [latestVersion, setLatestVersion] = useState<LatestVersionInfo | null>(null);
     const [uploading, setUploading] = useState(false);
@@ -17,69 +33,109 @@ const AgentUpdatePage: React.FC = () => {
     const [message, setMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
     const [newVersion, setNewVersion] = useState("");
     const [selectedFile, setSelectedFile] = useState<File | null>(null);
+    const [devices, setDevices] = useState<DeviceVersion[]>([]);
+    const [history, setHistory] = useState<HistoryEntry[]>([]);
 
-    // Backend URL that remote agents can reach (not localhost!)
+    // Build state
+    const [isBuilding, setIsBuilding] = useState(false);
+    const [buildStatus, setBuildStatus] = useState("");
+    const [buildError, setBuildError] = useState("");
+
     const [remoteBackendUrl, setRemoteBackendUrl] = useState(() => {
-        return localStorage.getItem('remoteBackendUrl') || 'http://10.0.102.60:5102';
+        return localStorage.getItem('remoteBackendUrl') || 'http://10.0.210.99:5102';
     });
 
-    const fetchLatestVersion = async () => {
+    const fetchLatestVersion = useCallback(async () => {
         try {
             const res = await fetch(`${API_BASE_URL}/api/updates/latest`);
             const data = await res.json();
             setLatestVersion(data);
-        } catch (err) {
-            console.error("Failed to fetch latest version:", err);
-        }
-    };
+        } catch (err) { console.error(err); }
+    }, []);
+
+    const fetchDevices = useCallback(async () => {
+        try {
+            const res = await fetch(`${API_BASE_URL}/api/updates/device-versions`);
+            const data = await res.json();
+            setDevices(data);
+        } catch (err) { console.error(err); }
+    }, []);
+
+    const fetchHistory = useCallback(async () => {
+        try {
+            const res = await fetch(`${API_BASE_URL}/api/updates/history`);
+            const data = await res.json();
+            setHistory(Array.isArray(data) ? data.reverse() : []);
+        } catch (err) { console.error(err); }
+    }, []);
 
     useEffect(() => {
         fetchLatestVersion();
-    }, []);
+        fetchDevices();
+        fetchHistory();
+        const interval = setInterval(() => {
+            fetchDevices();
+        }, 10000);
+        return () => clearInterval(interval);
+    }, [fetchLatestVersion, fetchDevices, fetchHistory]);
+
+    // Build status poller
+    useEffect(() => {
+        const pollBuildStatus = async () => {
+            try {
+                const res = await fetch(`${API_BASE_URL}/api/updates/build-status`);
+                const data = await res.json();
+
+                // If it just finished building, refresh list
+                if (isBuilding && !data.isBuilding) {
+                    fetchLatestVersion();
+                    fetchHistory();
+                    if (!data.error) {
+                        setMessage({ text: 'Yeni agent build başarıyla tamamlandı!', type: 'success' });
+                    }
+                }
+
+                setIsBuilding(data.isBuilding);
+                setBuildStatus(data.status);
+                setBuildError(data.error);
+
+            } catch (err) { console.error(err); }
+        };
+
+        const buildInterval = setInterval(pollBuildStatus, 2000);
+        pollBuildStatus(); // initial fetch
+        return () => clearInterval(buildInterval);
+    }, [isBuilding, fetchLatestVersion, fetchHistory]);
 
     useEffect(() => {
         localStorage.setItem('remoteBackendUrl', remoteBackendUrl);
     }, [remoteBackendUrl]);
-
-    const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-        if (e.target.files?.length) {
-            setSelectedFile(e.target.files[0]);
-        }
-    };
 
     const handleUpload = async () => {
         if (!selectedFile || !newVersion.trim()) {
             setMessage({ text: "Dosya ve versiyon numarası gerekli", type: 'error' });
             return;
         }
-
         setUploading(true);
         setMessage(null);
-
         try {
             const formData = new FormData();
             formData.append('file', selectedFile);
             formData.append('version', newVersion.trim());
-
-            const res = await fetch(`${API_BASE_URL}/api/updates/upload`, {
-                method: 'POST',
-                body: formData
-            });
-
+            const res = await fetch(`${API_BASE_URL}/api/updates/upload`, { method: 'POST', body: formData });
             if (res.ok) {
                 const data = await res.json();
-                setMessage({ text: `${data.message || 'Upload başarılı!'}`, type: 'success' });
+                setMessage({ text: data.message || 'Upload başarılı!', type: 'success' });
                 setSelectedFile(null);
                 setNewVersion("");
                 fetchLatestVersion();
+                fetchHistory();
             } else {
                 setMessage({ text: `Upload başarısız: ${res.status}`, type: 'error' });
             }
         } catch (err: any) {
             setMessage({ text: `Hata: ${err.message}`, type: 'error' });
-        } finally {
-            setUploading(false);
-        }
+        } finally { setUploading(false); }
     };
 
     const handleTriggerAll = async () => {
@@ -87,33 +143,42 @@ const AgentUpdatePage: React.FC = () => {
             setMessage({ text: "Önce bir versiyon yükleyin", type: 'error' });
             return;
         }
-
         if (!remoteBackendUrl.trim()) {
-            setMessage({ text: "Backend URL gerekli (uzak makinelerin erişebileceği IP)", type: 'error' });
+            setMessage({ text: "Backend URL gerekli", type: 'error' });
             return;
         }
-
-        const confirmed = window.confirm(`Tüm online cihazlara v${latestVersion.version} güncellemesi gönderilecek.\nBackend URL: ${remoteBackendUrl}\n\nOnaylıyor musunuz?`);
-        if (!confirmed) return;
-
         setTriggering(true);
         setMessage(null);
-
         try {
-            const res = await fetch(`${API_BASE_URL}/api/updates/trigger-all?backendUrl=${encodeURIComponent(remoteBackendUrl)}`, {
-                method: 'POST'
-            });
-
+            const res = await fetch(
+                `${API_BASE_URL}/api/updates/trigger-all?backendUrl=${encodeURIComponent(remoteBackendUrl)}`,
+                { method: 'POST' }
+            );
             if (res.ok) {
                 const data = await res.json();
-                setMessage({ text: `${data.message || 'Güncelleme komutu gönderildi!'}`, type: 'success' });
+                setMessage({ text: data.message || 'Güncelleme komutu gönderildi!', type: 'success' });
             } else {
                 setMessage({ text: `Güncelleme başarısız: ${res.status}`, type: 'error' });
             }
         } catch (err: any) {
             setMessage({ text: `Hata: ${err.message}`, type: 'error' });
-        } finally {
-            setTriggering(false);
+        } finally { setTriggering(false); }
+    };
+
+    const handleBuildNewAgent = async () => {
+
+        setMessage(null);
+        try {
+            const res = await fetch(`${API_BASE_URL}/api/updates/build`, { method: 'POST' });
+            if (res.ok) {
+                setIsBuilding(true);
+                setBuildStatus("Derleme başlatılıyor...");
+            } else {
+                const errText = await res.text();
+                setMessage({ text: `Build başlatılamadı: ${errText}`, type: 'error' });
+            }
+        } catch (err: any) {
+            setMessage({ text: `Hata: ${err.message}`, type: 'error' });
         }
     };
 
@@ -123,20 +188,27 @@ const AgentUpdatePage: React.FC = () => {
         return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
     };
 
-    const formatDate = (isoString: string) => {
-        try {
-            return new Date(isoString).toLocaleString();
-        } catch {
-            return isoString;
-        }
+    const formatDate = (iso: string) => {
+        try { return new Date(iso).toLocaleString('tr-TR'); } catch { return iso; }
+    };
+
+    const isUpToDate = (deviceVersion: string | null): boolean => {
+        if (!deviceVersion || !latestVersion?.version || latestVersion.version === 'none') return false;
+        return deviceVersion === latestVersion.version;
     };
 
     return (
-        <div className="space-y-6 p-6 max-w-4xl mx-auto">
+        <div className="space-y-6 p-6 max-w-6xl mx-auto">
             {/* Header */}
-            <div className="flex items-center gap-3">
-                <Package className="w-8 h-8 text-violet-400" />
-                <h1 className="text-2xl font-semibold">Agent Güncelleme</h1>
+            <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                    <Package className="w-8 h-8 text-violet-400" />
+                    <h1 className="text-2xl font-semibold">Agent Güncelleme</h1>
+                </div>
+                <button onClick={() => { fetchDevices(); fetchLatestVersion(); fetchHistory(); }}
+                    className="text-slate-400 hover:text-white p-2 rounded-lg hover:bg-slate-700 transition-colors">
+                    <RefreshCcw className="w-5 h-5" />
+                </button>
             </div>
 
             {/* Message */}
@@ -147,131 +219,197 @@ const AgentUpdatePage: React.FC = () => {
                 </div>
             )}
 
-            {/* Current Version Card */}
-            <section className="bg-ms-panel p-6 rounded-2xl border border-ms-border shadow-lg">
-                <h2 className="text-lg font-medium mb-4 flex items-center gap-2">
-                    <RefreshCcw className="w-5 h-5 text-slate-400" />
-                    Mevcut Versiyon
-                </h2>
-
-                {latestVersion ? (
-                    <div className="space-y-3">
-                        <div className="flex items-center gap-4">
-                            <span className="text-3xl font-bold text-violet-400">
+            {/* Top Row: Current Version + Upload */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* Current Version */}
+                <section className="bg-ms-panel p-6 rounded-2xl border border-ms-border shadow-lg">
+                    <h2 className="text-lg font-medium mb-4 flex items-center gap-2">
+                        <Rocket className="w-5 h-5 text-violet-400" />
+                        Mevcut Versiyon
+                    </h2>
+                    {latestVersion ? (
+                        <div className="space-y-3">
+                            <span className="text-4xl font-bold text-violet-400">
                                 v{latestVersion.version !== 'none' ? latestVersion.version : '-'}
                             </span>
-                            {latestVersion.version === 'none' && (
-                                <span className="text-slate-500">Henüz versiyon yüklenmedi</span>
+                            {latestVersion.fileName && (
+                                <div className="text-sm text-slate-400 space-y-1">
+                                    <div>Dosya: <span className="text-slate-300">{latestVersion.fileName}</span></div>
+                                    {latestVersion.sizeBytes && <div>Boyut: <span className="text-slate-300">{formatBytes(latestVersion.sizeBytes)}</span></div>}
+                                    {latestVersion.uploadedAt && <div>Tarih: <span className="text-slate-300">{formatDate(latestVersion.uploadedAt)}</span></div>}
+                                </div>
+                            )}
+                            {latestVersion.version !== 'none' && (
+                                <div className="space-y-3 mt-4">
+                                    <div>
+                                        <label className="block text-xs text-slate-500 mb-1">Backend URL (Uzak Makineler İçin)</label>
+                                        <input type="text" value={remoteBackendUrl} onChange={(e) => setRemoteBackendUrl(e.target.value)}
+                                            className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-violet-500" />
+                                    </div>
+                                    <button onClick={handleTriggerAll} disabled={triggering}
+                                        className="w-full bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white px-4 py-3 rounded-xl flex items-center justify-center gap-2 transition-colors font-medium">
+                                        <Rocket className="w-5 h-5" />
+                                        {triggering ? 'Gönderiliyor...' : 'Tüm Cihazları Güncelle'}
+                                    </button>
+                                </div>
                             )}
                         </div>
+                    ) : (
+                        <div className="text-slate-500">Yükleniyor...</div>
+                    )}
+                </section>
 
-                        {latestVersion.fileName && (
-                            <div className="text-sm text-slate-400 space-y-1">
-                                <div>Dosya: <span className="text-slate-300">{latestVersion.fileName}</span></div>
-                                {latestVersion.sizeBytes && <div>Boyut: <span className="text-slate-300">{formatBytes(latestVersion.sizeBytes)}</span></div>}
-                                {latestVersion.uploadedAt && <div>Yüklenme: <span className="text-slate-300">{formatDate(latestVersion.uploadedAt)}</span></div>}
+                {/* Upload */}
+                <section className="bg-ms-panel p-6 rounded-2xl border border-ms-border shadow-lg">
+                    <h2 className="text-lg font-medium mb-4 flex items-center gap-2">
+                        <Upload className="w-5 h-5 text-slate-400" />
+                        Yeni Versiyon Yükle
+                    </h2>
+                    <div className="space-y-4">
+                        <div>
+                            <label className="block text-xs text-slate-500 mb-1">Versiyon Numarası</label>
+                            <input type="text" value={newVersion} onChange={(e) => setNewVersion(e.target.value)} placeholder="1.0.0.36"
+                                className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-violet-500" />
+                        </div>
+                        <div>
+                            <label className="block text-xs text-slate-500 mb-1">Agent Paketi (ZIP)</label>
+                            <div className="flex items-center gap-3">
+                                <label className="cursor-pointer bg-slate-700 hover:bg-slate-600 px-4 py-2 rounded-lg transition-colors text-sm">
+                                    Dosya Seç
+                                    <input type="file" accept=".zip" onChange={(e) => e.target.files?.length && setSelectedFile(e.target.files[0])} className="hidden" />
+                                </label>
+                                {selectedFile && <span className="text-slate-300 text-sm">{selectedFile.name} ({formatBytes(selectedFile.size)})</span>}
                             </div>
-                        )}
-
-                        {latestVersion.version !== 'none' && (
-                            <div className="space-y-4 mt-4">
-                                {/* Backend URL Input */}
-                                <div>
-                                    <label className="block text-sm text-slate-400 mb-1">
-                                        Backend URL (Uzak Makinelerin Erişeceği)
-                                    </label>
-                                    <input
-                                        type="text"
-                                        value={remoteBackendUrl}
-                                        onChange={(e) => setRemoteBackendUrl(e.target.value)}
-                                        placeholder="http://10.0.102.60:5102"
-                                        className="w-full max-w-md bg-slate-900 border border-slate-600 rounded-lg px-4 py-2 focus:outline-none focus:border-violet-500"
-                                    />
-                                    <p className="text-xs text-slate-500 mt-1">
-                                        ⚠️ localhost yerine gerçek IP adresi gir (örn: http://10.0.102.60:5102)
-                                    </p>
-                                </div>
-
-                                <button
-                                    onClick={handleTriggerAll}
-                                    disabled={triggering}
-                                    className="bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white px-6 py-3 rounded-xl flex items-center gap-2 transition-colors font-medium"
-                                >
-                                    <Rocket className="w-5 h-5" />
-                                    {triggering ? 'Gönderiliyor...' : 'Tüm Cihazları Güncelle'}
-                                </button>
-                            </div>
-                        )}
+                        </div>
+                        <button onClick={handleUpload} disabled={uploading || !selectedFile || !newVersion.trim()}
+                            className="w-full bg-violet-600 hover:bg-violet-500 disabled:opacity-50 disabled:cursor-not-allowed text-white px-4 py-3 rounded-xl flex items-center justify-center gap-2 transition-colors font-medium">
+                            <Upload className="w-5 h-5" />
+                            {uploading ? 'Yükleniyor...' : 'Manuel Yükle'}
+                        </button>
                     </div>
-                ) : (
-                    <div className="text-slate-500">Yükleniyor...</div>
+                </section>
+            </div>
+
+            {/* Auto Build Card */}
+            <section className="bg-ms-panel p-6 rounded-2xl border border-ms-border shadow-lg">
+                <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
+                    <div>
+                        <h2 className="text-lg font-medium mb-2 flex items-center gap-2">
+                            <Hammer className="w-5 h-5 text-amber-500" />
+                            Otomatik Agent Build
+                        </h2>
+                        <p className="text-sm text-slate-400 max-w-2xl">
+                            Bu özellik agent kaynak kodunu derler, versiyonunu otomatik artırır, ZIP'ler ve sisteme yükler.
+                            Geliştirmeyi tamamladıktan sonra yeni versiyonu tüm cihazlara yaymak için bu butonu kullanın.
+                        </p>
+                    </div>
+
+                    <div className="flex-shrink-0 w-full md:w-auto">
+                        <button
+                            onClick={handleBuildNewAgent}
+                            disabled={isBuilding}
+                            className="w-full md:w-auto bg-amber-600 hover:bg-amber-500 disabled:bg-slate-700 disabled:text-slate-400 text-white px-6 py-3 rounded-xl flex items-center justify-center gap-2 transition-colors font-medium shadow-lg shadow-amber-900/20"
+                        >
+                            {isBuilding ? <Activity className="w-5 h-5 animate-spin" /> : <Hammer className="w-5 h-5" />}
+                            {isBuilding ? 'Derleniyor...' : 'Yeni Agent Build Oluştur'}
+                        </button>
+                    </div>
+                </div>
+
+                {/* Build Status Bar */}
+                {isBuilding && (
+                    <div className="mt-6 p-4 bg-slate-900/50 rounded-lg border border-slate-700/50 flex items-center gap-3">
+                        <div className="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></div>
+                        <span className="font-mono text-sm text-amber-400">{buildStatus || 'İşlem devam ediyor...'}</span>
+                    </div>
+                )}
+                {buildError && !isBuilding && (
+                    <div className="mt-4 p-4 rounded-lg bg-red-900/30 border border-red-800 text-red-400 text-sm whitespace-pre-wrap">
+                        <span className="font-semibold block mb-1">Build Hatası:</span>
+                        {buildError}
+                    </div>
                 )}
             </section>
 
-            {/* Upload New Version */}
+            {/* Device Versions Table */}
             <section className="bg-ms-panel p-6 rounded-2xl border border-ms-border shadow-lg">
                 <h2 className="text-lg font-medium mb-4 flex items-center gap-2">
-                    <Upload className="w-5 h-5 text-slate-400" />
-                    Yeni Versiyon Yükle
+                    <MonitorSmartphone className="w-5 h-5 text-blue-400" />
+                    Cihaz Versiyonları
+                    <span className="text-sm text-slate-500 font-normal ml-2">({devices.length} cihaz)</span>
                 </h2>
-
-                <div className="space-y-4">
-                    {/* Version Input */}
-                    <div>
-                        <label className="block text-sm text-slate-400 mb-1">Versiyon Numarası</label>
-                        <input
-                            type="text"
-                            value={newVersion}
-                            onChange={(e) => setNewVersion(e.target.value)}
-                            placeholder="1.0.0.2"
-                            className="w-full max-w-xs bg-slate-900 border border-slate-600 rounded-lg px-4 py-2 focus:outline-none focus:border-violet-500"
-                        />
-                    </div>
-
-                    {/* File Input */}
-                    <div>
-                        <label className="block text-sm text-slate-400 mb-1">Agent Paketi (ZIP)</label>
-                        <div className="flex items-center gap-4">
-                            <label className="cursor-pointer bg-slate-700 hover:bg-slate-600 px-4 py-2 rounded-lg transition-colors">
-                                <span>Dosya Seç</span>
-                                <input
-                                    type="file"
-                                    accept=".zip"
-                                    onChange={handleFileSelect}
-                                    className="hidden"
-                                />
-                            </label>
-                            {selectedFile && (
-                                <span className="text-slate-300">
-                                    {selectedFile.name} ({formatBytes(selectedFile.size)})
-                                </span>
+                <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                        <thead>
+                            <tr className="text-left text-slate-400 border-b border-slate-700">
+                                <th className="pb-3 pr-4">Durum</th>
+                                <th className="pb-3 pr-4">Cihaz</th>
+                                <th className="pb-3 pr-4">Mağaza</th>
+                                <th className="pb-3 pr-4">Mevcut Versiyon</th>
+                                <th className="pb-3 pr-4">Güncel?</th>
+                                <th className="pb-3">Son Heartbeat</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {devices.map((d) => (
+                                <tr key={d.id} className="border-b border-slate-800 hover:bg-slate-800/30">
+                                    <td className="py-3 pr-4">
+                                        {d.online
+                                            ? <Wifi className="w-4 h-4 text-emerald-400" />
+                                            : <WifiOff className="w-4 h-4 text-slate-600" />}
+                                    </td>
+                                    <td className="py-3 pr-4 font-medium text-slate-200">{d.hostname || d.id}</td>
+                                    <td className="py-3 pr-4 text-slate-400">{d.storeCode || '-'}</td>
+                                    <td className="py-3 pr-4">
+                                        <span className="font-mono text-slate-300">{d.agentVersion || '-'}</span>
+                                    </td>
+                                    <td className="py-3 pr-4">
+                                        {isUpToDate(d.agentVersion) ? (
+                                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-emerald-900/40 text-emerald-400 border border-emerald-800">
+                                                <CheckCircle className="w-3 h-3" /> Güncel
+                                            </span>
+                                        ) : (
+                                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-amber-900/40 text-amber-400 border border-amber-800">
+                                                <AlertCircle className="w-3 h-3" /> Eski
+                                            </span>
+                                        )}
+                                    </td>
+                                    <td className="py-3 text-slate-500 text-xs">
+                                        {d.lastSeen ? formatDate(d.lastSeen) : '-'}
+                                    </td>
+                                </tr>
+                            ))}
+                            {devices.length === 0 && (
+                                <tr><td colSpan={6} className="py-6 text-center text-slate-500">Henüz cihaz yok</td></tr>
                             )}
-                        </div>
-                    </div>
-
-                    {/* Upload Button */}
-                    <button
-                        onClick={handleUpload}
-                        disabled={uploading || !selectedFile || !newVersion.trim()}
-                        className="bg-violet-600 hover:bg-violet-500 disabled:opacity-50 disabled:cursor-not-allowed text-white px-6 py-3 rounded-xl flex items-center gap-2 transition-colors font-medium"
-                    >
-                        <Upload className="w-5 h-5" />
-                        {uploading ? 'Yükleniyor...' : 'Yükle'}
-                    </button>
+                        </tbody>
+                    </table>
                 </div>
             </section>
 
-            {/* Instructions */}
-            <section className="bg-slate-800/30 p-6 rounded-2xl border border-slate-700/50">
-                <h3 className="font-medium mb-3 text-slate-300">Nasıl Kullanılır?</h3>
-                <ol className="text-sm text-slate-400 space-y-2 list-decimal list-inside">
-                    <li><code className="bg-slate-800 px-1 rounded">publish_single/</code> klasörünün içeriğini ZIP'le</li>
-                    <li>Versiyon numarasını gir (örn: 1.0.0.2)</li>
-                    <li>ZIP dosyasını seç ve "Yükle" butonuna tıkla</li>
-                    <li>"Tüm Cihazları Güncelle" butonuna tıkla</li>
-                    <li>Agentlar otomatik olarak güncellenir ve restart olur</li>
-                </ol>
-            </section>
+            {/* Version History */}
+            {history.length > 0 && (
+                <section className="bg-ms-panel p-6 rounded-2xl border border-ms-border shadow-lg">
+                    <h2 className="text-lg font-medium mb-4 flex items-center gap-2">
+                        <History className="w-5 h-5 text-slate-400" />
+                        Versiyon Geçmişi
+                    </h2>
+                    <div className="space-y-2">
+                        {history.map((h, i) => (
+                            <div key={i} className={`flex items-center justify-between py-2 px-3 rounded-lg ${i === 0 ? 'bg-violet-900/20 border border-violet-800/50' : 'hover:bg-slate-800/30'}`}>
+                                <div className="flex items-center gap-3">
+                                    <span className={`font-mono font-bold ${i === 0 ? 'text-violet-400' : 'text-slate-400'}`}>v{h.version}</span>
+                                    {i === 0 && <span className="text-xs bg-violet-600 px-2 py-0.5 rounded-full text-white">Son</span>}
+                                </div>
+                                <div className="flex items-center gap-4 text-xs text-slate-500">
+                                    <span>{formatBytes(h.sizeBytes)}</span>
+                                    <span>{formatDate(h.uploadedAt)}</span>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </section>
+            )}
         </div>
     );
 };

@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+
+    <Package
+        Name="MudoSoft Agent"
+        Manufacturer="MudoSoft"
+        Version="1.0.0.43"
+        UpgradeCode="A1B2C3D4-E5F6-7890-ABCD-EF1234567890"
+        Scope="perMachine"
+        Language="1033"
+        Compressed="yes"
+        InstallerVersion="200">
+
+        <MajorUpgrade
+            DowngradeErrorMessage="Daha yeni bir surumu zaten yuklu."
+            AllowSameVersionUpgrades="yes" />
+
+        <MediaTemplate EmbedCab="yes" />
+
+        <!-- Directories -->
+        <StandardDirectory Id="ProgramFiles64Folder">
+            <Directory Id="MUDOSOFT" Name="MudoSoft">
+                <Directory Id="INSTALLDIR" Name="Agent" />
+            </Directory>
+        </StandardDirectory>
+
+        <!-- All agent files -->
+        <ComponentGroup Id="AgentFiles" Directory="INSTALLDIR">
+            <Files Include="!(bindpath.AgentFiles)\**" />
+        </ComponentGroup>
+
+        <!-- Tray auto-start on user login -->
+        <DirectoryRef Id="INSTALLDIR">
+            <Component Id="TrayAutoStart" Guid="D4E5F6A7-B8C9-0123-DEFA-234567890123" Bitness="always64">
+                <RegistryValue
+                    Root="HKLM"
+                    Key="SOFTWARE\Microsoft\Windows\CurrentVersion\Run"
+                    Name="MudoSoftTray"
+                    Type="string"
+                    Value="[INSTALLDIR]MudoSoft.Tray.exe"
+                    KeyPath="yes" />
+            </Component>
+        </DirectoryRef>
+
+        <!-- Feature -->
+        <Feature Id="AgentFeature" Title="MudoSoft Agent" Level="1">
+            <ComponentGroupRef Id="AgentFiles" />
+            <ComponentRef Id="TrayAutoStart" />
+        </Feature>
+
+    </Package>
+</Wix>

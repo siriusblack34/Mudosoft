@@ -1,33 +1,46 @@
-
 import React from 'react';
-import { CloseIcon } from '../icons/Icons';
+import { X } from 'lucide-react';
 
 interface ModalProps {
   isOpen: boolean;
   onClose: () => void;
   title: string;
   children: React.ReactNode;
+  size?: 'sm' | 'md' | 'lg' | 'xl';
 }
 
-const Modal: React.FC<ModalProps> = ({ isOpen, onClose, title, children }) => {
+const sizeClasses = {
+  sm: 'max-w-sm',
+  md: 'max-w-lg',
+  lg: 'max-w-2xl',
+  xl: 'max-w-4xl',
+};
+
+const Modal: React.FC<ModalProps> = ({ isOpen, onClose, title, children, size = 'md' }) => {
   if (!isOpen) return null;
 
   return (
     <div
-      className="fixed inset-0 bg-black bg-opacity-70 z-50 flex justify-center items-center"
+      className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4 animate-fade-in"
       onClick={onClose}
     >
       <div
-        className="bg-gray-800 rounded-lg shadow-xl w-full max-w-lg m-4 border border-gray-700 transform transition-all"
+        className={`bg-ms-bg-soft border border-ms-border rounded-xl shadow-2xl w-full ${sizeClasses[size]} max-h-[90vh] flex flex-col`}
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex justify-between items-center p-4 border-b border-gray-700">
-          <h2 className="text-xl font-semibold text-white">{title}</h2>
-          <button onClick={onClose} className="text-gray-400 hover:text-white">
-            <CloseIcon className="w-6 h-6" />
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-4 border-b border-ms-border shrink-0">
+          <h2 className="text-base font-semibold text-ms-text">{title}</h2>
+          <button
+            onClick={onClose}
+            className="p-1.5 rounded-lg text-zinc-400 hover:text-ms-text hover:bg-zinc-800 transition-colors"
+          >
+            <X className="w-4 h-4" />
           </button>
         </div>
-        <div className="p-6">
+
+        {/* Body */}
+        <div className="p-5 overflow-y-auto flex-1">
           {children}
         </div>
       </div>

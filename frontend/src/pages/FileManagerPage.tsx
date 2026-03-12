@@ -256,7 +256,7 @@ const FileManagerPage: React.FC = () => {
             </div>
 
             {/* Toolbar */}
-            <div className="flex flex-wrap items-center gap-2 bg-slate-800/50 p-3 rounded-xl border border-slate-700">
+            <div className="flex flex-wrap items-center gap-2 glass-panel p-3 rounded-2xl border-white/5">
                 {/* Breadcrumb */}
                 <button onClick={() => navigateTo("C:\\")} className="p-1 hover:bg-slate-700 rounded">
                     <Home className="w-4 h-4" />
@@ -292,9 +292,9 @@ const FileManagerPage: React.FC = () => {
             </div>
 
             {/* File List */}
-            <div className="bg-ms-panel rounded-2xl border border-ms-border shadow-lg overflow-hidden">
+            <div className="glass-card rounded-2xl border-white/5 overflow-hidden">
                 {/* Header Row */}
-                <div className="grid grid-cols-12 gap-2 px-4 py-2 bg-slate-800/50 text-xs text-slate-400 font-medium uppercase tracking-wider">
+                <div className="grid grid-cols-12 gap-2 px-4 py-3 bg-white/5 border-b border-white/5 text-xs text-slate-400 font-semibold uppercase tracking-widest">
                     <div className="col-span-6">Name</div>
                     <div className="col-span-2">Size</div>
                     <div className="col-span-3">Modified</div>
@@ -373,15 +373,15 @@ const FileManagerPage: React.FC = () => {
 
             {/* New Folder Dialog */}
             {showNewFolderDialog && (
-                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-                    <div className="bg-slate-800 p-6 rounded-xl border border-slate-700 w-96">
-                        <h3 className="text-lg font-medium mb-4">Create New Folder</h3>
+                <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-sm flex items-center justify-center z-50 animate-fade-in">
+                    <div className="glass-panel p-6 rounded-2xl border-white/10 w-96 shadow-2xl">
+                        <h3 className="text-lg font-semibold mb-5 text-white tracking-wide">Create New Folder</h3>
                         <input
                             type="text"
                             value={newFolderName}
                             onChange={(e) => setNewFolderName(e.target.value)}
                             placeholder="Folder name"
-                            className="w-full bg-slate-900 border border-slate-600 rounded-lg px-4 py-2 mb-4 focus:outline-none focus:border-violet-500"
+                            className="w-full glass-card rounded-xl px-4 py-3 mb-5 text-white focus-ring placeholder-slate-500 border-white/5"
                             autoFocus
                         />
                         <div className="flex justify-end gap-2">

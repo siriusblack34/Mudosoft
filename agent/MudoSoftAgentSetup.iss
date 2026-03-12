@@ -33,13 +33,12 @@ Name: "turkish"; MessagesFile: "compiler:Languages\Turkish.isl"
 Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Files]
-; Agent (Service)
-Source: "publish_single_exe\MudoSoft.Agent.exe"; DestDir: "{app}"; Flags: ignoreversion
-Source: "publish_single_exe\appsettings.json"; DestDir: "{app}"; Flags: ignoreversion onlyifdoesntexist
-Source: "publish_single_exe\appsettings.Development.json"; DestDir: "{app}"; Flags: ignoreversion onlyifdoesntexist
+; All Agent binaries, libraries and dependencies
+Source: "C:\AgentDeploy_v31\*"; DestDir: "{app}"; Excludes: "appsettings*.json"; Flags: ignoreversion recursesubdirs createallsubdirs
 
-; Tray Application
-Source: "..\tray\publish_single_exe\MudoSoft.Tray.exe"; DestDir: "{app}"; Flags: ignoreversion
+; Settings files (only copy if they don't exist so we don't overwrite user configs)
+Source: "C:\AgentDeploy_v31\appsettings.json"; DestDir: "{app}"; Flags: ignoreversion onlyifdoesntexist
+Source: "C:\AgentDeploy_v31\appsettings.Development.json"; DestDir: "{app}"; Flags: ignoreversion onlyifdoesntexist
 
 ; NOTE: RDHelper is now integrated into MudoSoft.Agent.exe via --desktop-helper arg.
 ; We no longer deploy a separate MudoSoft.RDHelper.exe.

@@ -56,6 +56,10 @@ namespace MudoSoft.Backend.Models
         public float CurrentRamUsagePercent { get; set; }
         public float CurrentDiskUsagePercent { get; set; }
 
+        // D DRIVE METRICS
+        public float? CurrentDiskDUsagePercent { get; set; }
+        public long? TotalDiskDGB { get; set; }
+
         // NAVIGATION PROPERTY
         public List<DeviceMetric> Metrics { get; set; } = new();
     }

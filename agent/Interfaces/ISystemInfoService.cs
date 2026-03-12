@@ -6,6 +6,8 @@ public interface ISystemInfoService : IDisposable
     double GetCpuUsage();
     double GetRamUsage();
     double GetDiskUsage();
+    double? GetDiskDUsage();
+    long? GetTotalDiskDGB();
     
     // System Info
     string GetOsName();

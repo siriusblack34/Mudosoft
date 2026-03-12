@@ -3,6 +3,7 @@ using System.Data;
 using System.Text.Json;
 using System.Threading.Tasks;
 using System.Collections.Generic;
+using System.Text.RegularExpressions;
 using Microsoft.Data.SqlClient;
 
 namespace MudoSoft.Backend.Services
@@ -14,7 +15,7 @@ namespace MudoSoft.Backend.Services
             try
             {
                 using var conn = new SqlConnection(connectionString);
-                conn.Open();
+                await conn.OpenAsync();
                 return true;
             }
             catch
@@ -23,18 +24,34 @@ namespace MudoSoft.Backend.Services
             }
         }
 
-        public async Task<DataTable> ExecuteQueryAsync(string connectionString, string query)
+        public async Task<DataTable?> ExecuteQueryAsync(string connectionString, string query)
         {
-            // try-catch bloğunu kaldırdık ki hata Controller'a fırlatılsın ve kullanıcı görsün.
             using var conn = new SqlConnection(connectionString);
-            using var cmd = new SqlCommand(query, conn);
-
-            cmd.CommandTimeout = 30; // 5sn çok kısaydı, 30sn yaptık.
             await conn.OpenAsync();
 
-            using var reader = await cmd.ExecuteReaderAsync();
             var dt = new DataTable();
-            dt.Load(reader);
+            
+            // GO komutuna göre script'i parçalara ayır
+            var statements = Regex.Split(query, @"^\s*GO\s*$", RegexOptions.Multiline | RegexOptions.IgnoreCase);
+
+            foreach (var statement in statements)
+            {
+                var sqlPart = statement.Trim();
+                if (string.IsNullOrWhiteSpace(sqlPart)) continue;
+
+                using var cmd = new SqlCommand(sqlPart, conn);
+                cmd.CommandTimeout = 30;
+                
+                using var reader = await cmd.ExecuteReaderAsync();
+                
+                // Eğer SELECT sorgusuysa ve veriler varsa son tabloyu yükler
+                if (reader.FieldCount > 0)
+                {
+                    dt.Clear();
+                    dt.Load(reader);
+                }
+            }
+            
             return dt;
         }
 
@@ -52,6 +69,7 @@ namespace MudoSoft.Backend.Services
             // Artık hata fırlatılacak.
             
             var table = await ExecuteQueryAsync(connectionString, sqlQuery);
+            if (table == null) return "[]";
 
             // DataTable → List<Dictionary<string,object>>
             var rows = new List<Dictionary<string, object?>>();

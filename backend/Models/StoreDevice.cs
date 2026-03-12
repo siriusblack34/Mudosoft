@@ -49,5 +49,8 @@ namespace MudoSoft.Backend.Models
 
         public DateTimeOffset CreatedDate { get; set; } = DateTimeOffset.UtcNow;
         public DateTimeOffset LastSyncDate { get; set; } = DateTimeOffset.UtcNow;
+
+        // Son online görülme zamanı (DiscoveryWorker tarafından güncellenir)
+        public DateTime? LastSeen { get; set; }
     }
 }

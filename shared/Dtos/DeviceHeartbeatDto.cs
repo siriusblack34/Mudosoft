@@ -17,6 +17,10 @@ public sealed class DeviceHeartbeatDto
     public double RamUsage { get; set; }
     public double DiskUsage { get; set; }
 
+    // D Drive Metrics
+    public double? DiskDUsage { get; set; }
+    public long? TotalDiskDGB { get; set; }
+
     // Hardware Inventory
     public string? CpuModel { get; set; }
     public long TotalRamMB { get; set; }

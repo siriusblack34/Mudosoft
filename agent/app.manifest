@@ -4,8 +4,8 @@
   <trustInfo xmlns="urn:schemas-microsoft-com:asm.v2">
     <security>
       <requestedPrivileges xmlns="urn:schemas-microsoft-com:asm.v3">
-        <!-- UAC Manifest - Her zaman yönetici olarak çalışmasını sağlar -->
-        <requestedExecutionLevel level="requireAdministrator" uiAccess="false" />
+        <!-- UAC Manifest - asInvoker: Service zaten SYSTEM olarak çalışır, Helper ise UAC'a takılmamalı -->
+        <requestedExecutionLevel level="asInvoker" uiAccess="false" />
       </requestedPrivileges>
     </security>
   </trustInfo>

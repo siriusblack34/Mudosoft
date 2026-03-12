@@ -230,6 +230,44 @@ public class AgentController : ControllerBase
     }
 
     /// <summary>
+    /// Tüm komut geçmişini döndürür (İşlem Geçmişi sayfası için)
+    /// </summary>
+    [AllowAnonymous]
+    [HttpGet("command-history")]
+    public async Task<IActionResult> GetCommandHistory([FromQuery] int limit = 200)
+    {
+        var records = await _dbContext.CommandResultRecords
+            .OrderByDescending(r => r.CompletedAtUtc)
+            .Take(limit)
+            .Join(
+                _dbContext.Devices,
+                r => r.DeviceId,
+                d => d.Id,
+                (r, d) => new
+                {
+                    commandId      = r.CommandId,
+                    deviceId       = r.DeviceId,
+                    hostname       = d.Hostname,
+                    type           = r.CommandType,
+                    typeName       = r.CommandType == CommandType.Reboot        ? "Yeniden Başlat"
+                                  : r.CommandType == CommandType.Shutdown       ? "Kapat"
+                                  : r.CommandType == CommandType.ExecuteScript  ? "Script Çalıştır"
+                                  : r.CommandType == CommandType.FolderCleanup  ? "Klasör Temizle"
+                                  : r.CommandType == CommandType.UpdateAgent    ? "Agent Güncelle"
+                                  : r.CommandType == CommandType.FileWrite      ? "Dosya Yükle"
+                                  : r.CommandType == CommandType.FileDelete     ? "Dosya Sil"
+                                  : "Diğer",
+                    success        = r.Success,
+                    completedAtUtc = r.CompletedAtUtc,
+                    outputSnippet  = r.Output.Length > 120 ? r.Output.Substring(0, 120) + "..." : r.Output,
+                }
+            )
+            .ToListAsync();
+
+        return Ok(records);
+    }
+
+    /// <summary>
     /// Get command result by ID (for file operations)
     /// </summary>
     [AllowAnonymous] // Frontend access for polling command results

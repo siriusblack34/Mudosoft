@@ -14,8 +14,8 @@ const SqlQueryPanel: React.FC<Props> = ({ deviceId }) => {
   const run = async () => {
     setBusy(true);
     try {
-      const res = await apiClient.runSql(deviceId, query);
-      setResult(res);
+      const res = await apiClient.runSqlQuery(deviceId, query);
+      setResult(res as any);
     } catch (err) {
       console.error(err);
       alert('SQL execution failed.');

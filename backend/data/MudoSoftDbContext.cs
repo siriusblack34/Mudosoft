@@ -17,6 +17,9 @@ namespace MudoSoft.Backend.Data
         public DbSet<ActionRecord> ActionRecords { get; set; }
 
         public DbSet<StoreDevice> StoreDevices { get; set; }
+        public DbSet<Note> Notes { get; set; }
+        public DbSet<ScheduledTask> ScheduledTasks { get; set; }
+        public DbSet<StoreManager> StoreManagers { get; set; }
 
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)

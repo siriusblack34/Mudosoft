@@ -59,3 +59,8 @@ export interface Device {
     // Uptime (boot time from server)
     systemBootTime?: string;
 }
+
+export interface SqlResult {
+    columns: string[];
+    rows: any[][];
+}

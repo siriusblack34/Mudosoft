@@ -231,6 +231,6 @@ public class DevicesController : ControllerBase
             })
             .ToListAsync();
 
-        return Ok(metrics);
-    }
+          return Ok(metrics);
+    }
 }

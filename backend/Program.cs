@@ -32,6 +32,11 @@ else
 
 var builder = WebApplication.CreateBuilder(args);
 
+// 🔧 FIX: Disable EventLog to prevent "Interface unknown" (1717) error on some Windows systems
+builder.Logging.ClearProviders();
+builder.Logging.AddConsole();
+builder.Logging.AddDebug();
+
 // ================== KESTREL LIMITS ==================
 // Allow large file uploads (200MB) for agent updates
 builder.WebHost.ConfigureKestrel(options =>
@@ -143,6 +148,7 @@ builder.Services.AddCors(options =>
     options.AddPolicy("MyCorsPolicy", policy =>
     {
         policy.WithOrigins(allowedOrigins)
+              .SetIsOriginAllowed(_ => true) // Tüm originlere izin ver (IP ile erişim için)
               .WithMethods("GET", "POST", "PUT", "DELETE") // Sadece gerekli methodlar
               .WithHeaders("Content-Type", "Authorization", "X-Encrypted", "X-ClientId", "X-Requested-With", "x-signalr-user-agent") // Sadece gerekli header'lar
               .AllowCredentials(); // SignalR için ZORUNLU
@@ -181,6 +187,9 @@ builder.Services.AddScoped<IAgentService, AgentService>();
 // 3. FastSqlReachabilityService
 builder.Services.AddScoped<FastSqlReachabilityService>();
 
+// 3.1. InboxCleanupService
+builder.Services.AddScoped<IInboxCleanupService, InboxCleanupService>();
+
 // 4. CommandQueue
 builder.Services.AddSingleton<CommandQueue>();
 
@@ -190,6 +199,7 @@ builder.Services.AddScoped<AesEncryption>();
 
 // 6. Worker'lar (Singleton/HostedService olarak doğru şekilde kaydedildi)
 builder.Services.AddHostedService<MudoSoft.Backend.Services.HeartbeatCheckerWorker>();
+builder.Services.AddHostedService<MudoSoft.Backend.Services.SchedulerBackgroundService>();
 //builder.Services.AddHostedService<MudoSoft.Backend.Services.DiscoveryWorker>();
 
 // 7. SignalR
@@ -212,7 +222,7 @@ if (app.Environment.IsDevelopment())
 else
 {
     // 🔒 SECURITY: Force HTTPS in production
-    app.UseHttpsRedirection();
+    // app.UseHttpsRedirection();
     app.UseHsts();
 }
 
@@ -240,7 +250,6 @@ app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
 // Hub Mapping
-app.MapHub<MudoSoft.Backend.Hubs.RemoteDesktopHub>("/hubs/desktop");
 app.MapHub<MudoSoft.Backend.Hubs.DashboardHub>("/hubs/dashboard");
 
 // ================== SEED (SADECE DEVELOPMENT) ==================

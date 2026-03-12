@@ -193,11 +193,13 @@ const SQLQueryPage: React.FC = () => {
         <div className="p-6 h-[calc(100vh-2rem)] flex flex-col gap-6">
             <div className="flex items-center justify-between">
                 <h1 className="text-2xl font-bold text-white flex items-center gap-3">
-                    <Terminal className="w-8 h-8 text-emerald-500" />
+                    <div className="p-2 rounded-xl bg-emerald-500/20 shadow-inner border border-emerald-500/30">
+                        <Terminal className="w-6 h-6 text-emerald-400" />
+                    </div>
                     SQL Command Center
                 </h1>
 
-                <div className="flex items-center gap-6 bg-slate-900/50 px-4 py-2 rounded-lg border border-slate-800">
+                <div className="flex items-center gap-6 glass-panel px-5 py-3 rounded-2xl border-white/5 shadow-lg">
                     {/* PC Stats */}
                     <div className="flex flex-col items-end">
                         <span className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-0.5">PC Devices</span>
@@ -258,17 +260,17 @@ const SQLQueryPage: React.FC = () => {
 
             <div className="flex flex-1 gap-6 overflow-hidden">
                 {/* LEFT PANEL: DEVICE LIST */}
-                <div className="w-1/3 bg-slate-900/50 border border-slate-700 rounded-xl flex flex-col overflow-hidden">
-                    <div className="p-4 border-b border-slate-700 bg-slate-800/30 space-y-3">
+                <div className="w-1/3 glass-panel rounded-2xl flex flex-col overflow-hidden border-white/5">
+                    <div className="p-4 border-b border-white/5 bg-slate-900/40 space-y-3">
                         {/* Filters */}
                         <div className="flex gap-2">
                             {(["ALL", "PC", "POS", "GECICI"] as FilterType[]).map(t => (
                                 <button
                                     key={t}
                                     onClick={() => setFilterType(t)}
-                                    className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${filterType === t
-                                        ? "bg-indigo-600 text-white"
-                                        : "bg-slate-800 text-slate-400 hover:bg-slate-700"
+                                    className={`px-3 py-1.5 text-xs font-medium rounded-xl transition-all duration-300 ${filterType === t
+                                        ? "bg-indigo-500 text-white shadow-[0_0_10px_rgba(99,102,241,0.5)] border-none"
+                                        : "glass-button hover:-translate-y-0.5 border-white/5"
                                         }`}
                                 >
                                     {t === "GECICI" ? "GEÇİCİ" : t}
@@ -276,12 +278,14 @@ const SQLQueryPage: React.FC = () => {
                             ))}
                         </div>
                         {/* Search */}
-                        <input
-                            className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500"
-                            placeholder="Search store, ip, type..."
-                            value={search}
-                            onChange={e => setSearch(e.target.value)}
-                        />
+                        <div className="relative">
+                            <input
+                                className="w-full px-4 py-2.5 bg-slate-950/50 border border-white/10 rounded-xl text-sm text-white placeholder-slate-400 focus-ring transition-all"
+                                placeholder="Search store, ip, type..."
+                                value={search}
+                                onChange={e => setSearch(e.target.value)}
+                            />
+                        </div>
                         {/* Selection Controls */}
                         <div className="flex justify-between items-center text-xs text-slate-400">
                             <span>{selectedCount} selected</span>
@@ -299,12 +303,12 @@ const SQLQueryPage: React.FC = () => {
                                 <div
                                     key={d.deviceId}
                                     onClick={() => toggleSelection(d.deviceId)}
-                                    className={`flex items-center gap-3 p-3 rounded-lg cursor-pointer transition-all border ${isSelected
-                                        ? "bg-indigo-900/20 border-indigo-500/50"
-                                        : "hover:bg-slate-800/50 border-transparent"
+                                    className={`flex items-center gap-3 p-3 rounded-xl cursor-pointer transition-all border ${isSelected
+                                        ? "bg-indigo-500/20 border-indigo-400/50 shadow-[0_0_10px_rgba(99,102,241,0.1)]"
+                                        : "hover:bg-white/5 border-transparent"
                                         }`}
                                 >
-                                    <div className={`w-4 h-4 rounded border flex items-center justify-center ${isSelected ? "bg-indigo-600 border-indigo-600" : "border-slate-600"
+                                    <div className={`w-4 h-4 rounded border flex items-center justify-center transition-all ${isSelected ? "bg-indigo-500 border-indigo-500" : "border-slate-500 bg-slate-900"
                                         }`}>
                                         {isSelected && <Check className="w-3 h-3 text-white" />}
                                     </div>
@@ -332,13 +336,13 @@ const SQLQueryPage: React.FC = () => {
                 {/* RIGHT PANEL: EDITOR & RESULTS */}
                 <div className="flex-1 flex flex-col gap-6 min-w-0">
                     {/* Editor */}
-                    <div className="bg-slate-900/50 border border-slate-700 rounded-xl p-4 flex flex-col h-1/3 shrink-0">
+                    <div className="glass-panel border-white/5 rounded-2xl p-5 flex flex-col h-1/3 shrink-0">
                         <div className="flex justify-between items-center mb-3">
-                            <label className="text-sm font-medium text-slate-300">SQL Command</label>
-                            <span className="text-xs text-slate-500">Targeting {selectedCount} devices</span>
+                            <label className="text-sm font-semibold text-slate-300 tracking-wide">SQL Command</label>
+                            <span className="text-xs text-indigo-400 font-medium bg-indigo-500/10 px-2 py-1 rounded-md">Targeting {selectedCount} devices</span>
                         </div>
                         <textarea
-                            className="flex-1 w-full bg-slate-950 font-mono text-sm text-emerald-400 p-4 rounded-lg border border-slate-700 focus:outline-none focus:border-indigo-500 resize-none"
+                            className="flex-1 w-full bg-slate-950/80 font-mono text-sm text-emerald-400 p-4 rounded-xl border border-white/10 focus-ring shadow-inner resize-none"
                             value={sqlQuery}
                             onChange={e => setSqlQuery(e.target.value)}
                             spellCheck={false}
@@ -347,7 +351,7 @@ const SQLQueryPage: React.FC = () => {
                             <button
                                 onClick={handleExecute}
                                 disabled={isExecuting || selectedCount === 0}
-                                className="flex items-center gap-2 px-6 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white rounded-lg shadow-lg shadow-emerald-900/20 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                                className="flex items-center gap-2 px-6 py-2.5 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-white rounded-xl hover:shadow-[0_0_20px_rgba(16,185,129,0.3)] disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-300 hover:-translate-y-0.5"
                             >
                                 {isExecuting ? <RotateCcw className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4 fill-current" />}
                                 <span className="font-medium">Execute on {selectedCount} Devices</span>
@@ -356,9 +360,9 @@ const SQLQueryPage: React.FC = () => {
                     </div>
 
                     {/* Results Console */}
-                    <div className="flex-1 bg-slate-950 border border-slate-800 rounded-xl overflow-hidden flex flex-col min-h-0">
-                        <div className="px-4 py-2 bg-slate-900 border-b border-slate-800 flex items-center justify-between shrink-0">
-                            <span className="text-xs font-mono uppercase tracking-widest text-slate-500">Execution Output</span>
+                    <div className="flex-1 glass-panel border-white/5 rounded-2xl overflow-hidden flex flex-col min-h-0 bg-slate-900/80">
+                        <div className="px-5 py-3 border-b border-white/5 flex items-center justify-between shrink-0 bg-white/5">
+                            <span className="text-xs font-mono uppercase tracking-widest text-slate-400 font-semibold">Execution Output</span>
                             {results.length > 0 && (
                                 <span className="text-xs text-slate-400">
                                     {results.filter(r => r.status === 'success').length} Success, {results.filter(r => r.status === 'error').length} Failed

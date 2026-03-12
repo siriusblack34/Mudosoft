@@ -42,12 +42,23 @@ export interface SqlDeviceWithStatus {
     deviceName: string;
     calculatedIpAddress: string;
     isOnline: boolean;
+    lastSeen: string | null; // ISO datetime, last time device was confirmed online
 }
+
+// ✅ STORE MANAGERS
+export interface StoreManager {
+    id: number;
+    storeCode: number;
+    storeName: string;
+    fullName: string;
+    phone: string;
+}
+
 
 // ==========================
 // BASE CONFIG
 // ==========================
-export const API_BASE_URL = "http://localhost:5102";
+export const API_BASE_URL = `http://${window.location.hostname}:5102`;
 const API_BASE = API_BASE_URL;
 
 function buildUrl(url: string) {
@@ -90,6 +101,24 @@ export const apiClient = {
         return res.json();
     },
 
+    async put<T>(url: string, data?: any): Promise<T> {
+        const res = await fetch(buildUrl(url), {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: data ? JSON.stringify(data) : undefined,
+        });
+        if (!res.ok) {
+            let errorMessage = `PUT ${url} failed: ${res.status}`;
+            try {
+                const errorBody = await res.json();
+                if (errorBody?.error) errorMessage = errorBody.error;
+            } catch { } // ignore
+            throw new Error(errorMessage);
+        }
+        if (res.status === 204) return null as T;
+        return res.json();
+    },
+
     async delete<T>(url: string): Promise<T> {
         const res = await fetch(buildUrl(url), {
             method: "DELETE",
@@ -102,6 +131,7 @@ export const apiClient = {
             } catch { } // ignore
             throw new Error(errorMessage);
         }
+        if (res.status === 204) return null as T;
         return res.json();
     },
 
@@ -135,6 +165,10 @@ export const apiClient = {
         return this.post("/api/sqlquery/execute", { deviceId, query });
     },
 
+    getDeviceSystemInfo(deviceId: string): Promise<{ hostname: string | null; serialNumber: string | null; hostnameError?: string; serialError?: string }> {
+        return this.get(`/api/sqlquery/devices/${deviceId}/system-info`);
+    },
+
     // ==========================
     // SCRIPTS
     // ==========================
@@ -146,6 +180,32 @@ export const apiClient = {
         return this.post("/api/actions/folder-cleanup", { deviceId, path });
     },
 
+    uploadFile(deviceId: string, file: File, remotePath: string): Promise<any> {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = async () => {
+                try {
+                    const base64Content = (reader.result as string).split(',')[1];
+                    const p = this.post(`/api/agent/files/upload?deviceId=${deviceId}`, { path: remotePath + file.name, content: base64Content });
+                    resolve(p);
+                } catch (e) { reject(e); }
+            };
+            reader.onerror = error => reject(error);
+            reader.readAsDataURL(file);
+        });
+    },
+
+    // ==========================
+    // COMMAND HISTORY
+    // ==========================
+    getCommandHistory(): Promise<CommandHistoryItem[]> {
+        return this.get("/api/agent/command-history").catch(() => []); // Fallback to empty if endpoint missing
+    },
+
+    getCommandDetails(commandId: string): Promise<CommandResultRecord> {
+        return this.get(`/api/agent/command-results/${commandId}`);
+    },
+
     // ==========================
     // DASHBOARD
     // ==========================
@@ -153,7 +213,23 @@ export const apiClient = {
         return this.get("/api/dashboard/summary");
     },
 
+    // ==========================
+    // STORE MANAGERS
+    // ==========================
+    getStoreManagers(): Promise<StoreManager[]> {
+        return this.get("/api/storemanagers");
+    },
+
+    importStoreManagers(rawText: string): Promise<{ success: boolean; count: number }> {
+        return this.post("/api/storemanagers/import", { rawText });
+    },
+
+    deleteStoreDevice(deviceId: string): Promise<{ success: boolean; deletedDeviceId: string }> {
+        return this.delete(`/api/sqlquery/devices/${encodeURIComponent(deviceId)}`);
+    },
+
     getBaseUrl(): string {
         return API_BASE_URL;
     }
 };
+

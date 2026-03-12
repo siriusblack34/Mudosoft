@@ -258,6 +258,36 @@ namespace Mudosoft.Agent.Services
             return _rnd.Next(10, 70);
         }
 
+        public double? GetDiskDUsage()
+        {
+            try
+            {
+                var dDrive = new DriveInfo("D");
+                if (dDrive.IsReady)
+                {
+                    double used = dDrive.TotalSize - dDrive.AvailableFreeSpace;
+                    double percent = (used / (double)dDrive.TotalSize) * 100.0;
+                    return Math.Round(percent, 1);
+                }
+            }
+            catch { }
+            return null;
+        }
+
+        public long? GetTotalDiskDGB()
+        {
+            try
+            {
+                var dDrive = new DriveInfo("D");
+                if (dDrive.IsReady)
+                {
+                    return dDrive.TotalSize / 1024 / 1024 / 1024;
+                }
+            }
+            catch { }
+            return null;
+        }
+
         public string GetOsName()
         {
             try

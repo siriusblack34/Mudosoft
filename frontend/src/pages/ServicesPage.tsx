@@ -12,18 +12,20 @@ const ServicesPage: React.FC = () => {
     }
 
     return (
-        <div className="space-y-6 p-4">
+        <div className="space-y-6">
             {/* Header */}
             <div className="flex items-center gap-4">
                 <button
                     onClick={() => navigate(`/devices/${deviceId}`)}
-                    className="p-2 hover:bg-slate-700 rounded-lg transition-colors"
+                    className="p-2 glass-button rounded-xl transition-colors hover-lift"
                 >
                     <ArrowLeft className="w-5 h-5" />
                 </button>
-                <div className="flex items-center gap-2">
-                    <Settings className="w-6 h-6 text-indigo-400" />
-                    <h1 className="text-2xl font-semibold">Windows Services</h1>
+                <div className="flex items-center gap-3">
+                    <div className="p-2 rounded-xl bg-indigo-500/20 border border-indigo-500/30 shadow-inner">
+                        <Settings className="w-5 h-5 text-indigo-400" />
+                    </div>
+                    <h1 className="text-2xl font-bold text-white tracking-tight">Windows Services</h1>
                 </div>
             </div>
 

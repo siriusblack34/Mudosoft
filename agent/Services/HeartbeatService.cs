@@ -95,6 +95,10 @@ public sealed class HeartbeatService : IHeartbeatSender
                 TotalRamMB = _sys.GetTotalRamMB(),
                 TotalDiskGB = _sys.GetTotalDiskGB(),
                 GpuModel = _sys.GetGpuModel(),
+
+                // D Drive Metrics
+                DiskDUsage = _sys.GetDiskDUsage(),
+                TotalDiskDGB = _sys.GetTotalDiskDGB(),
                 
                 // User & Session
                 LastLoggedInUser = _sys.GetLastLoggedInUser(),

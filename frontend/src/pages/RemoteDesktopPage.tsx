@@ -34,7 +34,7 @@ const RemoteDesktopPage: React.FC = () => {
     // WebRTC state
     const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
     const dataChannelRef = useRef<RTCDataChannel | null>(null);
-    const [useWebRTC, setUseWebRTC] = useState(true); // Try WebRTC first
+    const [useWebRTC, setUseWebRTC] = useState(false); // Agent does not support WebRTC yet, use SignalR
 
     // Monitor selection state (-1 = all, 0+ = specific monitor)
     const [selectedMonitor, setSelectedMonitor] = useState(-1);
@@ -153,12 +153,10 @@ const RemoteDesktopPage: React.FC = () => {
                 setStatus('error');
             });
 
-        // Legacy frame receiver (fallback)
+        // SignalR frame receiver (primary method - agent uses StreamFrame)
         newConnection.on("ReceiveFrame", (base64Content: string) => {
-            if (!useWebRTC || status !== 'webrtc') {
-                frameCountRef.current++;
-                drawFrame(base64Content);
-            }
+            frameCountRef.current++;
+            drawFrame(base64Content);
         });
 
         newConnection.onclose(() => setStatus('disconnected'));
@@ -168,7 +166,7 @@ const RemoteDesktopPage: React.FC = () => {
             peerConnectionRef.current?.close();
             newConnection.stop();
         };
-    }, [deviceId, setupWebRTC, useWebRTC]);
+    }, [deviceId]);
 
     // Helpers
     const drawFrame = (base64: string) => {
@@ -273,8 +271,19 @@ const RemoteDesktopPage: React.FC = () => {
 
     const sendSpecialKey = (key: string) => {
         if (!controlEnabled) return;
-        sendInput('KeyDown', { Key: key, X: 0, Y: 0 });
-        setTimeout(() => sendInput('KeyUp', { Key: key, X: 0, Y: 0 }), 100);
+        
+        // Handle composite keys like "Control+Alt+Delete"
+        const keys = key.split('+');
+        
+        // Press all keys down in order
+        keys.forEach((k, i) => {
+            setTimeout(() => sendInput('KeyDown', { Key: k.trim(), X: 0, Y: 0 }), i * 30);
+        });
+        
+        // Release all keys in reverse order
+        keys.reverse().forEach((k, i) => {
+            setTimeout(() => sendInput('KeyUp', { Key: k.trim(), X: 0, Y: 0 }), (keys.length * 30) + 100 + (i * 30));
+        });
     };
 
     const handleScroll = (e: React.WheelEvent) => {

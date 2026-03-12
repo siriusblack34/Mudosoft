@@ -76,6 +76,13 @@ public class AgentService : IAgentService
         device.CurrentRamUsagePercent = (float)dto.RamUsage;
         device.CurrentDiskUsagePercent = (float)dto.DiskUsage;
 
+        // D Drive Metrics
+        if (dto.DiskDUsage.HasValue)
+        {
+            device.CurrentDiskDUsagePercent = (float)dto.DiskDUsage.Value;
+            device.TotalDiskDGB = dto.TotalDiskDGB;
+        }
+
         // METRIC YAZ
         var metric = new DeviceMetric
         {

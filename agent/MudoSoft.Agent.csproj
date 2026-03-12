@@ -4,7 +4,7 @@
     <TargetFramework>net8.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <OutputType>Exe</OutputType>
+    <OutputType>WinExe</OutputType>
     <RootNamespace>Mudosoft.Agent</RootNamespace>
     <PublishReadyToRun>true</PublishReadyToRun>
     <!-- Her zaman yönetici olarak çalışması için manifest -->
@@ -13,11 +13,11 @@
     <Description>Mudosoft Level 3 Retail POS Agent</Description>
     
     <!-- Agent Version - Önemli: Her güncellemede artır! -->
-    <Version>1.0.0.21</Version>
-    <AssemblyVersion>1.0.0.21</AssemblyVersion>
-    <FileVersion>1.0.0.21</FileVersion>
+    <Version>1.0.0.41</Version>
+    <AssemblyVersion>1.0.0.41</AssemblyVersion>
+    <FileVersion>1.0.0.41</FileVersion>
 
-    <GenerateEmbeddedFilesManifest>true</GenerateEmbeddedFilesManifest>
+    <GenerateEmbeddedFilesManifest>false</GenerateEmbeddedFilesManifest>
   </PropertyGroup>
 
   <ItemGroup>
@@ -31,20 +31,10 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Content Remove="publish_**" />
-    <Compile Remove="publish_**" />
-    <EmbeddedResource Remove="publish_**" />
-    <None Remove="publish_**" />
-  </ItemGroup>
-
-  <ItemGroup>
     <PackageReference Include="Microsoft.AspNetCore.SignalR.Client" Version="8.0.0" />
     <PackageReference Include="System.Drawing.Common" Version="8.0.0" />
 
     <ProjectReference Include="..\shared\Mudosoft.Shared.csproj" />
-
-    <Compile Remove="_legacy\**\*.cs" />
-    <None Include="_legacy\**\*.cs" />
   </ItemGroup>
 
   <ItemGroup>

@@ -31,7 +31,7 @@ const DevicesPage: React.FC = () => {
     const matchesFilter = filter === 'all' || (filter === 'online' ? d.online : !d.online);
     const matchesSearch = d.hostname.toLowerCase().includes(searchTerm.toLowerCase()) ||
       d.ipAddress?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      d.storeCode?.toLowerCase().includes(searchTerm.toLowerCase());
+      String(d.storeCode || '').toLowerCase().includes(searchTerm.toLowerCase());
     return matchesFilter && matchesSearch;
   });
 
@@ -51,13 +51,13 @@ const DevicesPage: React.FC = () => {
 
         {/* Stats Pills */}
         <div className="flex items-center gap-3">
-          <div className="px-4 py-2 rounded-xl bg-emerald-500/10 border border-emerald-500/20">
+          <div className="px-4 py-2 rounded-xl glass-card border-none bg-emerald-500/10 shadow-[0_0_15px_rgba(16,185,129,0.1)]">
             <span className="text-emerald-400 font-semibold">{onlineCount}</span>
-            <span className="text-gray-400 ml-2 text-sm">Online</span>
+            <span className="text-slate-400 ml-2 text-sm">Online</span>
           </div>
-          <div className="px-4 py-2 rounded-xl bg-red-500/10 border border-red-500/20">
-            <span className="text-red-400 font-semibold">{offlineCount}</span>
-            <span className="text-gray-400 ml-2 text-sm">Offline</span>
+          <div className="px-4 py-2 rounded-xl glass-card border-none bg-rose-500/10 shadow-[0_0_15px_rgba(244,63,94,0.1)]">
+            <span className="text-rose-400 font-semibold">{offlineCount}</span>
+            <span className="text-slate-400 ml-2 text-sm">Offline</span>
           </div>
         </div>
       </div>
@@ -69,9 +69,9 @@ const DevicesPage: React.FC = () => {
             <button
               key={f}
               onClick={() => setFilter(f)}
-              className={`px-4 py-2 rounded-xl text-sm font-medium transition-all duration-200 ${filter === f
-                  ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/25'
-                  : 'bg-gray-800/50 text-gray-400 hover:bg-gray-700/50 hover:text-white border border-gray-700/50'
+              className={`px-4 py-2 rounded-xl text-sm font-medium transition-all duration-300 ${filter === f
+                ? 'bg-sky-500 text-white shadow-[0_0_15px_rgba(14,165,233,0.3)] border-none'
+                : 'glass-button hover:-translate-y-0.5'
                 }`}
             >
               {f.charAt(0).toUpperCase() + f.slice(1)}
@@ -80,13 +80,13 @@ const DevicesPage: React.FC = () => {
         </div>
 
         <div className="relative w-full sm:w-64">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
           <input
             type="text"
             placeholder="Search devices..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-10 pr-4 py-2 bg-gray-800/50 border border-gray-700/50 rounded-xl text-sm text-white placeholder-gray-500 focus:outline-none focus:border-emerald-500/50 focus:ring-1 focus:ring-emerald-500/25 transition-all"
+            className="w-full pl-10 pr-4 py-2 glass-panel rounded-xl text-sm text-white placeholder-slate-400 focus-ring transition-all"
           />
         </div>
       </div>
@@ -117,40 +117,40 @@ const DeviceCard: React.FC<{ device: Device; onClick: () => void }> = ({ device,
   return (
     <div
       onClick={onClick}
-      className="group relative p-5 rounded-2xl bg-gradient-to-br from-gray-800/80 to-gray-900/80 border border-gray-700/50 hover:border-emerald-500/30 cursor-pointer transition-all duration-300 hover:shadow-xl hover:shadow-emerald-500/5 hover:-translate-y-1"
+      className="glass-card-hover group relative p-5 rounded-2xl cursor-pointer"
     >
       {/* Status Indicator */}
       <div className="absolute top-4 right-4">
-        <div className={`w-3 h-3 rounded-full ${device.online ? 'bg-emerald-400 shadow-lg shadow-emerald-400/50' : 'bg-red-400'}`} />
+        <div className={`w-3 h-3 rounded-full ${device.online ? 'bg-emerald-400 shadow-[0_0_10px_rgba(52,211,153,0.8)]' : 'bg-rose-400 shadow-[0_0_10px_rgba(244,63,94,0.5)]'}`} />
       </div>
 
       {/* Header */}
       <div className="mb-4">
         <div className="flex items-center gap-3 mb-2">
-          <div className="p-2 rounded-lg bg-gray-700/50">
-            <Monitor className="w-5 h-5 text-emerald-400" />
+          <div className="p-2 rounded-xl border border-white/5 bg-white/5 shadow-inner">
+            <Monitor className="w-5 h-5 text-sky-400" />
           </div>
           <div>
-            <h3 className="font-semibold text-white group-hover:text-emerald-400 transition-colors truncate max-w-[180px]">
+            <h3 className="font-semibold text-white group-hover:text-sky-400 transition-colors truncate max-w-[180px]">
               {device.hostname}
             </h3>
-            <p className="text-xs text-gray-500">{device.ipAddress}</p>
+            <p className="text-xs text-slate-400">{device.ipAddress}</p>
           </div>
         </div>
       </div>
 
       {/* Info Grid */}
       <div className="grid grid-cols-2 gap-3 mb-4">
-        <div className="p-2 rounded-lg bg-gray-800/50">
-          <div className="flex items-center gap-2 text-xs text-gray-500 mb-1">
-            <Cpu className="w-3 h-3" />
+        <div className="p-2 rounded-xl bg-white/5 border border-white/5">
+          <div className="flex items-center gap-2 text-xs text-slate-400 mb-1">
+            <Cpu className="w-3 h-3 text-indigo-400" />
             <span>CPU</span>
           </div>
           <p className="text-sm font-medium text-white">{device.cpuUsage ?? 0}%</p>
         </div>
-        <div className="p-2 rounded-lg bg-gray-800/50">
-          <div className="flex items-center gap-2 text-xs text-gray-500 mb-1">
-            <MemoryStick className="w-3 h-3" />
+        <div className="p-2 rounded-xl bg-white/5 border border-white/5">
+          <div className="flex items-center gap-2 text-xs text-slate-400 mb-1">
+            <MemoryStick className="w-3 h-3 text-violet-400" />
             <span>RAM</span>
           </div>
           <p className="text-sm font-medium text-white">{device.ramUsage ?? 0}%</p>
@@ -158,13 +158,13 @@ const DeviceCard: React.FC<{ device: Device; onClick: () => void }> = ({ device,
       </div>
 
       {/* Footer */}
-      <div className="flex items-center justify-between text-xs text-gray-500">
-        <span className="px-2 py-1 rounded-md bg-gray-800/50">{device.storeCode || 'N/A'}</span>
-        <span className="truncate max-w-[100px]">{device.os?.name?.includes('Windows') ? 'Windows' : device.os?.name || 'Unknown'}</span>
+      <div className="flex items-center justify-between text-[11px] font-medium text-slate-400">
+        <span className="px-2 py-1 rounded-md bg-white/5 border border-white/5 uppercase tracking-wider">{device.storeCode || 'N/A'}</span>
+        <span className="truncate max-w-[100px] border border-white/5 rounded-md px-2 py-1 bg-white/5">{device.os?.name?.includes('Windows') ? 'Windows' : device.os?.name || 'Unknown'}</span>
       </div>
 
       {/* Hover Overlay */}
-      <div className="absolute inset-0 rounded-2xl bg-gradient-to-t from-emerald-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none" />
+      <div className="absolute inset-0 rounded-2xl bg-gradient-to-t from-sky-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none" />
     </div>
   );
 };

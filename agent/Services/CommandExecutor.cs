@@ -103,6 +103,7 @@ public sealed class CommandExecutor : ICommandExecutor
 
     /// <summary>
     /// Betiği OS'ye özgü kabukta (Shell) çalıştırır ve çıktıyı yakalar.
+    /// Writes script to temp file to avoid all quoting/escaping issues.
     /// </summary>
     private CommandResultDto ExecuteShellScript(CommandDto command, CommandResultDto result, CancellationToken token)
     {
@@ -112,19 +113,33 @@ public sealed class CommandExecutor : ICommandExecutor
             return result;
         }
 
-        // Platform tespiti ve ilgili kabuk (shell) seçimi
-        var (shell, argsPrefix) = RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
-            ? ("powershell.exe", "-Command") // Windows
-            : ("/bin/bash", "-c");          // Linux/macOS
-
+        string? tempFile = null;
         try
         {
+            // Write payload to temp file to avoid all quoting issues
+            if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+            {
+                tempFile = Path.Combine(Path.GetTempPath(), $"mudosoft_script_{Guid.NewGuid():N}.ps1");
+                File.WriteAllText(tempFile, command.Payload);
+            }
+            else
+            {
+                tempFile = Path.Combine(Path.GetTempPath(), $"mudosoft_script_{Guid.NewGuid():N}.sh");
+                File.WriteAllText(tempFile, command.Payload);
+            }
+
+            var (shell, args) = RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
+                ? ("powershell.exe", $"-ExecutionPolicy Bypass -File \"{tempFile}\"")
+                : ("/bin/bash", tempFile);
+
+            _logger.LogInformation("Running script: {Shell} {Args}", shell, args);
+
             var process = new Process
             {
                 StartInfo = new ProcessStartInfo
                 {
                     FileName = shell,
-                    Arguments = $"{argsPrefix} \"{command.Payload}\"",
+                    Arguments = args,
                     RedirectStandardOutput = true,
                     RedirectStandardError = true,
                     UseShellExecute = false,
@@ -134,12 +149,11 @@ public sealed class CommandExecutor : ICommandExecutor
 
             process.Start();
             
-            // Çıktıyı oku
+            // Read output with timeout to prevent hanging
             string output = process.StandardOutput.ReadToEnd();
             string error = process.StandardError.ReadToEnd();
             
-            // token'ı kontrol et ve limitli bekleme yap
-            process.WaitForExit(30000); 
+            process.WaitForExit(300000); // 5 minute timeout
 
             result.Output = (string.IsNullOrWhiteSpace(output) ? "" : output) +
                             (string.IsNullOrWhiteSpace(error) ? "" : $"Hata: {error}");
@@ -151,6 +165,14 @@ public sealed class CommandExecutor : ICommandExecutor
             result.Output = $"Betik çalıştırma sürecinde kritik hata: {ex.Message}";
             _logger.LogError(ex, "Betik çalıştırma başarısız.");
             result.Success = false;
+        }
+        finally
+        {
+            // Cleanup temp file
+            if (tempFile != null && File.Exists(tempFile))
+            {
+                try { File.Delete(tempFile); } catch { }
+            }
         }
 
         return result;
@@ -529,7 +551,14 @@ taskkill /F /IM MudoSoft.Tray.exe 2>nul
 REM Stop Agent Service
 echo [%date% %time%] Stopping service... >> ""{logPath}""
 net stop ""{serviceName}"" 2>> ""{logPath}""
+net stop ""MudosoftAgent"" 2>> ""{logPath}""
+net stop ""MudoSoft.Agent"" 2>> ""{logPath}""
 timeout /t 3 /nobreak > nul
+
+REM Force kill if services didn't stop it (prevents xcopy Access Denied)
+echo [%date% %time%] Force killing agent... >> ""{logPath}""
+taskkill /F /IM MudoSoft.Agent.exe 2>> ""{logPath}""
+timeout /t 2 /nobreak > nul
 
 REM Copy files
 echo [%date% %time%] Copying files... >> ""{logPath}""
@@ -538,6 +567,8 @@ xcopy /E /Y /Q ""{extractDir}\*"" ""{currentDir}\"" >> ""{logPath}"" 2>&1
 REM Start Agent Service
 echo [%date% %time%] Starting service... >> ""{logPath}""
 net start ""{serviceName}"" 2>> ""{logPath}""
+net start ""MudosoftAgent"" 2>> ""{logPath}""
+net start ""MudoSoft.Agent"" 2>> ""{logPath}""
 
 echo [%date% %time%] Update complete! >> ""{logPath}""
 ";
@@ -545,12 +576,15 @@ echo [%date% %time%] Update complete! >> ""{logPath}""
             _logger.LogInformation("Batch file created at: {Path}", batchPath);
 
             // Start the batch file in a detached process
+            // UseShellExecute=false is required for Session 0 (Windows Service) especially on Windows 7
             var psi = new ProcessStartInfo
             {
                 FileName = "cmd.exe",
-                Arguments = $"/C start /min \"\" \"{batchPath}\"",
-                UseShellExecute = true,
+                Arguments = $"/C \"{batchPath}\"",
+                UseShellExecute = false,
                 CreateNoWindow = true,
+                RedirectStandardOutput = false,
+                RedirectStandardError = false,
                 WindowStyle = ProcessWindowStyle.Hidden
             };
             

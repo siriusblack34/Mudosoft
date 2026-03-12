@@ -9,5 +9,6 @@ namespace MudoSoft.Backend.Models
         public string DeviceName { get; set; } = "";
         public string CalculatedIpAddress { get; set; } = "";
         public bool IsOnline { get; set; }
+        public DateTime? LastSeen { get; set; }
     }
 }

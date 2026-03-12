@@ -119,8 +119,10 @@ $apps | Sort-Object DisplayName -Unique | ConvertTo-Json -Compress
                     <ArrowLeft className="w-5 h-5" />
                 </button>
                 <div className="flex items-center gap-2">
-                    <Package className="w-6 h-6 text-fuchsia-400" />
-                    <h1 className="text-2xl font-semibold">Installed Software</h1>
+                    <div className="p-2 rounded-xl bg-fuchsia-500/20 shadow-inner border border-fuchsia-500/30">
+                        <Package className="w-6 h-6 text-fuchsia-400" />
+                    </div>
+                    <h1 className="text-2xl font-bold text-white tracking-tight">Installed Software</h1>
                     {software.length > 0 && (
                         <span className="text-sm text-slate-400">({software.length} programs)</span>
                     )}
@@ -128,7 +130,7 @@ $apps | Sort-Object DisplayName -Unique | ConvertTo-Json -Compress
             </div>
 
             {/* Toolbar */}
-            <div className="flex flex-wrap items-center gap-4 bg-slate-800/50 p-4 rounded-xl border border-slate-700">
+            <div className="flex flex-wrap items-center gap-4 glass-panel p-4 rounded-2xl border-white/5 shadow-lg">
                 {/* Search */}
                 <div className="flex-1 relative min-w-[200px]">
                     <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-slate-400" />
@@ -137,14 +139,14 @@ $apps | Sort-Object DisplayName -Unique | ConvertTo-Json -Compress
                         placeholder="Search installed software..."
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}
-                        className="w-full bg-slate-900 border border-slate-600 rounded-lg pl-10 pr-4 py-2 text-sm focus:outline-none focus:border-fuchsia-500"
+                        className="w-full glass-card border border-white/10 rounded-xl pl-10 pr-4 py-3 text-sm focus-ring placeholder-slate-500 text-white"
                     />
                 </div>
 
                 <button
                     onClick={loadInstalledSoftware}
                     disabled={loading}
-                    className="flex items-center gap-2 px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg text-sm transition-colors disabled:opacity-50"
+                    className="flex items-center gap-2 px-6 py-3 glass-button rounded-xl text-sm transition-all hover-lift disabled:opacity-50 font-medium"
                 >
                     <RefreshCcw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
                     {loading ? 'Loading...' : 'Refresh'}
@@ -152,9 +154,9 @@ $apps | Sort-Object DisplayName -Unique | ConvertTo-Json -Compress
             </div>
 
             {/* Software List */}
-            <div className="bg-ms-panel rounded-2xl border border-ms-border shadow-lg overflow-hidden">
+            <div className="glass-card rounded-2xl border-white/5 overflow-hidden shadow-xl">
                 {/* Header Row */}
-                <div className="grid grid-cols-12 gap-4 px-4 py-3 bg-slate-800/50 text-xs text-slate-400 font-medium uppercase tracking-wider">
+                <div className="grid grid-cols-12 gap-4 px-4 py-4 bg-white/5 border-b border-white/5 text-xs text-slate-300 font-semibold uppercase tracking-widest">
                     <div className="col-span-5">Software Name</div>
                     <div className="col-span-2">Version</div>
                     <div className="col-span-5">Publisher</div>

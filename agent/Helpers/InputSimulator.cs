@@ -1,6 +1,7 @@
 using System.Runtime.InteropServices;
 using Mudosoft.Shared.Dtos;
 using Mudosoft.Shared.Enums;
+using System.Drawing;
 
 namespace Mudosoft.Agent.Helpers;
 
@@ -37,24 +38,15 @@ public class InputSimulator
     
     private const int KEYEVENTF_KEYUP = 0x0002;
 
-    public void HandleInput(InputEventDto input)
+    public void HandleInput(InputEventDto input, Rectangle screenBounds)
     {
-        // 1. Ekran Boyutlarını Al (Sanal Ekran Dahil)
-        int vLeft = GetSystemMetrics(SM_XVIRTUALSCREEN);
-        int vTop = GetSystemMetrics(SM_YVIRTUALSCREEN);
-        int vWidth = GetSystemMetrics(SM_CXVIRTUALSCREEN);
-        int vHeight = GetSystemMetrics(SM_CYVIRTUALSCREEN);
-
-        if (vWidth == 0) vWidth = GetSystemMetrics(0); // Fallback Primary
-        if (vHeight == 0) vHeight = GetSystemMetrics(1);
-
         switch (input.Type)
         {
             case InputEventType.MouseMove:
                 {
-                    // Relative -> Absolute
-                    int absX = vLeft + (int)(input.X * vWidth);
-                    int absY = vTop + (int)(input.Y * vHeight);
+                    // Relative -> Absolute based on specific screen bounds
+                    int absX = screenBounds.Left + (int)(input.X * screenBounds.Width);
+                    int absY = screenBounds.Top + (int)(input.Y * screenBounds.Height);
                     SetCursorPos(absX, absY);
                 }
                 break;

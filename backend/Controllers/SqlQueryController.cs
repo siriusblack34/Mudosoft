@@ -5,6 +5,7 @@ using Microsoft.Extensions.Logging;
 using MudoSoft.Backend.Data;
 using MudoSoft.Backend.Models;
 using MudoSoft.Backend.Services;
+using System.Data;
 
 namespace MudoSoft.Backend.Controllers
 {
@@ -71,7 +72,8 @@ namespace MudoSoft.Backend.Controllers
                     DeviceType = d.DeviceType,
                     DeviceName = d.DeviceName,
                     CalculatedIpAddress = d.CalculatedIpAddress,
-                    IsOnline = false
+                    IsOnline = false,
+                    LastSeen = d.LastSeen
                 })
                 .ToListAsync();
 
@@ -96,6 +98,23 @@ namespace MudoSoft.Backend.Controllers
 
             await Task.WhenAll(tasks);
 
+            // Online olan cihazların LastSeen'ini güncelle
+            var onlineIds = devices.Where(d => d.IsOnline).Select(d => d.DeviceId).ToHashSet();
+            if (onlineIds.Count > 0)
+            {
+                var now = DateTime.UtcNow;
+                var toUpdate = await _db.StoreDevices
+                    .Where(d => onlineIds.Contains(d.DeviceId))
+                    .ToListAsync();
+                foreach (var d in toUpdate)
+                    d.LastSeen = now;
+                await _db.SaveChangesAsync();
+
+                // DTO'larda da güncelle (dönen veri güncel olsun)
+                foreach (var d in devices.Where(d => d.IsOnline))
+                    d.LastSeen = now;
+            }
+
             return Ok(devices);
         }
 
@@ -112,7 +131,13 @@ namespace MudoSoft.Backend.Controllers
             "SELECT AVG",
             "SELECT DISTINCT",
             "SELECT *",  // Genel SELECT sorgularına izin ver
-            "UPDATE"     // UPDATE sorgularına izin ver
+            "UPDATE",    // UPDATE sorgularına izin ver
+            "INSERT",    // INSERT sorgularına izin ver
+            "DELETE",    // DELETE sorgularına izin ver
+            "TRUNCATE",  // TRUNCATE sorgularına izin ver
+            "CREATE",    // CREATE sorgularına izin ver
+            "ALTER",     // ALTER sorgularına izin ver
+            "DROP"       // DROP sorgularına izin ver
         };
 
         // 🔒 İzin verilen özel komutlar (tam eşleşme)
@@ -124,10 +149,77 @@ namespace MudoSoft.Backend.Controllers
         // 🔒 Tehlikeli SQL anahtar kelimeleri (blacklist)
         private static readonly string[] DangerousKeywords = new[]
         {
-            "DROP", "DELETE", "ALTER", "CREATE",
-            "EXEC", "EXECUTE", "xp_", "sp_", "/*", "*/", "UNION"
+            //"DROP", "DELETE", "ALTER", "CREATE", // ARTIK İZİN VERİLDİ
+            "EXEC", "EXECUTE", "xp_", "sp_", "UNION"
             // TRUNCATE, UPDATE, INSERT artık özel whitelist ile kontrol ediliyor
         };
+
+        // ===========================================================
+        // 3) CİHAZ SİSTEM BİLGİSİ (Hostname + Seri No)
+        // ===========================================================
+        [AllowAnonymous]
+        [HttpGet("devices/{deviceId}/system-info")]
+        public async Task<IActionResult> GetDeviceSystemInfo(string deviceId)
+        {
+            var device = await _db.StoreDevices.AsNoTracking()
+                .FirstOrDefaultAsync(d => d.DeviceId == deviceId);
+            if (device == null) return NotFound();
+
+            string? hostname = null;
+            string? serialNumber = null;
+            string? hostnameError = null;
+            string? serialError = null;
+
+            try
+            {
+                var ht = await _remoteSqlService.ExecuteQueryAsync(
+                    device.DbConnectionString,
+                    "SELECT CAST(SERVERPROPERTY('MachineName') AS NVARCHAR(256)) AS Value");
+                if (ht?.Rows.Count > 0)
+                    hostname = ht.Rows[0]["Value"]?.ToString();
+            }
+            catch (Exception ex) { hostnameError = ex.Message; }
+
+            try
+            {
+                var st = await _remoteSqlService.ExecuteQueryAsync(
+                    device.DbConnectionString,
+                    "EXEC xp_cmdshell 'wmic bios get SerialNumber /value'");
+                if (st != null)
+                {
+                    foreach (DataRow row in st.Rows)
+                    {
+                        var line = row["output"]?.ToString()?.Trim() ?? "";
+                        if (line.StartsWith("SerialNumber=", StringComparison.OrdinalIgnoreCase))
+                        {
+                            serialNumber = line.Split('=', 2)[1].Trim();
+                            break;
+                        }
+                    }
+                }
+            }
+            catch (Exception ex) { serialError = ex.Message; }
+
+            return Ok(new { hostname, serialNumber, hostnameError, serialError });
+        }
+
+        // ===========================================================
+        // 4) CİHAZ SİL (Envanter'den kaldır)
+        // ===========================================================
+        [AllowAnonymous]
+        [HttpDelete("devices/{deviceId}")]
+        public async Task<IActionResult> DeleteDevice(string deviceId)
+        {
+            var device = await _db.StoreDevices.FirstOrDefaultAsync(d => d.DeviceId == deviceId);
+            if (device == null)
+                return NotFound(new { error = "Device not found" });
+
+            _db.StoreDevices.Remove(device);
+            await _db.SaveChangesAsync();
+
+            _logger.LogInformation("StoreDevice deleted: {DeviceId}", deviceId);
+            return Ok(new { success = true, deletedDeviceId = deviceId });
+        }
 
         [AllowAnonymous] // SQL execution allowed for frontend - queries are validated by whitelist
         [HttpPost("execute")]
@@ -148,7 +240,7 @@ namespace MudoSoft.Backend.Controllers
             
             if (!isSpecialCommand)
             {
-                // Blacklist kontrolü
+                // Blacklist control (only EXEC and SPs blocked for safety, but allowed most queries)
                 foreach (var keyword in DangerousKeywords)
                 {
                     if (queryUpper.Contains(keyword))
@@ -159,14 +251,7 @@ namespace MudoSoft.Backend.Controllers
                     }
                 }
 
-                // Whitelist kontrolü - sadece izin verilen sorgular
-                bool isAllowed = AllowedQueryPrefixes.Any(prefix => queryUpper.StartsWith(prefix));
-                
-                if (!isAllowed)
-                {
-                    _logger.LogWarning("SQL query blocked - not in whitelist: {Query}", request.Query);
-                    return BadRequest(new { error = "Only SELECT queries or approved special commands are allowed" });
-                }
+                // Removed prefix restriction entirely per user request, allowing all non-blacklisted commands
             }
             else
             {
@@ -193,8 +278,8 @@ namespace MudoSoft.Backend.Controllers
             catch (Exception ex)
             {
                 _logger.LogError(ex, "SQL error for device {DeviceId}", request.DeviceId);
-                // 🔒 Don't expose internal error details
-                return BadRequest(new { error = "Query execution failed. Please check your query syntax." });
+                // Artık hatayı gizlemiyoruz ki frontend detay görebilsin
+                return BadRequest(new { error = $"Query execution failed: {ex.Message}" });
             }
         }
     }

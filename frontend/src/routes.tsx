@@ -6,30 +6,26 @@ import ActionsHistoryPage from "./pages/ActionsHistoryPage";
 import SettingsPage from "./pages/SettingsPage";
 import SQLQueryPage from "./pages/SQLQueryPage";
 import KasaPage from "./pages/KasaPage";
-import RemoteDesktopPage from "./pages/RemoteDesktopPage";
 import ServicesPage from "./pages/ServicesPage";
 import FileManagerPage from "./pages/FileManagerPage";
 import SoftwareDeploymentPage from "./pages/SoftwareDeploymentPage";
 import ScriptPage from "./pages/ScriptPage";
 import AgentUpdatePage from "./pages/AgentUpdatePage";
 import InboxCleanupPage from "./pages/InboxCleanupPage";
+import NotesPage from "./pages/NotesPage";
+import StockCleanupPage from "./pages/StockCleanupPage";
+import DbLogCleanupPage from "./pages/DbLogCleanupPage";
+import DiskStatusPage from "./pages/DiskStatusPage";
 
 import AuthGuard from "./layout/AuthGuard";
 import LoginPage from "./pages/LoginPage";
+import StoreManagersPage from "./pages/StoreManagersPage";
 import { Navigate } from "react-router-dom";
 
 const routes = [
     {
-        path: "/login",
+        path: '/login',
         element: <LoginPage />,
-    },
-    {
-        path: '/remote/:deviceId',
-        element: (
-            <AuthGuard>
-                <RemoteDesktopPage />
-            </AuthGuard>
-        )
     },
     {
         path: '*',
@@ -139,6 +135,46 @@ const routes = [
                 element: (
                     <ShellLayout>
                         <InboxCleanupPage />
+                    </ShellLayout>
+                ),
+            },
+            {
+                path: "/store-managers",
+                element: (
+                    <ShellLayout>
+                        <StoreManagersPage />
+                    </ShellLayout>
+                ),
+            },
+            {
+                path: "/notes",
+                element: (
+                    <ShellLayout>
+                        <NotesPage />
+                    </ShellLayout>
+                ),
+            },
+            {
+                path: "/stock-cleanup",
+                element: (
+                    <ShellLayout>
+                        <StockCleanupPage />
+                    </ShellLayout>
+                ),
+            },
+            {
+                path: "/db-log-cleanup",
+                element: (
+                    <ShellLayout>
+                        <DbLogCleanupPage />
+                    </ShellLayout>
+                ),
+            },
+            {
+                path: "/disk-status",
+                element: (
+                    <ShellLayout>
+                        <DiskStatusPage />
                     </ShellLayout>
                 ),
             },

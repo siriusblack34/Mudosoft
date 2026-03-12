@@ -1,42 +1,32 @@
 import React from 'react';
 
-// StatusPill'in kabul ettiği renk tipleri (Tone)
-type StatusTone = 'success' | 'danger' | 'warning' | 'default';
+type StatusTone = 'success' | 'danger' | 'warning' | 'info' | 'default';
 
 interface Props {
-    // ✅ online durumunu kabul et
-    online: boolean; 
+  online?: boolean;
+  tone?: StatusTone;
+  text?: string;
 }
 
-const StatusPill: React.FC<Props> = ({ online }) => {
-    // Online durumuna göre metin ve tonu belirle
-    const text = online ? "ONLINE" : "OFFLINE";
-    // tone burada yalnızca 'success' veya 'danger' olabilir.
-    const tone = online ? 'success' : 'danger';
-    
-    // Tailwind CSS sınıfını tonlara göre dinamik olarak seçme mantığı
-    const baseClasses = "inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium";
+const toneConfig: Record<StatusTone, { dot: string; badge: string }> = {
+  success: { dot: 'bg-green-500',  badge: 'bg-green-500/10 text-green-400 border-green-500/20' },
+  danger:  { dot: 'bg-red-500',   badge: 'bg-red-500/10 text-red-400 border-red-500/20' },
+  warning: { dot: 'bg-amber-500', badge: 'bg-amber-500/10 text-amber-400 border-amber-500/20' },
+  info:    { dot: 'bg-blue-500',  badge: 'bg-blue-500/10 text-blue-400 border-blue-500/20' },
+  default: { dot: 'bg-zinc-500',  badge: 'bg-zinc-700/50 text-zinc-400 border-zinc-600/30' },
+};
 
-    let colorClasses = "";
-    // ✅ DÜZELTME: Sadece olası durumlar (success ve danger) kontrol edilir.
-    switch (tone) {
-        case 'success':
-            colorClasses = "bg-green-100 text-green-800";
-            break;
-        case 'danger':
-            colorClasses = "bg-red-100 text-red-800";
-            break;
-        default:
-            // Güvenli bir varsayılan durum olarak default/danger rengini kullanabiliriz.
-            colorClasses = "bg-gray-100 text-gray-800"; 
-            break;
-    }
+const StatusPill: React.FC<Props> = ({ online, tone, text }) => {
+  const resolvedTone = tone ?? (online ? 'success' : online === false ? 'danger' : 'default');
+  const resolvedText = text ?? (online ? 'Online' : online === false ? 'Offline' : 'Unknown');
+  const cfg = toneConfig[resolvedTone];
 
-    return (
-        <span className={`${baseClasses} ${colorClasses}`}>
-            {text}
-        </span>
-    );
+  return (
+    <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold border ${cfg.badge}`}>
+      <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${cfg.dot}`} />
+      {resolvedText}
+    </span>
+  );
 };
 
 export default StatusPill;
