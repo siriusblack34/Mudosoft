@@ -6,7 +6,7 @@ Mudo Bilgi Teknolojileri - Mudosoft RMM System
 
 - [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0)
 - [Node.js](https://nodejs.org/) (v18+)
-- SQL Server (LocalDB veya Express)
+- [PostgreSQL](https://www.postgresql.org/download/) (v14+)
 
 ## Kurulum
 
@@ -15,6 +15,31 @@ git clone https://github.com/siriusblack34/Mudosoft.git
 cd Mudosoft
 dotnet restore
 cd frontend && npm install
+```
+
+## Veritabanı Kurulumu
+
+1. PostgreSQL kurduktan sonra boş bir veritabanı oluşturun:
+
+```sql
+CREATE DATABASE mudosoft;
+```
+
+2. `backend/` klasöründe `.env.example` dosyasını kopyalayıp `.env` olarak kaydedin ve bilgileri doldurun:
+
+```env
+DB_PASSWORD=postgres_sifreniz
+JWT_SECRET_KEY=uzun_rastgele_bir_key
+ADMIN_USERNAME=admin
+ADMIN_PASSWORD=admin_sifreniz
+AGENT_API_KEY=rastgele_bir_api_key
+```
+
+3. Migration'ları uygulayarak tabloları otomatik oluşturun:
+
+```bash
+cd backend
+dotnet ef database update
 ```
 
 ## Çalıştırma
