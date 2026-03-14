@@ -6,24 +6,7 @@ import {
     Trash2, RefreshCw, Search, CheckCircle, AlertTriangle, WifiOff,
     FolderOpen, Zap, FileText, Clock
 } from "lucide-react";
-
-interface InboxStatus {
-    deviceId: string;
-    storeCode: number;
-    storeName: string;
-    ipAddress: string;
-    isOnline: boolean;
-    rdyCount: number;
-    txtCount: number;
-    tmp1Count: number; // Kasa
-    tmp2Count: number; // Ready
-    disCount: number; // Ready (.dis)
-    proCount: number; // Processed
-    seqCount: number; // Seq
-    totalCount: number;
-    status: "clean" | "dirty" | "error" | "offline" | "unknown";
-    errorMessage?: string;
-}
+import type { InboxStatus } from "../contexts/PrefetchContext";
 
 const InboxCleanupPage: React.FC = () => {
     const [devices, setDevices] = useState<InboxStatus[]>([]);
@@ -40,10 +23,10 @@ const InboxCleanupPage: React.FC = () => {
         setIsChecking(true);
         setStatusMessage(null);
         try {
-            const data = await apiClient.post<InboxStatus[]>("/api/inbox-cleanup/check-all");
+            const data = await apiClient.post<InboxStatus[]>("/api/inbox-cleanup/check-all", undefined, 120_000);
             setDevices(data);
-            setLastChecked(new Date());
-
+            const now = new Date();
+            setLastChecked(now);
             const dirty = data.filter(d => d.status === "dirty").length;
             const clean = data.filter(d => d.status === "clean").length;
             const offline = data.filter(d => d.status === "offline").length;
@@ -174,11 +157,11 @@ const InboxCleanupPage: React.FC = () => {
                     Inbox Temizlik
                 </h1>
                 <div className="flex items-center gap-3">
-                    {lastChecked && (
+                    {lastChecked ? (
                         <span className="text-xs text-slate-500">
                             Son kontrol: {lastChecked.toLocaleTimeString("tr-TR")}
                         </span>
-                    )}
+                    ) : null}
                     <button
                         onClick={() => setShowScheduler(true)}
                         className="flex items-center gap-2 px-5 py-2.5 glass-button text-sm font-medium rounded-xl hover-lift"

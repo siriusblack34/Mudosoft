@@ -20,6 +20,9 @@ import DiskStatusPage from "./pages/DiskStatusPage";
 import AuthGuard from "./layout/AuthGuard";
 import LoginPage from "./pages/LoginPage";
 import StoreManagersPage from "./pages/StoreManagersPage";
+import OfflineLogsPage from "./pages/OfflineLogsPage";
+import DeviceHealthPage from "./pages/DeviceHealthPage";
+import FiscalErrorCodesPage from "./pages/FiscalErrorCodesPage";
 import { Navigate } from "react-router-dom";
 
 const routes = [
@@ -175,6 +178,30 @@ const routes = [
                 element: (
                     <ShellLayout>
                         <DiskStatusPage />
+                    </ShellLayout>
+                ),
+            },
+            {
+                path: "/offline-logs",
+                element: (
+                    <ShellLayout>
+                        <OfflineLogsPage />
+                    </ShellLayout>
+                ),
+            },
+            {
+                path: "/devices/:deviceId/health",
+                element: (
+                    <ShellLayout>
+                        <DeviceHealthPage />
+                    </ShellLayout>
+                ),
+            },
+            {
+                path: "/fiscal-errors",
+                element: (
+                    <ShellLayout>
+                        <FiscalErrorCodesPage />
                     </ShellLayout>
                 ),
             },

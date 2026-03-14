@@ -52,5 +52,11 @@ namespace MudoSoft.Backend.Models
 
         // Son online görülme zamanı (DiscoveryWorker tarafından güncellenir)
         public DateTime? LastSeen { get; set; }
+
+        // Geçici kapalı durumu (tadilat, taşınma vs.)
+        public bool IsTemporarilyClosed { get; set; } = false;
+
+        [StringLength(200)]
+        public string? TemporaryCloseReason { get; set; }
     }
 }

@@ -227,6 +227,7 @@ const DeviceDetailsPage: React.FC = () => {
 
                 {/* Action Buttons */}
                 <div className="flex flex-wrap gap-2">
+                    <ActionButton icon={Activity} label="Health" color="emerald" onClick={() => navigate(`/devices/${deviceId}/health`)} />
                     <ActionButton icon={Settings} label="Services" color="indigo" onClick={() => navigate(`/devices/${deviceId}/services`)} />
                     <ActionButton icon={FolderOpen} label="Files" color="violet" onClick={() => navigate(`/devices/${deviceId}/files`)} />
                     <ActionButton icon={Package} label="Software" color="fuchsia" onClick={() => navigate(`/devices/${deviceId}/software`)} />

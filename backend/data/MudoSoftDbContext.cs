@@ -20,6 +20,8 @@ namespace MudoSoft.Backend.Data
         public DbSet<Note> Notes { get; set; }
         public DbSet<ScheduledTask> ScheduledTasks { get; set; }
         public DbSet<StoreManager> StoreManagers { get; set; }
+        public DbSet<StoreOfflineLog> StoreOfflineLogs { get; set; }
+        public DbSet<CollectorReport> CollectorReports { get; set; }
 
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -29,15 +31,23 @@ namespace MudoSoft.Backend.Data
             //
             // DEVICE
             //
-            modelBuilder.Entity<Device>()
-                .Property(d => d.Id)
-                .HasMaxLength(450);
+            modelBuilder.Entity<Device>(e =>
+            {
+                e.Property(d => d.Id).HasMaxLength(450);
+                e.HasIndex(d => d.Online);
+                e.HasIndex(d => d.LastSeen);
+                e.HasIndex(d => new { d.Online, d.LastSeen });
+            });
 
-            modelBuilder.Entity<DeviceMetric>()
-                .HasOne(dm => dm.Device)
-                .WithMany(d => d.Metrics)
-                .HasForeignKey(dm => dm.DeviceId)
-                .IsRequired();
+            modelBuilder.Entity<DeviceMetric>(e =>
+            {
+                e.HasOne(dm => dm.Device)
+                    .WithMany(d => d.Metrics)
+                    .HasForeignKey(dm => dm.DeviceId)
+                    .IsRequired();
+                e.HasIndex(dm => dm.DeviceId);
+                e.HasIndex(dm => new { dm.DeviceId, dm.TimestampUtc });
+            });
 
 
             //
@@ -79,8 +89,28 @@ namespace MudoSoft.Backend.Data
                 e.Property(sd => sd.DbConnectionString)
                     .HasMaxLength(256);
 
-                // 🔥 EK PK / UNIQUE GEREKMİYOR
-                // e.HasIndex(sd => new { sd.StoreCode, sd.DeviceType }).IsUnique();  <-- SİLİNDİ!
+                e.HasIndex(sd => sd.StoreCode);
+            });
+
+            //
+            // STORE OFFLINE LOG
+            //
+            modelBuilder.Entity<StoreOfflineLog>(e =>
+            {
+                e.HasIndex(l => l.StoreCode);
+                e.HasIndex(l => l.OfflineAt);
+                e.HasIndex(l => l.OnlineAt);
+            });
+
+            //
+            // COLLECTOR REPORT
+            //
+            modelBuilder.Entity<CollectorReport>(e =>
+            {
+                e.HasIndex(r => r.DeviceId);
+                e.HasIndex(r => r.CollectorName);
+                e.HasIndex(r => new { r.DeviceId, r.TimestampUtc });
+                e.HasIndex(r => new { r.DeviceId, r.CollectorName, r.TimestampUtc });
             });
         }
     }

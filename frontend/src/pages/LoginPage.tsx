@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ShieldCheck, User, Lock, ArrowRight, Loader2 } from 'lucide-react';
+import { API_BASE_URL } from '../lib/apiClient';
 
 const LoginPage: React.FC = () => {
   const navigate = useNavigate();
@@ -8,20 +9,44 @@ const LoginPage: React.FC = () => {
   const [formData, setFormData] = useState({ username: '', password: '' });
   const [error, setError] = useState('');
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+
+    if (!formData.username || !formData.password) {
+      setError('Kullanıcı adı ve şifre giriniz.');
+      return;
+    }
+
     setIsLoading(true);
 
-    setTimeout(() => {
-      if (formData.username && formData.password) {
-        localStorage.setItem('isAuthenticated', 'true');
-        navigate('/');
-      } else {
-        setError('Kullanıcı adı ve şifre giriniz.');
-        setIsLoading(false);
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username: formData.username,
+          password: formData.password,
+        }),
+      });
+
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        setError(body?.error || 'Giriş başarısız. Bilgilerinizi kontrol edin.');
+        return;
       }
-    }, 1000);
+
+      const data = await res.json();
+      localStorage.setItem('token', data.token);
+      localStorage.setItem('tokenExpiresAt', data.expiresAt);
+      localStorage.setItem('isAuthenticated', 'true');
+      localStorage.setItem('username', data.username);
+      navigate('/');
+    } catch {
+      setError('Sunucuya bağlanılamadı. Lütfen tekrar deneyin.');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (

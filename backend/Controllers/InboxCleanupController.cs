@@ -8,7 +8,7 @@ using System.Net.Sockets;
 namespace MudoSoft.Backend.Controllers
 {
     [ApiController]
-    [AllowAnonymous]
+    [Authorize]
     [Route("api/inbox-cleanup")]
     public class InboxCleanupController : ControllerBase
     {

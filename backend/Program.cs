@@ -94,9 +94,16 @@ builder.Services.AddInMemoryRateLimiting();
 
 // ================== JWT AUTHENTICATION ==================
 // 🔒 SECURITY: JWT key MUST be set via environment variable or config
-var jwtKey = builder.Configuration["Jwt:Key"] 
-    ?? Environment.GetEnvironmentVariable("JWT_SECRET_KEY")
-    ?? throw new InvalidOperationException("JWT_SECRET_KEY is not configured. Set it in appsettings.json or as environment variable.");
+// 🔒 SECURITY: Resolve JWT key — env var takes priority, skip appsettings placeholders
+var jwtKeyFromConfig = builder.Configuration["Jwt:Key"];
+var jwtKeyFromEnv = Environment.GetEnvironmentVariable("JWT_SECRET_KEY");
+
+// If config value is a placeholder like "${JWT_SECRET_KEY}", ignore it
+if (!string.IsNullOrEmpty(jwtKeyFromConfig) && jwtKeyFromConfig.StartsWith("${"))
+    jwtKeyFromConfig = null;
+
+var jwtKey = jwtKeyFromEnv ?? jwtKeyFromConfig
+    ?? throw new InvalidOperationException("JWT_SECRET_KEY is not configured. Set it in .env or as environment variable.");
 var jwtIssuer = builder.Configuration["Jwt:Issuer"] ?? "MudoSoft";
 var jwtAudience = builder.Configuration["Jwt:Audience"] ?? "MudoSoftUsers";
 
@@ -148,10 +155,23 @@ builder.Services.AddCors(options =>
     options.AddPolicy("MyCorsPolicy", policy =>
     {
         policy.WithOrigins(allowedOrigins)
-              .SetIsOriginAllowed(_ => true) // Tüm originlere izin ver (IP ile erişim için)
-              .WithMethods("GET", "POST", "PUT", "DELETE") // Sadece gerekli methodlar
-              .WithHeaders("Content-Type", "Authorization", "X-Encrypted", "X-ClientId", "X-Requested-With", "x-signalr-user-agent") // Sadece gerekli header'lar
-              .AllowCredentials(); // SignalR için ZORUNLU
+              .SetIsOriginAllowed(origin =>
+              {
+                  // Allow configured origins + local network IPs for agent/admin access
+                  if (allowedOrigins.Contains(origin)) return true;
+                  if (Uri.TryCreate(origin, UriKind.Absolute, out var uri))
+                  {
+                      var host = uri.Host;
+                      return host == "localhost"
+                          || host == "127.0.0.1"
+                          || host.StartsWith("10.")
+                          || host.StartsWith("192.168.");
+                  }
+                  return false;
+              })
+              .WithMethods("GET", "POST", "PUT", "DELETE")
+              .WithHeaders("Content-Type", "Authorization", "X-Encrypted", "X-ClientId", "X-Requested-With", "x-signalr-user-agent")
+              .AllowCredentials();
     });
 });
 
@@ -176,7 +196,8 @@ builder.Services.AddSwaggerGen();
 // ================== CUSTOM SERVICES ==================
 // IDeviceRepository Scoped, ancak Worker'lar Factory ile çekecek
 builder.Services.AddScoped<IRemoteSqlService, RemoteSqlService>();
-builder.Services.AddScoped<IDeviceRepository, DeviceRepository>(); 
+builder.Services.AddScoped<IDeviceRepository, DeviceRepository>();
+builder.Services.AddSingleton<MudoSoft.Backend.Services.EventLogTranslationService>(); 
 
 // 1. RsaKeyProvider (Gerektiği gibi Scoped)
 builder.Services.AddScoped<RsaKeyProvider>(); 
@@ -278,7 +299,7 @@ if (app.Environment.IsDevelopment())
         {
             var stores = new List<(int Code, string Name)>
             {
-                (5,"Nişantaşı Giyim"),(7,"Mersin Forum Giyim"),(8,"Bahariye Giyim"), (9,"Bağdat Giyim"),(11,"Viaport Giyim"),(16,"Ankara Cepa City"), (17,"Ereğli Ereylin Giyim"),(19,"Marmaris Netsel Marina"), (22,"Denizli Forum Giyim"),(23,"Göztepe Optimum Giyim"), (24,"Bodrum Gürece Concept"),(26,"Capitol Giyim"), (29,"Bursa Korupark Giyim"),(32,"Trabzon Forum City"), (33,"Airport Outlet"),(38,"Bodrum Milta Marina"), (39,"Ankara Ankamall Giyim"),(40,"Antalya Agora Giyim"), (43,"Marmaris Solaris City"),(51,"İzmir Agora City"), (52,"Nautilus Home"),(55,"Ankara Arcadium City"), (56,"Bodrum Turgutreis Marina"),(57,"Bodrum Yalıkavak Marina"), (58,"Maltepe Park Giyim"),(59,"Ankara Optimum Outlet"), (60,"Antalya Deepo Giyim"),(64,"Adana M1 City"), (68,"Kayseri Park City"),(74,"Nişantaşı Concept"), (76,"Susurluk Festiva Giyim"),(80,"Eskişehir Vega City"), (86,"İzmir Forum Giyim"),(88,"İzmir Selway Outlet"), (89,"İzmir Alsancak Concept"),(91,"Samsun Yeşilyurt Giyim"), (93,"Gebze Fırsat"),(97,"Alanya City"),(98,"Ankara Panora Concept"), (100,"Adana Concept"),(102,"Tekirdağ Tekira City"), (104,"Adana 01 Burda Giyim"),(107,"Cevahir Giyim"), (110,"Çeşme Marina"),(113,"Ankara Next Level Concept"), (114,"Antalya Rixos Marina"),(116,"Çorum Ahlpark Giyim"), (117,"212 Outlet"),(118,"Malatya Park Giyim"), (120,"K.maraş Piazza Giyim"),(121,"Ankara Gordion City"), (122,"Pendik Marina Kadın"),(124,"Kozzy City"), (125,"Gebze Center City"),(129,"Mersin Yat Limanı Marina"), (130,"Yalova Setur Marina"),(132,"Edirne Margi City"), (136,"İzmir Arastapark City"),(137,"Akçay Yasa Giyim"), (138,"Akbatı City"),(139,"Akbatı City"), (140,"Bandırma Liman Giyim"),(141,"İzmir Optimum Giyim"), (142,"İzmir Hilltown Giyim"),(143,"Arenapark Giyim"), (146,"Maslak Concept"),(147,"Balıkesir Burda Giyim"), (148,"Capitol Home"),(151,"Aqua Florya Home"), (152,"Buyaka City"),(153,"Antalya Aspendos Concept"), (155,"İskenderun Forbes Marina"),(157,"Bodrum Midtown City"), (158,"Kuşadası Setur Marina"),(159,"Nautilus Giyim"), (161,"Ankara Kentpark Home"),(163,"Emaar City"), (164,"Pendik Marina Erkek"),(167,"Alanya Marina"), (172,"Göcek Marina Kadın"),(173,"Samsun Piazza Giyim"), (174,"Fethiye Marina Yeni"),(175,"Bodrum Avenue Giyim"), (176,"İst. İstinyePark Giyim"),(177,"Ümraniye Meydan Giyim"), (180,"Brandium Fırsat Pop Up"),(181,"Aqua Florya Giyim"), (182,"Mecidiyeköy Outlet"),(183,"Vadistanbul City"), (186,"İçerenköy City's Home"),(187,"Balat Marina"), (190,"Akmerkez Giyim"),(191,"Akmerkez Home"), (193,"Bodrum Anthaven Marina"),(195,"Akasya Giyim"), (196,"Masko Concept"),(201,"Modoko Concept"), (202,"Mall of İstanbul Concept"),(205,"Palladium Concept"), (206,"Maltepe Piazza Giyim"),(208,"İzmir MaviBahçe Concept"), (209,"İzmit Burda Home"),(210,"Tuzla Viaport Marina"), (211,"Adapazarı Agora Giyim"),(213,"Çanakkale Burda Giyim"), (214,"Çanakkale Burda Home"),(216,"Bodrum Plaza Concept"), (217,"Göcek Marina Erkek"),(218,"Fethiye Marina"), (219,"Mersin Concept"),(221,"Antalya Lara Concept"), (222,"Ayvalık Marina"),(223,"Modoko Concept 2"), (224,"İstmarin City"),(227,"Bursa Anatolium Giyim"), (235,"İzmit Burda Giyim"),(238,"Gaziantep Sanko Giyim"), (239,"Carousel Giyim"),(243,"Urla Marina"), (245,"İçerenköy City's Giyim"),(246,"Büyükada Marina"), (247,"Nişantaşı City's Giyim"),(248,"İzmir İstinyePark Giyim"), (249,"Göztepe Optimum C.Outlet"),(251,"Bursa FSM Concept"), (252,"Bursa Downtown Giyim"),(254,"Tema World Giyim"), (257,"Kaş Marina")
+                (5,"Nişantaşı Giyim"),(7,"Mersin Forum Giyim"),(8,"Bahariye Giyim"), (9,"Bağdat Giyim"),(11,"Viaport Giyim"),(16,"Ankara Cepa City"), (17,"Ereğli Ereylin Giyim"),(19,"Marmaris Netsel Marina"), (22,"Denizli Forum Giyim"),(23,"Göztepe Optimum Giyim"), (24,"Bodrum Gürece Concept"),(26,"Capitol Giyim"), (29,"Bursa Korupark Giyim"),(32,"Trabzon Forum City"), (33,"Airport Outlet"),(38,"Bodrum Milta Marina"), (39,"Ankara Ankamall Giyim"),(40,"Antalya Agora Giyim"), (43,"Marmaris Solaris City"),(51,"İzmir Agora City"), (52,"Nautilus Home"),(55,"Ankara Arcadium City"), (56,"Bodrum Turgutreis Marina"),(57,"Bodrum Yalıkavak Marina"), (58,"Maltepe Park Giyim"),(59,"Ankara Optimum Outlet"), (60,"Antalya Deepo Giyim"),(64,"Adana M1 City"), (68,"Kayseri Park City"),(74,"Nişantaşı Concept"), (76,"Susurluk Festiva Giyim"),(80,"Eskişehir Vega City"), (86,"İzmir Forum Giyim"),(88,"İzmir Selway Outlet"), (89,"İzmir Alsancak Concept"),(91,"Samsun Yeşilyurt Giyim"), (93,"Gebze Fırsat"),(97,"Alanya City"),(98,"Ankara Panora Concept"), (100,"Adana Concept"),(102,"Tekirdağ Tekira City"), (104,"Adana 01 Burda Giyim"),(107,"Cevahir Giyim"), (110,"Çeşme Marina"),(113,"Ankara Next Level Concept"), (114,"Antalya Rixos Marina"),(116,"Çorum Ahlpark Giyim"), (117,"212 Outlet"),(118,"Malatya Park Giyim"), (120,"K.maraş Piazza Giyim"),(121,"Ankara Gordion City"), (122,"Pendik Marina Kadın"),(124,"Kozzy City"), (125,"Gebze Center City"),(129,"Mersin Yat Limanı Marina"), (130,"Yalova Setur Marina"),(132,"Edirne Margi City"), (136,"İzmir Arastapark City"),(137,"Akçay Yasa Giyim"), (138,"Akbatı City"),(139,"Pendik Marina Home"), (140,"Bandırma Liman Giyim"),(141,"İzmir Optimum Giyim"), (142,"İzmir Hilltown Giyim"),(143,"Arenapark Giyim"), (146,"Maslak Concept"),(147,"Balıkesir Burda Giyim"), (148,"Capitol Home"),(151,"Aqua Florya Home"), (152,"Buyaka City"),(153,"Antalya Aspendos Concept"), (155,"İskenderun Forbes Marina"),(157,"Bodrum Midtown City"), (158,"Kuşadası Setur Marina"),(159,"Nautilus Giyim"), (161,"Ankara Kentpark Home"),(163,"Emaar City"), (164,"Pendik Marina Erkek"),(167,"Alanya Marina"), (172,"Göcek Marina Kadın"),(173,"Samsun Piazza Giyim"), (174,"Fethiye Marina Yeni"),(175,"Bodrum Avenue Giyim"), (176,"İst. İstinyePark Giyim"),(177,"Ümraniye Meydan Giyim"), (180,"Brandium Fırsat Pop Up"),(181,"Aqua Florya Giyim"), (182,"Mecidiyeköy Outlet"),(183,"Vadistanbul City"), (186,"İçerenköy City's Home"),(187,"Balat Marina"), (190,"Akmerkez Giyim"),(191,"Akmerkez Home"), (193,"Bodrum Anthaven Marina"),(195,"Akasya Giyim"), (196,"Masko Concept"),(201,"Modoko Concept"), (202,"Mall of İstanbul Concept"),(205,"Palladium Concept"), (206,"Maltepe Piazza Giyim"),(208,"İzmir MaviBahçe Concept"), (209,"İzmit Burda Home"),(210,"Tuzla Viaport Marina"), (211,"Adapazarı Agora Giyim"),(213,"Çanakkale Burda Giyim"), (214,"Çanakkale Burda Home"),(216,"Bodrum Plaza Concept"), (217,"Göcek Marina Erkek"),(218,"Fethiye Marina"), (219,"Mersin Concept"),(221,"Antalya Lara Concept"), (222,"Ayvalık Marina"),(223,"Modoko Concept 2"), (224,"İstmarin City"),(227,"Bursa Anatolium Giyim"), (235,"İzmit Burda Giyim"),(238,"Gaziantep Sanko Giyim"), (239,"Carousel Giyim"),(243,"Urla Marina"), (245,"İçerenköy City's Giyim"),(246,"Büyükada Marina"), (247,"Nişantaşı City's Giyim"),(248,"İzmir İstinyePark Giyim"), (249,"Göztepe Optimum C.Outlet"),(251,"Bursa FSM Concept"), (252,"Bursa Downtown Giyim"),(254,"Tema World Giyim"), (257,"Kaş Marina")
             };
 
             foreach (var s in stores)
@@ -429,20 +450,7 @@ if (app.Environment.IsDevelopment())
         // =====================================================
         // MAĞAZA 139 ve 191 KASA-2 EKLEMESİ
         // =====================================================
-        if (!db.StoreDevices.Any(d => d.DeviceId == "139-K2"))
-        {
-            db.StoreDevices.Add(new StoreDevice
-            {
-                DeviceId = "139-K2",
-                StoreCode = 139,
-                StoreName = "Mağaza 139",
-                DeviceType = "Kasa-2",
-                DeviceName = "139-Kasa-2",
-                CalculatedIpAddress = "192.168.139.32",
-                DbConnectionString = BuildConnectionString("192.168.139.32")
-            });
-            db.SaveChanges();
-        }
+        // 139-K2 kaldırıldı - Mağaza 139 (Pendik Marina Home) sadece Kasa-1 kullanıyor
 
         if (!db.StoreDevices.Any(d => d.DeviceId == "191-K2"))
         {
@@ -469,6 +477,27 @@ if (app.Environment.IsDevelopment())
             db.SaveChanges();
             Console.WriteLine("✅ Store 196 IP updated to 192.168.196.5");
         }
+
+        // =====================================================
+        // MAĞAZA 139 DÜZELTMESİ - Pendik Marina Home, sadece Kasa-1
+        // =====================================================
+        var store139Devices = db.StoreDevices.Where(d => d.StoreCode == 139).ToList();
+        foreach (var d in store139Devices)
+        {
+            // İsmi düzelt
+            if (d.StoreName != "Pendik Marina Home")
+            {
+                d.StoreName = "Pendik Marina Home";
+            }
+        }
+        // K2 ve K3 varsa sil (sadece K1 kalacak)
+        var store139ToRemove = store139Devices.Where(d => d.DeviceType == "Kasa-2" || d.DeviceType == "Kasa-3" || d.DeviceType == "PC").ToList();
+        if (store139ToRemove.Any())
+        {
+            db.StoreDevices.RemoveRange(store139ToRemove);
+            Console.WriteLine($"✅ Store 139 cleaned: removed {store139ToRemove.Count} extra devices, kept only Kasa-1");
+        }
+        db.SaveChanges();
     }
 }
 

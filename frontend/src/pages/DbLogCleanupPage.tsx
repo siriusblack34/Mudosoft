@@ -1,23 +1,11 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { apiClient } from "../lib/apiClient";
 import Spinner from "../components/ui/Spinner";
 import {
     Trash2, RefreshCw, Search, CheckCircle, AlertTriangle, WifiOff,
     Database, Check, Loader2, FileText, ArrowDown, ArrowUp, ArrowUpDown
 } from "lucide-react";
-
-interface DbLogStatus {
-    deviceId: string;
-    storeCode: number;
-    storeName: string;
-    ipAddress: string;
-    isOnline: boolean;
-    exportLogCount: number;
-    exportErrLogCount: number;
-    total: number;
-    status: "clean" | "dirty" | "error" | "offline" | "unknown";
-    errorMessage?: string;
-}
+import type { DbLogStatus } from "../contexts/PrefetchContext";
 
 export default function DbLogCleanupPage() {
     const [searchTerm, setSearchTerm] = useState("");
@@ -25,6 +13,7 @@ export default function DbLogCleanupPage() {
     const [statusFilter, setStatusFilter] = useState<"all" | "dirty" | "offline" | "error">("all");
     const [data, setData] = useState<DbLogStatus[] | null>(null);
     const [isFetching, setIsFetching] = useState(false);
+    const [lastFetched, setLastFetched] = useState<Date | null>(null);
     const [sortCol, setSortCol] = useState<"exportLogCount" | "exportErrLogCount" | "total">("total");
     const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
 
@@ -41,8 +30,10 @@ export default function DbLogCleanupPage() {
     const fetchData = async () => {
         setIsFetching(true);
         try {
-            const result = await apiClient.post<DbLogStatus[]>("/api/db-log-cleanup/check-all", {});
+            const result = await apiClient.post<DbLogStatus[]>("/api/db-log-cleanup/check-all", {}, 120_000);
             setData(result);
+            const now = new Date();
+            setLastFetched(now);
         } catch (error) {
             console.error("Fetch error:", error);
         } finally {
@@ -139,9 +130,13 @@ export default function DbLogCleanupPage() {
                     </p>
                 </div>
                 <div className="flex gap-4 items-center">
-                    <div className="text-xs text-slate-400 font-mono hidden md:block">
-                        {isFetching ? "İşlem yapılıyor..." : data ? `Son işlem: ${new Date().toLocaleTimeString()}` : ""}
-                    </div>
+                    {lastFetched ? (
+                        <div className="text-xs text-slate-400 font-mono hidden md:block">
+                            Son kontrol: {lastFetched.toLocaleTimeString()}
+                        </div>
+                    ) : isFetching ? (
+                        <div className="text-xs text-slate-400 font-mono hidden md:block">İşlem yapılıyor...</div>
+                    ) : null}
 
                     <button
                         onClick={handleCleanAll}

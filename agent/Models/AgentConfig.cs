@@ -17,4 +17,7 @@ public sealed class AgentConfig
 
     // İstersen sabit IP override etmek için (opsiyonel)
     public string? IpAddress { get; set; }
+
+    // Collector ayarları
+    public CollectorsConfig Collectors { get; set; } = new();
 }

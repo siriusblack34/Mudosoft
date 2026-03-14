@@ -53,21 +53,26 @@ const AgentUpdatePage: React.FC = () => {
         } catch (err) { console.error(err); }
     }, []);
 
+    const authHeaders = useCallback(() => {
+        const token = localStorage.getItem('token');
+        return token ? { 'Authorization': `Bearer ${token}` } : {};
+    }, []);
+
     const fetchDevices = useCallback(async () => {
         try {
-            const res = await fetch(`${API_BASE_URL}/api/updates/device-versions`);
+            const res = await fetch(`${API_BASE_URL}/api/updates/device-versions`, { headers: authHeaders() });
             const data = await res.json();
             setDevices(data);
         } catch (err) { console.error(err); }
-    }, []);
+    }, [authHeaders]);
 
     const fetchHistory = useCallback(async () => {
         try {
-            const res = await fetch(`${API_BASE_URL}/api/updates/history`);
+            const res = await fetch(`${API_BASE_URL}/api/updates/history`, { headers: authHeaders() });
             const data = await res.json();
             setHistory(Array.isArray(data) ? data.reverse() : []);
         } catch (err) { console.error(err); }
-    }, []);
+    }, [authHeaders]);
 
     useEffect(() => {
         fetchLatestVersion();
@@ -83,7 +88,7 @@ const AgentUpdatePage: React.FC = () => {
     useEffect(() => {
         const pollBuildStatus = async () => {
             try {
-                const res = await fetch(`${API_BASE_URL}/api/updates/build-status`);
+                const res = await fetch(`${API_BASE_URL}/api/updates/build-status`, { headers: authHeaders() });
                 const data = await res.json();
 
                 // If it just finished building, refresh list
@@ -122,7 +127,7 @@ const AgentUpdatePage: React.FC = () => {
             const formData = new FormData();
             formData.append('file', selectedFile);
             formData.append('version', newVersion.trim());
-            const res = await fetch(`${API_BASE_URL}/api/updates/upload`, { method: 'POST', body: formData });
+            const res = await fetch(`${API_BASE_URL}/api/updates/upload`, { method: 'POST', body: formData, headers: authHeaders() });
             if (res.ok) {
                 const data = await res.json();
                 setMessage({ text: data.message || 'Upload başarılı!', type: 'success' });
@@ -152,7 +157,7 @@ const AgentUpdatePage: React.FC = () => {
         try {
             const res = await fetch(
                 `${API_BASE_URL}/api/updates/trigger-all?backendUrl=${encodeURIComponent(remoteBackendUrl)}`,
-                { method: 'POST' }
+                { method: 'POST', headers: authHeaders() }
             );
             if (res.ok) {
                 const data = await res.json();
@@ -169,7 +174,7 @@ const AgentUpdatePage: React.FC = () => {
 
         setMessage(null);
         try {
-            const res = await fetch(`${API_BASE_URL}/api/updates/build`, { method: 'POST' });
+            const res = await fetch(`${API_BASE_URL}/api/updates/build`, { method: 'POST', headers: authHeaders() });
             if (res.ok) {
                 setIsBuilding(true);
                 setBuildStatus("Derleme başlatılıyor...");

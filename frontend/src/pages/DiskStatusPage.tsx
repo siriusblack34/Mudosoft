@@ -4,25 +4,7 @@ import {
     HardDrive, RefreshCw, Wifi, WifiOff,
     ArrowUpDown, Search, AlertTriangle, Loader2, Monitor, ShoppingCart
 } from "lucide-react";
-
-interface DiskDevice {
-    deviceId: string;
-    storeCode: number;
-    storeName: string;
-    deviceName: string;
-    ipAddress: string;
-    isOnline: boolean;
-    status: "online" | "offline" | "error" | "unknown";
-    diskCPercent: number | null;
-    diskCTotalGB: number | null;
-    diskCFreeGB: number | null;
-    diskCUsedGB: number | null;
-    diskDPercent: number | null;
-    diskDTotalGB: number | null;
-    diskDFreeGB: number | null;
-    diskDUsedGB: number | null;
-    errorMessage?: string;
-}
+import type { DiskDevice } from "../contexts/PrefetchContext";
 
 type SortKey = "deviceName" | "storeCode" | "diskCPercent" | "diskDPercent";
 type SortDir = "asc" | "desc";
@@ -46,9 +28,10 @@ const DiskStatusPage: React.FC = () => {
     const loadPcData = async () => {
         setPcLoading(true);
         try {
-            const res = await apiClient.post<DiskDevice[]>("/api/disk-status/check-all");
+            const res = await apiClient.post<DiskDevice[]>("/api/disk-status/check-all", undefined, 120_000);
             setPcDevices(res);
-            setPcLastUpdated(new Date());
+            const now = new Date();
+            setPcLastUpdated(now);
         } catch (err) {
             console.error("PC disk status load failed:", err);
         } finally {
@@ -59,9 +42,10 @@ const DiskStatusPage: React.FC = () => {
     const loadKasaData = async () => {
         setKasaLoading(true);
         try {
-            const res = await apiClient.post<DiskDevice[]>("/api/disk-status/check-all-kasa");
+            const res = await apiClient.post<DiskDevice[]>("/api/disk-status/check-all-kasa", undefined, 120_000);
             setKasaDevices(res);
-            setKasaLastUpdated(new Date());
+            const now = new Date();
+            setKasaLastUpdated(now);
         } catch (err) {
             console.error("Kasa disk status load failed:", err);
         } finally {
@@ -136,11 +120,11 @@ const DiskStatusPage: React.FC = () => {
                     <p className="text-sm text-slate-400">Mağaza PC ve kasaların disk kullanım durumu</p>
                 </div>
                 <div className="flex items-center gap-3">
-                    {lastUpdated && (
+                    {lastUpdated ? (
                         <span className="text-xs text-slate-500">
                             Son kontrol: {lastUpdated.toLocaleTimeString('tr-TR')}
                         </span>
-                    )}
+                    ) : null}
                     <button
                         onClick={loadData}
                         disabled={loading}

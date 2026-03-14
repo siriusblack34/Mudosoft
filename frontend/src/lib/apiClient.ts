@@ -43,6 +43,8 @@ export interface SqlDeviceWithStatus {
     calculatedIpAddress: string;
     isOnline: boolean;
     lastSeen: string | null; // ISO datetime, last time device was confirmed online
+    isTemporarilyClosed: boolean;
+    temporaryCloseReason: string | null;
 }
 
 // ✅ STORE MANAGERS
@@ -60,6 +62,7 @@ export interface StoreManager {
 // ==========================
 export const API_BASE_URL = `http://${window.location.hostname}:5102`;
 const API_BASE = API_BASE_URL;
+const DEFAULT_TIMEOUT_MS = 30_000;
 
 function buildUrl(url: string) {
     const cleanUrl = url.startsWith("/") ? url.substring(1) : url;
@@ -67,44 +70,85 @@ function buildUrl(url: string) {
     return `${base}/${cleanUrl}`;
 }
 
+function getAuthHeaders(): Record<string, string> {
+    const token = localStorage.getItem("token");
+    if (!token) return {};
+
+    // Check token expiry
+    const expiresAt = localStorage.getItem("tokenExpiresAt");
+    if (expiresAt && new Date(expiresAt) < new Date()) {
+        localStorage.removeItem("token");
+        localStorage.removeItem("tokenExpiresAt");
+        localStorage.removeItem("isAuthenticated");
+        window.location.href = "/login";
+        return {};
+    }
+
+    return { Authorization: `Bearer ${token}` };
+}
+
+async function fetchWithTimeout(
+    url: string,
+    options: RequestInit,
+    timeoutMs: number = DEFAULT_TIMEOUT_MS
+): Promise<Response> {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+        const res = await fetch(url, { ...options, signal: controller.signal });
+        // Handle 401 - redirect to login
+        if (res.status === 401) {
+            localStorage.removeItem("token");
+            localStorage.removeItem("tokenExpiresAt");
+            localStorage.removeItem("isAuthenticated");
+            window.location.href = "/login";
+        }
+        return res;
+    } finally {
+        clearTimeout(timeout);
+    }
+}
+
 // ==========================
 // API CLIENT
 // ==========================
 export const apiClient = {
-    async get<T>(url: string): Promise<T> {
-        const res = await fetch(buildUrl(url));
+    async get<T>(url: string, timeoutMs?: number): Promise<T> {
+        const res = await fetchWithTimeout(buildUrl(url), {
+            headers: { ...getAuthHeaders() },
+        }, timeoutMs);
         if (!res.ok) {
             let errorMessage = `GET ${url} failed: ${res.status}`;
             try {
                 const errorBody = await res.json();
                 if (errorBody?.error) errorMessage = errorBody.error;
-            } catch { } // ignore
+            } catch { /* response body not JSON */ }
             throw new Error(errorMessage);
         }
         return res.json();
     },
 
-    async post<T>(url: string, data?: any): Promise<T> {
-        const res = await fetch(buildUrl(url), {
+    async post<T>(url: string, data?: unknown, timeoutMs?: number): Promise<T> {
+        const res = await fetchWithTimeout(buildUrl(url), {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: { "Content-Type": "application/json", ...getAuthHeaders() },
             body: data ? JSON.stringify(data) : undefined,
-        });
+        }, timeoutMs);
         if (!res.ok) {
             let errorMessage = `POST ${url} failed: ${res.status}`;
             try {
                 const errorBody = await res.json();
                 if (errorBody?.error) errorMessage = errorBody.error;
-            } catch { } // ignore
+            } catch { /* response body not JSON */ }
             throw new Error(errorMessage);
         }
         return res.json();
     },
 
-    async put<T>(url: string, data?: any): Promise<T> {
-        const res = await fetch(buildUrl(url), {
+    async put<T>(url: string, data?: unknown): Promise<T> {
+        const res = await fetchWithTimeout(buildUrl(url), {
             method: "PUT",
-            headers: { "Content-Type": "application/json" },
+            headers: { "Content-Type": "application/json", ...getAuthHeaders() },
             body: data ? JSON.stringify(data) : undefined,
         });
         if (!res.ok) {
@@ -112,7 +156,7 @@ export const apiClient = {
             try {
                 const errorBody = await res.json();
                 if (errorBody?.error) errorMessage = errorBody.error;
-            } catch { } // ignore
+            } catch { /* response body not JSON */ }
             throw new Error(errorMessage);
         }
         if (res.status === 204) return null as T;
@@ -120,15 +164,16 @@ export const apiClient = {
     },
 
     async delete<T>(url: string): Promise<T> {
-        const res = await fetch(buildUrl(url), {
+        const res = await fetchWithTimeout(buildUrl(url), {
             method: "DELETE",
+            headers: { ...getAuthHeaders() },
         });
         if (!res.ok) {
             let errorMessage = `DELETE ${url} failed: ${res.status}`;
             try {
                 const errorBody = await res.json();
                 if (errorBody?.error) errorMessage = errorBody.error;
-            } catch { } // ignore
+            } catch { /* response body not JSON */ }
             throw new Error(errorMessage);
         }
         if (res.status === 204) return null as T;
@@ -158,7 +203,7 @@ export const apiClient = {
         if (params?.maxConcurrency) qs.append("maxConcurrency", String(params.maxConcurrency));
 
         const suffix = qs.toString() ? `?${qs}` : "";
-        return this.get(`/api/sqlquery/devices/with-status${suffix}`);
+        return this.get(`/api/sqlquery/devices/with-status${suffix}`, 90_000);
     },
 
     runSqlQuery(deviceId: string, query: string) {
@@ -180,6 +225,7 @@ export const apiClient = {
         return this.post("/api/actions/folder-cleanup", { deviceId, path });
     },
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     uploadFile(deviceId: string, file: File, remotePath: string): Promise<any> {
         return new Promise((resolve, reject) => {
             const reader = new FileReader();
@@ -209,6 +255,7 @@ export const apiClient = {
     // ==========================
     // DASHBOARD
     // ==========================
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     getDashboard(): Promise<any> {
         return this.get("/api/dashboard/summary");
     },
@@ -224,12 +271,47 @@ export const apiClient = {
         return this.post("/api/storemanagers/import", { rawText });
     },
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    getOfflineLogs(days = 7, storeCode?: number): Promise<any[]> {
+        const qs = new URLSearchParams({ days: String(days) });
+        if (storeCode) qs.append("storeCode", String(storeCode));
+        return this.get(`/api/sqlquery/offline-logs?${qs}`);
+    },
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    getOfflineStats(days = 30): Promise<any[]> {
+        return this.get(`/api/sqlquery/offline-logs/stats?days=${days}`);
+    },
+
+    toggleTemporaryClose(deviceId: string, isClosed: boolean, reason?: string): Promise<{ success: boolean; deviceId: string; isTemporarilyClosed: boolean }> {
+        return this.put(`/api/sqlquery/devices/${encodeURIComponent(deviceId)}/temporary-close`, { isClosed, reason });
+    },
+
     deleteStoreDevice(deviceId: string): Promise<{ success: boolean; deletedDeviceId: string }> {
         return this.delete(`/api/sqlquery/devices/${encodeURIComponent(deviceId)}`);
+    },
+
+    // ==========================
+    // COLLECTOR / HEALTH
+    // ==========================
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    getCollectorData(deviceId: string, collector?: string, limit = 50): Promise<any[]> {
+        const qs = new URLSearchParams({ limit: String(limit) });
+        if (collector) qs.append("collector", collector);
+        return this.get(`/api/agent/collector-report/${encodeURIComponent(deviceId)}?${qs}`);
+    },
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    getCollectorLatest(deviceId: string): Promise<any[]> {
+        return this.get(`/api/agent/collector-report/${encodeURIComponent(deviceId)}/latest`);
+    },
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    getEventLogs(deviceId: string, limit = 100): Promise<any[]> {
+        return this.get(`/api/agent/collector-report/${encodeURIComponent(deviceId)}/eventlogs?limit=${limit}`);
     },
 
     getBaseUrl(): string {
         return API_BASE_URL;
     }
 };
-

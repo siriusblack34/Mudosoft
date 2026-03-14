@@ -19,6 +19,12 @@ namespace MudoSoft.Backend.Controllers
         private readonly ILogger<SqlQueryController> _logger;
         private readonly FastSqlReachabilityService _fastCheck;
 
+        // In-memory cache for devices-with-status
+        private static List<StoreDeviceWithStatusDto>? _cachedDevices;
+        private static DateTime _cacheExpiry = DateTime.MinValue;
+        private static readonly SemaphoreSlim _cacheLock = new(1, 1);
+        private const int CacheSeconds = 15;
+
         public SqlQueryController(
             IRemoteSqlService remoteSqlService,
             MudoSoftDbContext db,
@@ -34,7 +40,6 @@ namespace MudoSoft.Backend.Controllers
         // ===========================================================
         // 0) TÜM CİHAZLAR (ENVANTER)
         // ===========================================================
-        [AllowAnonymous] // Device list doesn't need authentication
         [HttpGet("devices/all")]
         public async Task<IActionResult> GetAllDevices()
         {
@@ -56,66 +61,219 @@ namespace MudoSoft.Backend.Controllers
         // ===========================================================
         // 1) TÜM CİHAZLAR + ONLINE / OFFLINE (TEK DOĞRU ENDPOINT)
         // ===========================================================
-        [AllowAnonymous] // Device status list doesn't need authentication
         [HttpGet("devices/with-status")]
         public async Task<IActionResult> GetDevicesWithStatus(
             [FromQuery] int timeoutMs = 500,
             [FromQuery] int maxConcurrency = 40)
         {
-            var devices = await _db.StoreDevices
-                .AsNoTracking()
-                .Select(d => new StoreDeviceWithStatusDto
+            // Cache'den dön (15 saniye geçerli)
+            if (_cachedDevices != null && DateTime.UtcNow < _cacheExpiry)
+            {
+                return Ok(_cachedDevices);
+            }
+
+            await _cacheLock.WaitAsync();
+            try
+            {
+                // Double-check after acquiring lock
+                if (_cachedDevices != null && DateTime.UtcNow < _cacheExpiry)
                 {
-                    DeviceId = d.DeviceId,
-                    StoreCode = d.StoreCode,
-                    StoreName = d.StoreName,
-                    DeviceType = d.DeviceType,
-                    DeviceName = d.DeviceName,
-                    CalculatedIpAddress = d.CalculatedIpAddress,
-                    IsOnline = false,
-                    LastSeen = d.LastSeen
+                    return Ok(_cachedDevices);
+                }
+
+                var devices = await _db.StoreDevices
+                    .AsNoTracking()
+                    .Select(d => new StoreDeviceWithStatusDto
+                    {
+                        DeviceId = d.DeviceId,
+                        StoreCode = d.StoreCode,
+                        StoreName = d.StoreName,
+                        DeviceType = d.DeviceType,
+                        DeviceName = d.DeviceName,
+                        CalculatedIpAddress = d.CalculatedIpAddress,
+                        IsOnline = false,
+                        LastSeen = d.LastSeen,
+                        IsTemporarilyClosed = d.IsTemporarilyClosed,
+                        TemporaryCloseReason = d.TemporaryCloseReason
+                    })
+                    .ToListAsync();
+
+                using var sem = new SemaphoreSlim(Math.Max(1, maxConcurrency));
+
+                var tasks = devices.Select(async d =>
+                {
+                    await sem.WaitAsync();
+                    try
+                    {
+                        d.IsOnline = await _fastCheck.IsSqlReachableAsync(
+                            d.CalculatedIpAddress,
+                            1433,
+                            timeoutMs
+                        );
+                    }
+                    finally
+                    {
+                        sem.Release();
+                    }
+                });
+
+                await Task.WhenAll(tasks);
+
+                // Online olan cihazların LastSeen'ini güncelle
+                var onlineIds = devices.Where(d => d.IsOnline).Select(d => d.DeviceId).ToHashSet();
+                if (onlineIds.Count > 0)
+                {
+                    var now = DateTime.UtcNow;
+                    var toUpdate = await _db.StoreDevices
+                        .Where(d => onlineIds.Contains(d.DeviceId))
+                        .ToListAsync();
+                    foreach (var d in toUpdate)
+                        d.LastSeen = now;
+                    await _db.SaveChangesAsync();
+
+                    foreach (var d in devices.Where(d => d.IsOnline))
+                        d.LastSeen = now;
+                }
+
+                // ─── Offline Store Logging ───
+                try
+                {
+                    await UpdateOfflineLogsAsync(devices);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Offline log update failed (non-critical)");
+                }
+
+                // Cache'i güncelle
+                _cachedDevices = devices;
+                _cacheExpiry = DateTime.UtcNow.AddSeconds(CacheSeconds);
+
+                return Ok(devices);
+            }
+            finally
+            {
+                _cacheLock.Release();
+            }
+        }
+
+        // ===========================================================
+        // 1.5) OFFLİNE LOG GÜNCELLEME
+        // ===========================================================
+        private async Task UpdateOfflineLogsAsync(List<StoreDeviceWithStatusDto> devices)
+        {
+            var now = DateTime.UtcNow;
+
+            // Mağaza bazında kasa durumlarını grupla (PC hariç, geçici kapalı hariç)
+            var storeStatus = devices
+                .Where(d => d.DeviceType?.ToUpper() != "PC" && !d.IsTemporarilyClosed)
+                .GroupBy(d => d.StoreCode)
+                .Select(g => new
+                {
+                    StoreCode = g.Key,
+                    StoreName = g.First().StoreName,
+                    AllOffline = g.All(k => !k.IsOnline),
+                    OfflineCount = g.Count(k => !k.IsOnline)
+                })
+                .ToList();
+
+            // Açık (kapanmamış) log kayıtlarını al
+            var openLogs = await _db.StoreOfflineLogs
+                .Where(l => l.OnlineAt == null)
+                .ToListAsync();
+
+            var openLogMap = openLogs.ToDictionary(l => l.StoreCode);
+
+            foreach (var store in storeStatus)
+            {
+                if (store.AllOffline)
+                {
+                    // Tüm kasalar offline - açık log yoksa oluştur
+                    if (!openLogMap.ContainsKey(store.StoreCode))
+                    {
+                        _db.StoreOfflineLogs.Add(new StoreOfflineLog
+                        {
+                            StoreCode = store.StoreCode,
+                            StoreName = store.StoreName,
+                            OfflineKasaCount = store.OfflineCount,
+                            OfflineAt = now
+                        });
+                    }
+                }
+                else
+                {
+                    // En az bir kasa online - açık log varsa kapat
+                    if (openLogMap.TryGetValue(store.StoreCode, out var log))
+                    {
+                        log.OnlineAt = now;
+                        log.DurationMinutes = (int)(now - log.OfflineAt).TotalMinutes;
+                    }
+                }
+            }
+
+            await _db.SaveChangesAsync();
+        }
+
+        // ===========================================================
+        // 1.6) OFFLİNE LOG SORGULAMA
+        // ===========================================================
+        [HttpGet("offline-logs")]
+        public async Task<IActionResult> GetOfflineLogs(
+            [FromQuery] int days = 7,
+            [FromQuery] int? storeCode = null)
+        {
+            var since = DateTime.UtcNow.AddDays(-days);
+
+            var query = _db.StoreOfflineLogs
+                .AsNoTracking()
+                .Where(l => l.OfflineAt >= since);
+
+            if (storeCode.HasValue)
+                query = query.Where(l => l.StoreCode == storeCode.Value);
+
+            var logs = await query
+                .OrderByDescending(l => l.OfflineAt)
+                .Select(l => new
+                {
+                    l.Id,
+                    l.StoreCode,
+                    l.StoreName,
+                    l.OfflineKasaCount,
+                    l.OfflineAt,
+                    l.OnlineAt,
+                    l.DurationMinutes,
+                    IsStillOffline = l.OnlineAt == null
                 })
                 .ToListAsync();
 
-            using var sem = new SemaphoreSlim(Math.Max(1, maxConcurrency));
+            return Ok(logs);
+        }
 
-            var tasks = devices.Select(async d =>
-            {
-                await sem.WaitAsync();
-                try
+        // ===========================================================
+        // 1.7) OFFLİNE LOG İSTATİSTİK (en çok sorun yaşayan mağazalar)
+        // ===========================================================
+        [HttpGet("offline-logs/stats")]
+        public async Task<IActionResult> GetOfflineStats([FromQuery] int days = 30)
+        {
+            var since = DateTime.UtcNow.AddDays(-days);
+
+            var stats = await _db.StoreOfflineLogs
+                .AsNoTracking()
+                .Where(l => l.OfflineAt >= since)
+                .GroupBy(l => new { l.StoreCode, l.StoreName })
+                .Select(g => new
                 {
-                    d.IsOnline = await _fastCheck.IsSqlReachableAsync(
-                        d.CalculatedIpAddress,
-                        1433,
-                        timeoutMs
-                    );
-                }
-                finally
-                {
-                    sem.Release();
-                }
-            });
+                    g.Key.StoreCode,
+                    g.Key.StoreName,
+                    TotalIncidents = g.Count(),
+                    TotalOfflineMinutes = g.Sum(l => l.DurationMinutes ?? 0),
+                    LastOfflineAt = g.Max(l => l.OfflineAt),
+                    IsCurrentlyOffline = g.Any(l => l.OnlineAt == null)
+                })
+                .OrderByDescending(s => s.TotalIncidents)
+                .ToListAsync();
 
-            await Task.WhenAll(tasks);
-
-            // Online olan cihazların LastSeen'ini güncelle
-            var onlineIds = devices.Where(d => d.IsOnline).Select(d => d.DeviceId).ToHashSet();
-            if (onlineIds.Count > 0)
-            {
-                var now = DateTime.UtcNow;
-                var toUpdate = await _db.StoreDevices
-                    .Where(d => onlineIds.Contains(d.DeviceId))
-                    .ToListAsync();
-                foreach (var d in toUpdate)
-                    d.LastSeen = now;
-                await _db.SaveChangesAsync();
-
-                // DTO'larda da güncelle (dönen veri güncel olsun)
-                foreach (var d in devices.Where(d => d.IsOnline))
-                    d.LastSeen = now;
-            }
-
-            return Ok(devices);
+            return Ok(stats);
         }
 
         // ===========================================================
@@ -157,7 +315,6 @@ namespace MudoSoft.Backend.Controllers
         // ===========================================================
         // 3) CİHAZ SİSTEM BİLGİSİ (Hostname + Seri No)
         // ===========================================================
-        [AllowAnonymous]
         [HttpGet("devices/{deviceId}/system-info")]
         public async Task<IActionResult> GetDeviceSystemInfo(string deviceId)
         {
@@ -206,7 +363,6 @@ namespace MudoSoft.Backend.Controllers
         // ===========================================================
         // 4) CİHAZ SİL (Envanter'den kaldır)
         // ===========================================================
-        [AllowAnonymous]
         [HttpDelete("devices/{deviceId}")]
         public async Task<IActionResult> DeleteDevice(string deviceId)
         {
@@ -218,10 +374,32 @@ namespace MudoSoft.Backend.Controllers
             await _db.SaveChangesAsync();
 
             _logger.LogInformation("StoreDevice deleted: {DeviceId}", deviceId);
+            _cachedDevices = null; // Cache invalidate
             return Ok(new { success = true, deletedDeviceId = deviceId });
         }
 
-        [AllowAnonymous] // SQL execution allowed for frontend - queries are validated by whitelist
+        // ===========================================================
+        // 5) GEÇİCİ KAPALI DURUMUNU GÜNCELLE
+        // ===========================================================
+        [HttpPut("devices/{deviceId}/temporary-close")]
+        public async Task<IActionResult> ToggleTemporaryClose(string deviceId, [FromBody] TemporaryCloseRequest request)
+        {
+            var device = await _db.StoreDevices.FirstOrDefaultAsync(d => d.DeviceId == deviceId);
+            if (device == null)
+                return NotFound(new { error = "Device not found" });
+
+            device.IsTemporarilyClosed = request.IsClosed;
+            device.TemporaryCloseReason = request.IsClosed ? request.Reason : null;
+            await _db.SaveChangesAsync();
+
+            _logger.LogInformation("Device {DeviceId} temporary close: {IsClosed}, reason: {Reason}",
+                deviceId, request.IsClosed, request.Reason);
+
+            _cachedDevices = null; // Cache invalidate
+
+            return Ok(new { success = true, deviceId, isTemporarilyClosed = device.IsTemporarilyClosed });
+        }
+
         [HttpPost("execute")]
         public async Task<IActionResult> ExecuteQuery([FromBody] ExecuteSqlQueryRequest request)
         {
@@ -282,5 +460,11 @@ namespace MudoSoft.Backend.Controllers
                 return BadRequest(new { error = $"Query execution failed: {ex.Message}" });
             }
         }
+    }
+
+    public class TemporaryCloseRequest
+    {
+        public bool IsClosed { get; set; }
+        public string? Reason { get; set; }
     }
 }

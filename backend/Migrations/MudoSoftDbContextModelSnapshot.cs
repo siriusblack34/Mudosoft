@@ -55,6 +55,56 @@ namespace MudoSoft.Backend.Migrations
                     b.ToTable("ActionRecords");
                 });
 
+            modelBuilder.Entity("MudoSoft.Backend.Models.CollectorReport", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("CollectorName")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.Property<string>("DeviceId")
+                        .IsRequired()
+                        .HasMaxLength(450)
+                        .HasColumnType("character varying(450)");
+
+                    b.Property<string>("ErrorMessage")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<string>("JsonData")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("Severity")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<bool>("Success")
+                        .HasColumnType("boolean");
+
+                    b.Property<DateTime>("TimestampUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CollectorName");
+
+                    b.HasIndex("DeviceId");
+
+                    b.HasIndex("DeviceId", "TimestampUtc");
+
+                    b.HasIndex("DeviceId", "CollectorName", "TimestampUtc");
+
+                    b.ToTable("CollectorReports");
+                });
+
             modelBuilder.Entity("MudoSoft.Backend.Models.CommandResultRecord", b =>
                 {
                     b.Property<long>("Id")
@@ -181,6 +231,12 @@ namespace MudoSoft.Backend.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("LastSeen");
+
+                    b.HasIndex("Online");
+
+                    b.HasIndex("Online", "LastSeen");
+
                     b.ToTable("Devices");
                 });
 
@@ -218,6 +274,8 @@ namespace MudoSoft.Backend.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("DeviceId");
+
+                    b.HasIndex("DeviceId", "TimestampUtc");
 
                     b.ToTable("DeviceMetrics");
                 });
@@ -319,6 +377,12 @@ namespace MudoSoft.Backend.Migrations
                         .HasMaxLength(10)
                         .HasColumnType("character varying(10)");
 
+                    b.Property<bool>("IsTemporarilyClosed")
+                        .HasColumnType("boolean");
+
+                    b.Property<DateTime?>("LastSeen")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<DateTimeOffset>("LastSyncDate")
                         .HasColumnType("timestamp with time zone");
 
@@ -330,9 +394,85 @@ namespace MudoSoft.Backend.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)");
 
+                    b.Property<string>("TemporaryCloseReason")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
                     b.HasKey("DeviceId");
 
+                    b.HasIndex("StoreCode");
+
                     b.ToTable("StoreDevices");
+                });
+
+            modelBuilder.Entity("MudoSoft.Backend.Models.StoreManager", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("FullName")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("Phone")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<int>("StoreCode")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("StoreName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("StoreManagers");
+                });
+
+            modelBuilder.Entity("MudoSoft.Backend.Models.StoreOfflineLog", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<int?>("DurationMinutes")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime>("OfflineAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("OfflineKasaCount")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime?>("OnlineAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("StoreCode")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("StoreName")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OfflineAt");
+
+                    b.HasIndex("OnlineAt");
+
+                    b.HasIndex("StoreCode");
+
+                    b.ToTable("StoreOfflineLogs");
                 });
 
             modelBuilder.Entity("MudoSoft.Backend.Models.CommandResultRecord", b =>

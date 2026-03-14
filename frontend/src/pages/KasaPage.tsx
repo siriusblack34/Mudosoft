@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { apiClient, SqlDeviceWithStatus } from "../lib/apiClient";
 import Spinner from "../components/ui/Spinner";
-import { Monitor, RefreshCw, Search, Wifi, WifiOff, Store, Network, Activity, Info, Trash2, Cpu, Hash } from "lucide-react";
+import { Monitor, RefreshCw, Search, Wifi, WifiOff, Store, Network, Activity, Info, Trash2, Cpu, Hash, PauseCircle, PlayCircle } from "lucide-react";
 
 interface StoreRow {
     storeCode: number;
@@ -22,9 +22,11 @@ const formatOfflineDuration = (lastSeen: string | null): string => {
     return `${days} gündür offline`;
 };
 
-const DeviceDetailCard = ({ title, device, onDelete }: { title: string, device: SqlDeviceWithStatus | null, onDelete?: (deviceId: string) => void }) => {
+const DeviceDetailCard = ({ title, device, onDelete, onToggleClose }: { title: string, device: SqlDeviceWithStatus | null, onDelete?: (deviceId: string) => void, onToggleClose?: (deviceId: string, isClosed: boolean, reason?: string) => void }) => {
     const [sysInfo, setSysInfo] = useState<{ hostname: string | null; serialNumber: string | null; hostnameError?: string; serialError?: string } | null>(null);
     const [sysInfoLoading, setSysInfoLoading] = useState(false);
+    const [showCloseDialog, setShowCloseDialog] = useState(false);
+    const [closeReason, setCloseReason] = useState("");
 
     useEffect(() => {
         if (!device) return;
@@ -47,9 +49,9 @@ const DeviceDetailCard = ({ title, device, onDelete }: { title: string, device: 
     }
 
     return (
-        <div className="bg-slate-800/60 border border-slate-700 rounded-2xl p-5 flex flex-col hover:border-slate-500/50 transition-all shadow-lg shadow-black/20 hover:shadow-black/40 relative overflow-hidden group h-full">
+        <div className={`bg-slate-800/60 border rounded-2xl p-5 flex flex-col hover:border-slate-500/50 transition-all shadow-lg shadow-black/20 hover:shadow-black/40 relative overflow-hidden group h-full ${device.isTemporarilyClosed ? 'border-amber-500/30' : 'border-slate-700'}`}>
             {/* Status Beam Background */}
-            <div className={`absolute top-0 left-0 w-full h-1 ${device.isOnline ? 'bg-emerald-500' : 'bg-rose-500 shadow-[0_0_15px_rgba(225,29,72,0.8)]'}`} />
+            <div className={`absolute top-0 left-0 w-full h-1 ${device.isTemporarilyClosed ? 'bg-amber-500' : device.isOnline ? 'bg-emerald-500' : 'bg-rose-500 shadow-[0_0_15px_rgba(225,29,72,0.8)]'}`} />
 
             <div className="flex justify-between items-start mb-5 pb-4 border-b border-slate-700/50">
                 <div className="pr-2">
@@ -57,33 +59,99 @@ const DeviceDetailCard = ({ title, device, onDelete }: { title: string, device: 
                     <div className="text-xs text-slate-400 font-mono break-all line-clamp-2" title={device.deviceName}>{device.deviceName || "Bilinmiyor"}</div>
                 </div>
                 <div className="flex flex-col items-end gap-1.5 shrink-0">
-                    <div className={`flex items-center justify-center gap-1.5 px-2 py-1 rounded-md text-[10px] font-bold tracking-widest border ${device.isOnline
-                            ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
-                            : 'bg-rose-500/10 text-rose-400 border-rose-500/20'
-                        }`}>
-                        <div className={`w-1.5 h-1.5 rounded-full ${device.isOnline ? 'bg-emerald-500' : 'bg-rose-500 animate-pulse'}`} />
-                        {device.isOnline ? 'ONLINE' : 'OFFLINE'}
-                    </div>
-                    {!device.isOnline && (
+                    {device.isTemporarilyClosed ? (
+                        <div className="flex items-center justify-center gap-1.5 px-2 py-1 rounded-md text-[10px] font-bold tracking-widest border bg-amber-500/10 text-amber-400 border-amber-500/20">
+                            <PauseCircle className="w-3 h-3" />
+                            GECİCİ KAPALI
+                        </div>
+                    ) : (
+                        <div className={`flex items-center justify-center gap-1.5 px-2 py-1 rounded-md text-[10px] font-bold tracking-widest border ${device.isOnline
+                                ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                                : 'bg-rose-500/10 text-rose-400 border-rose-500/20'
+                            }`}>
+                            <div className={`w-1.5 h-1.5 rounded-full ${device.isOnline ? 'bg-emerald-500' : 'bg-rose-500 animate-pulse'}`} />
+                            {device.isOnline ? 'ONLINE' : 'OFFLINE'}
+                        </div>
+                    )}
+                    {device.isTemporarilyClosed && device.temporaryCloseReason && (
+                        <div className="text-[10px] text-amber-400/70 font-mono max-w-[140px] truncate" title={device.temporaryCloseReason}>
+                            {device.temporaryCloseReason}
+                        </div>
+                    )}
+                    {!device.isTemporarilyClosed && !device.isOnline && (
                         <div className="text-[10px] text-rose-400/70 font-mono">
                             {formatOfflineDuration(device.lastSeen)}
                         </div>
                     )}
-                    {!device.isOnline && onDelete && (
-                        <button
-                            onClick={() => {
-                                if (confirm(`"${device.deviceName}" cihazını envanterden silmek istediğinize emin misiniz?`)) {
-                                    onDelete(device.deviceId);
-                                }
-                            }}
-                            className="p-1.5 text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition-all"
-                            title="Cihazı Envanterden Kaldır"
-                        >
-                            <Trash2 className="w-4 h-4" />
-                        </button>
-                    )}
+                    <div className="flex items-center gap-1">
+                        {/* Geçici Kapalı Toggle */}
+                        {onToggleClose && (
+                            device.isTemporarilyClosed ? (
+                                <button
+                                    onClick={() => onToggleClose(device.deviceId, false)}
+                                    className="p-1.5 text-amber-500 hover:text-emerald-400 hover:bg-emerald-500/10 rounded-lg transition-all"
+                                    title="Kasayı Tekrar Aç"
+                                >
+                                    <PlayCircle className="w-4 h-4" />
+                                </button>
+                            ) : (
+                                <button
+                                    onClick={() => setShowCloseDialog(true)}
+                                    className="p-1.5 text-slate-500 hover:text-amber-400 hover:bg-amber-500/10 rounded-lg transition-all"
+                                    title="Geçici Kapalı Olarak İşaretle"
+                                >
+                                    <PauseCircle className="w-4 h-4" />
+                                </button>
+                            )
+                        )}
+                        {!device.isOnline && !device.isTemporarilyClosed && onDelete && (
+                            <button
+                                onClick={() => {
+                                    if (confirm(`"${device.deviceName}" cihazını envanterden silmek istediğinize emin misiniz?`)) {
+                                        onDelete(device.deviceId);
+                                    }
+                                }}
+                                className="p-1.5 text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition-all"
+                                title="Cihazı Envanterden Kaldır"
+                            >
+                                <Trash2 className="w-4 h-4" />
+                            </button>
+                        )}
+                    </div>
                 </div>
             </div>
+
+            {/* Geçici Kapalı Dialog */}
+            {showCloseDialog && (
+                <div className="mb-4 p-3 bg-amber-500/5 border border-amber-500/20 rounded-xl space-y-2">
+                    <div className="text-xs font-bold text-amber-400">Kapatma Sebebi (Opsiyonel)</div>
+                    <input
+                        type="text"
+                        placeholder="Tadilat, taşınma, arıza..."
+                        value={closeReason}
+                        onChange={e => setCloseReason(e.target.value)}
+                        className="w-full px-3 py-2 bg-slate-900/60 border border-slate-700 rounded-lg text-sm text-white placeholder-slate-500 focus:outline-none focus:border-amber-500/50"
+                    />
+                    <div className="flex gap-2">
+                        <button
+                            onClick={() => {
+                                onToggleClose?.(device.deviceId, true, closeReason || undefined);
+                                setShowCloseDialog(false);
+                                setCloseReason("");
+                            }}
+                            className="flex-1 px-3 py-1.5 bg-amber-500/20 text-amber-400 text-xs font-bold rounded-lg hover:bg-amber-500/30 transition-colors"
+                        >
+                            Onayla
+                        </button>
+                        <button
+                            onClick={() => { setShowCloseDialog(false); setCloseReason(""); }}
+                            className="px-3 py-1.5 bg-slate-700/50 text-slate-400 text-xs font-bold rounded-lg hover:bg-slate-700 transition-colors"
+                        >
+                            İptal
+                        </button>
+                    </div>
+                </div>
+            )}
 
             <div className="space-y-3 flex-1 flex flex-col justify-end">
                 <div className="flex items-center gap-3 p-2.5 rounded-xl bg-slate-900/50 border border-slate-700/50 hover:bg-slate-900/80 transition-colors">
@@ -167,6 +235,20 @@ const KasaPage: React.FC = () => {
         }
     };
 
+    const handleToggleClose = async (deviceId: string, isClosed: boolean, reason?: string) => {
+        try {
+            await apiClient.toggleTemporaryClose(deviceId, isClosed, reason);
+            setDevices(prev => prev.map(d =>
+                d.deviceId === deviceId
+                    ? { ...d, isTemporarilyClosed: isClosed, temporaryCloseReason: isClosed ? (reason || null) : null }
+                    : d
+            ));
+        } catch (err) {
+            alert("Durum güncellenirken hata oluştu.");
+            console.error(err);
+        }
+    };
+
     useEffect(() => {
         let isMounted = true;
 
@@ -245,8 +327,9 @@ const KasaPage: React.FC = () => {
         return storeRows.find(r => r.storeCode === selectedStoreCode) || null;
     }, [selectedStoreCode, storeRows]);
 
-    const onlineCount = devices.filter(d => d.isOnline).length;
-    const offlineCount = devices.length - onlineCount;
+    const closedCount = devices.filter(d => d.isTemporarilyClosed).length;
+    const onlineCount = devices.filter(d => d.isOnline && !d.isTemporarilyClosed).length;
+    const offlineCount = devices.length - onlineCount - closedCount;
 
     if (isLoading) {
         return (
@@ -260,6 +343,15 @@ const KasaPage: React.FC = () => {
     const Led = ({ device }: { device: SqlDeviceWithStatus | null }) => {
         if (!device) {
             return <div className="w-3.5 h-3.5 rounded-full bg-slate-700/40 mx-auto" />;
+        }
+        if (device.isTemporarilyClosed) {
+            const tooltip = `${device.calculatedIpAddress} — Geçici Kapalı${device.temporaryCloseReason ? `: ${device.temporaryCloseReason}` : ''}`;
+            return (
+                <div
+                    title={tooltip}
+                    className="w-3.5 h-3.5 rounded-full mx-auto bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.6)]"
+                />
+            );
         }
         const tooltip = device.isOnline
             ? device.calculatedIpAddress
@@ -299,7 +391,7 @@ const KasaPage: React.FC = () => {
 
             {/* Stats Cards */}
             <div className="flex gap-6">
-                <div className="flex-[0.45] bg-gradient-to-br from-emerald-900/30 to-emerald-900/10 border border-emerald-500/20 rounded-2xl p-5 flex items-center gap-5 shadow-lg shadow-emerald-900/10 relative overflow-hidden group">
+                <div className="flex-[0.3] bg-gradient-to-br from-emerald-900/30 to-emerald-900/10 border border-emerald-500/20 rounded-2xl p-5 flex items-center gap-5 shadow-lg shadow-emerald-900/10 relative overflow-hidden group">
                     <div className="absolute top-0 right-0 w-32 h-32 bg-emerald-500/5 rounded-full blur-3xl -translate-y-10 translate-x-10 group-hover:bg-emerald-500/10 transition-colors" />
                     <div className="p-4 bg-emerald-500/10 rounded-2xl relative z-10 border border-emerald-500/20">
                         <Wifi className="w-8 h-8 text-emerald-400" />
@@ -309,22 +401,34 @@ const KasaPage: React.FC = () => {
                         <div className="text-4xl font-black text-white tabular-nums">{onlineCount}</div>
                     </div>
                 </div>
-                <div className="flex-[0.45] bg-gradient-to-br from-rose-900/30 to-rose-900/10 border border-rose-500/20 rounded-2xl p-5 flex items-center gap-5 shadow-lg shadow-rose-900/10 relative overflow-hidden group">
+                <div className="flex-[0.3] bg-gradient-to-br from-rose-900/30 to-rose-900/10 border border-rose-500/20 rounded-2xl p-5 flex items-center gap-5 shadow-lg shadow-rose-900/10 relative overflow-hidden group">
                     <div className="absolute top-0 right-0 w-32 h-32 bg-rose-500/5 rounded-full blur-3xl -translate-y-10 translate-x-10 group-hover:bg-rose-500/10 transition-colors" />
                     <div className="p-4 bg-rose-500/10 rounded-2xl relative z-10 border border-rose-500/20">
                         <WifiOff className="w-8 h-8 text-rose-400" />
                     </div>
                     <div className="relative z-10">
-                        <div className="text-sm font-bold text-rose-500 tracking-wider mb-0.5">OFFLINE KASALAR</div>
+                        <div className="text-sm font-bold text-rose-500 tracking-wider mb-0.5">OFFLINE</div>
                         <div className="text-4xl font-black text-white tabular-nums">{offlineCount}</div>
                     </div>
                 </div>
+                {closedCount > 0 && (
+                    <div className="flex-[0.3] bg-gradient-to-br from-amber-900/30 to-amber-900/10 border border-amber-500/20 rounded-2xl p-5 flex items-center gap-5 shadow-lg shadow-amber-900/10 relative overflow-hidden group">
+                        <div className="absolute top-0 right-0 w-32 h-32 bg-amber-500/5 rounded-full blur-3xl -translate-y-10 translate-x-10 group-hover:bg-amber-500/10 transition-colors" />
+                        <div className="p-4 bg-amber-500/10 rounded-2xl relative z-10 border border-amber-500/20">
+                            <PauseCircle className="w-8 h-8 text-amber-400" />
+                        </div>
+                        <div className="relative z-10">
+                            <div className="text-sm font-bold text-amber-500 tracking-wider mb-0.5">GECİCİ KAPALI</div>
+                            <div className="text-4xl font-black text-white tabular-nums">{closedCount}</div>
+                        </div>
+                    </div>
+                )}
             </div>
 
             {/* Main Content Area - Split Pane */}
             <div className="flex flex-1 gap-6 min-h-0">
                 {/* Left Pane (Search + Table) */}
-                <div className="w-[500px] shrink-0 flex flex-col gap-4 bg-slate-900/60 rounded-2xl border border-slate-700/50 p-5 shadow-2xl relative overflow-hidden backdrop-blur-xl">
+                <div className="w-[420px] shrink-0 flex flex-col gap-4 bg-slate-900/60 rounded-2xl border border-slate-700/50 p-5 shadow-2xl relative overflow-hidden backdrop-blur-xl">
                     <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-amber-500/20 via-amber-500/40 to-amber-500/20" />
 
                     {/* Search */}
@@ -364,21 +468,18 @@ const KasaPage: React.FC = () => {
                                         <tr
                                             key={row.storeCode}
                                             onClick={() => setSelectedStoreCode(row.storeCode)}
-                                            className={`cursor-pointer group transition-all duration-200 ${isSelected
-                                                    ? "bg-amber-500/10 shadow-[inset_0_0_20px_rgba(245,158,11,0.05)] relative"
+                                            className={`cursor-pointer transition-colors ${isSelected
+                                                    ? "bg-amber-500/10"
                                                     : "hover:bg-slate-800/60"
                                                 }`}
                                         >
-                                            {isSelected && (
-                                                <td colSpan={0} className="absolute left-0 top-0 bottom-0 w-1 bg-amber-500 rounded-r-md shadow-[0_0_10px_rgba(245,158,11,0.5)]" />
-                                            )}
                                             <td className="px-5 py-3.5">
-                                                <span className={`text-sm font-mono font-bold ${isSelected ? 'text-amber-400' : 'text-slate-400 group-hover:text-amber-400/70'}`}>
+                                                <span className={`text-sm font-mono font-bold ${isSelected ? 'text-amber-400' : 'text-slate-400'}`}>
                                                     {row.storeCode}
                                                 </span>
                                             </td>
                                             <td className="px-5 py-3.5">
-                                                <span className={`text-sm font-medium transition-colors ${isSelected ? 'text-white' : 'text-slate-300 group-hover:text-white'}`}>
+                                                <span className={`text-sm font-medium ${isSelected ? 'text-white' : 'text-slate-300'}`}>
                                                     {row.storeName}
                                                 </span>
                                             </td>
@@ -401,7 +502,7 @@ const KasaPage: React.FC = () => {
                 </div>
 
                 {/* Right Pane (Detail View) */}
-                <div className="flex-1 bg-slate-900/60 rounded-2xl border border-slate-700/50 p-8 flex flex-col overflow-y-auto shadow-2xl relative backdrop-blur-xl">
+                <div className="flex-1 bg-slate-900/60 rounded-2xl border border-slate-700/50 p-6 flex flex-col overflow-y-auto shadow-2xl relative backdrop-blur-xl">
                     {selectedStore ? (
                         <div className="animate-in fade-in slide-in-from-bottom-4 duration-300 relative z-10 flex flex-col h-full">
                             <div className="flex items-start justify-between mb-8 pb-6 border-b border-slate-700/50">
@@ -427,12 +528,18 @@ const KasaPage: React.FC = () => {
                                 </div>
                             </div>
 
-                            <div className="flex-1 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 auto-rows-max">
+                            <div className={`flex-1 grid gap-6 auto-rows-max ${
+                                [selectedStore.kasa1, selectedStore.kasa2, selectedStore.kasa3].filter(Boolean).length === 1
+                                    ? 'grid-cols-1 max-w-md'
+                                    : [selectedStore.kasa1, selectedStore.kasa2, selectedStore.kasa3].filter(Boolean).length === 2
+                                        ? 'grid-cols-1 md:grid-cols-2'
+                                        : 'grid-cols-1 md:grid-cols-2 xl:grid-cols-3'
+                            }`}>
                                 {selectedStore.kasa1 || selectedStore.kasa2 || selectedStore.kasa3 ? (
                                     <>
-                                        {selectedStore.kasa1 && <DeviceDetailCard title="KASA 1" device={selectedStore.kasa1} onDelete={handleDeleteDevice} />}
-                                        {selectedStore.kasa2 && <DeviceDetailCard title="KASA 2" device={selectedStore.kasa2} onDelete={handleDeleteDevice} />}
-                                        {selectedStore.kasa3 && <DeviceDetailCard title="KASA 3" device={selectedStore.kasa3} onDelete={handleDeleteDevice} />}
+                                        {selectedStore.kasa1 && <DeviceDetailCard title="KASA 1" device={selectedStore.kasa1} onDelete={handleDeleteDevice} onToggleClose={handleToggleClose} />}
+                                        {selectedStore.kasa2 && <DeviceDetailCard title="KASA 2" device={selectedStore.kasa2} onDelete={handleDeleteDevice} onToggleClose={handleToggleClose} />}
+                                        {selectedStore.kasa3 && <DeviceDetailCard title="KASA 3" device={selectedStore.kasa3} onDelete={handleDeleteDevice} onToggleClose={handleToggleClose} />}
                                     </>
                                 ) : (
                                     <div className="col-span-full flex flex-col items-center justify-center py-20 text-slate-500">

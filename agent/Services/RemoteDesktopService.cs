@@ -110,7 +110,7 @@ public class RemoteDesktopService : BackgroundService
         {
             try
             {
-                _inputSimulator.HandleInput(input);
+                _inputSimulator.HandleInput(input, GetScreenBounds());
             }
             catch (Exception ex)
             {

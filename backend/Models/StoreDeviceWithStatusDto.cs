@@ -10,5 +10,7 @@ namespace MudoSoft.Backend.Models
         public string CalculatedIpAddress { get; set; } = "";
         public bool IsOnline { get; set; }
         public DateTime? LastSeen { get; set; }
+        public bool IsTemporarilyClosed { get; set; }
+        public string? TemporaryCloseReason { get; set; }
     }
 }

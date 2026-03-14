@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using MudoSoft.Backend.Data;
@@ -6,6 +7,7 @@ using MudoSoft.Backend.Models;
 namespace MudoSoft.Backend.Controllers
 {
     [ApiController]
+    [Authorize]
     [Route("api/[controller]")]
     public class StoreManagersController : ControllerBase
     {

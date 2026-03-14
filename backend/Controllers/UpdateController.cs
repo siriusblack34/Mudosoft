@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using MudoSoft.Backend.Services;
@@ -6,6 +7,7 @@ using System.IO.Compression;
 namespace MudoSoft.Backend.Controllers;
 
 [ApiController]
+[Authorize]
 [Route("api/updates")]
 public class UpdateController : ControllerBase
 {
@@ -106,6 +108,7 @@ public class UpdateController : ControllerBase
     /// Get latest version info
     /// GET /api/updates/latest
     /// </summary>
+    [AllowAnonymous] // Agents need to check for updates without JWT
     [HttpGet("latest")]
     public async Task<IActionResult> GetLatestVersion()
     {
@@ -122,6 +125,7 @@ public class UpdateController : ControllerBase
     /// Download latest agent package
     /// GET /api/updates/download
     /// </summary>
+    [AllowAnonymous] // Agents download updates without JWT
     [HttpGet("download")]
     public async Task<IActionResult> DownloadLatest()
     {
@@ -153,6 +157,7 @@ public class UpdateController : ControllerBase
     /// Download specific version
     /// GET /api/updates/download/{version}
     /// </summary>
+    [AllowAnonymous] // Agents download updates without JWT
     [HttpGet("download/{version}")]
     public async Task<IActionResult> DownloadVersion(string version)
     {
@@ -210,6 +215,7 @@ public class UpdateController : ControllerBase
     /// Serves a batch updater script that agents download and execute
     /// GET /api/updates/updater-cmd?backendUrl=...
     /// </summary>
+    [AllowAnonymous] // Agents download updater script without JWT
     [HttpGet("updater-cmd")]
     public IActionResult GetUpdaterCmd([FromQuery] string? backendUrl)
     {
@@ -382,7 +388,7 @@ echo [%date% %time%] === UPDATE COMPLETE === >> %LOG%
     {
         if (_isBuilding) return BadRequest("Build already in progress");
 
-        var projectRoot = @"c:\Projects\mudosoft";
+        var projectRoot = @"E:\Mudosoft";
         var csprojPath = Path.Combine(projectRoot, "agent", "MudoSoft.Agent.csproj");
 
         if (!System.IO.File.Exists(csprojPath))

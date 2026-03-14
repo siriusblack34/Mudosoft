@@ -30,14 +30,19 @@ public class AuthController : ControllerBase
             return BadRequest(new { error = "Username and password are required" });
         }
 
-        // TODO: Gerçek kullanıcı doğrulaması yapılmalı (database'den)
-        // 🔒 SECURITY: Credentials MUST be set via config or environment
-        var validUsername = _configuration["Jwt:AdminUsername"] 
-            ?? Environment.GetEnvironmentVariable("ADMIN_USERNAME")
+        // 🔒 SECURITY: Environment variables take priority over appsettings placeholders
+        var validUsername = Environment.GetEnvironmentVariable("ADMIN_USERNAME")
+            ?? _configuration["Jwt:AdminUsername"]
             ?? throw new InvalidOperationException("ADMIN_USERNAME is not configured");
-        var validPassword = _configuration["Jwt:AdminPassword"] 
-            ?? Environment.GetEnvironmentVariable("ADMIN_PASSWORD")
+        var validPassword = Environment.GetEnvironmentVariable("ADMIN_PASSWORD")
+            ?? _configuration["Jwt:AdminPassword"]
             ?? throw new InvalidOperationException("ADMIN_PASSWORD is not configured");
+
+        // Skip placeholder values from appsettings (e.g. "${ADMIN_USERNAME}")
+        if (validUsername.StartsWith("${")) validUsername = Environment.GetEnvironmentVariable("ADMIN_USERNAME")
+            ?? throw new InvalidOperationException("ADMIN_USERNAME env var is not set");
+        if (validPassword.StartsWith("${")) validPassword = Environment.GetEnvironmentVariable("ADMIN_PASSWORD")
+            ?? throw new InvalidOperationException("ADMIN_PASSWORD env var is not set");
 
         if (request.Username != validUsername || request.Password != validPassword)
         {
@@ -68,10 +73,12 @@ public class AuthController : ControllerBase
             return BadRequest(new { error = "DeviceId and ApiKey are required" });
         }
 
-        // 🔒 SECURITY: Agent API key MUST be set via config or environment
-        var validApiKey = _configuration["Jwt:AgentApiKey"] 
-            ?? Environment.GetEnvironmentVariable("AGENT_API_KEY")
+        // 🔒 SECURITY: Environment variables take priority over appsettings placeholders
+        var validApiKey = Environment.GetEnvironmentVariable("AGENT_API_KEY")
+            ?? _configuration["Jwt:AgentApiKey"]
             ?? throw new InvalidOperationException("AGENT_API_KEY is not configured");
+        if (validApiKey.StartsWith("${")) validApiKey = Environment.GetEnvironmentVariable("AGENT_API_KEY")
+            ?? throw new InvalidOperationException("AGENT_API_KEY env var is not set");
 
         if (request.ApiKey != validApiKey)
         {
@@ -116,9 +123,11 @@ public class AuthController : ControllerBase
 
     private string GenerateJwtToken(string username)
     {
-        var key = _configuration["Jwt:Key"] 
-            ?? Environment.GetEnvironmentVariable("JWT_SECRET_KEY")
+        var key = Environment.GetEnvironmentVariable("JWT_SECRET_KEY")
+            ?? _configuration["Jwt:Key"]
             ?? throw new InvalidOperationException("JWT_SECRET_KEY is not configured");
+        if (key.StartsWith("${")) key = Environment.GetEnvironmentVariable("JWT_SECRET_KEY")
+            ?? throw new InvalidOperationException("JWT_SECRET_KEY env var is not set");
         var issuer = _configuration["Jwt:Issuer"] ?? "MudoSoft";
         var audience = _configuration["Jwt:Audience"] ?? "MudoSoftUsers";
 
@@ -146,9 +155,11 @@ public class AuthController : ControllerBase
 
     private string GenerateAgentToken(string deviceId)
     {
-        var key = _configuration["Jwt:Key"] 
-            ?? Environment.GetEnvironmentVariable("JWT_SECRET_KEY")
+        var key = Environment.GetEnvironmentVariable("JWT_SECRET_KEY")
+            ?? _configuration["Jwt:Key"]
             ?? throw new InvalidOperationException("JWT_SECRET_KEY is not configured");
+        if (key.StartsWith("${")) key = Environment.GetEnvironmentVariable("JWT_SECRET_KEY")
+            ?? throw new InvalidOperationException("JWT_SECRET_KEY env var is not set");
         var issuer = _configuration["Jwt:Issuer"] ?? "MudoSoft";
         var audience = _configuration["Jwt:Audience"] ?? "MudoSoftAgents";
 

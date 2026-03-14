@@ -1,25 +1,11 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { apiClient } from "../lib/apiClient";
 import Spinner from "../components/ui/Spinner";
 import {
     Trash2, RefreshCw, Search, CheckCircle, AlertTriangle, WifiOff,
     Database, Check, Loader2, XCircle, FileText
 } from "lucide-react";
-
-interface StockStatus {
-    deviceId: string;
-    storeCode: number;
-    storeName: string;
-    ipAddress: string;
-    isOnline: boolean;
-    plu0: number;
-    plu10: number;
-    plu20: number;
-    plu30: number; // > 30
-    total: number;
-    status: "clean" | "dirty" | "error" | "offline" | "unknown";
-    errorMessage?: string;
-}
+import type { StockStatus } from "../contexts/PrefetchContext";
 
 export default function StockCleanupPage() {
     const [searchTerm, setSearchTerm] = useState("");
@@ -27,13 +13,16 @@ export default function StockCleanupPage() {
     const [statusFilter, setStatusFilter] = useState<"all" | "dirty" | "offline" | "error">("all");
     const [data, setData] = useState<StockStatus[] | null>(null);
     const [isFetching, setIsFetching] = useState(false);
+    const [lastFetched, setLastFetched] = useState<Date | null>(null);
 
     // Veri Çekme (Tümünü Kontrol Et)
     const fetchData = async () => {
         setIsFetching(true);
         try {
-            const result = await apiClient.post<StockStatus[]>("/api/stock-cleanup/check-all", {});
+            const result = await apiClient.post<StockStatus[]>("/api/stock-cleanup/check-all", {}, 120_000);
             setData(result);
+            const now = new Date();
+            setLastFetched(now);
         } catch (error) {
             console.error("Fetch error:", error);
         } finally {
@@ -48,7 +37,6 @@ export default function StockCleanupPage() {
         setCleaningDevices((prev) => new Set(prev).add(device.deviceId));
         try {
             await apiClient.post(`/api/stock-cleanup/clean/${device.deviceId}`, {});
-            // Başarılı olursa listeyi güncelle
             if (data) {
                 const updatedData = data.map(d =>
                     d.deviceId === device.deviceId
@@ -56,8 +44,6 @@ export default function StockCleanupPage() {
                         : d
                 );
                 setData(updatedData);
-                // Basit bir bildirim (Toast olmadığı için alert)
-                // alert(`${device.storeName} temizlendi.`);
             }
         } catch (error) {
             console.error("Clean error:", error);
@@ -75,15 +61,12 @@ export default function StockCleanupPage() {
     const handleCleanAll = async () => {
         const confirmMsg = "DİKKAT! Tüm mağazaların POS_STOCK_TRANSFER tablosu SİLİNECEK (Truncate).\n\nBu işlem geri alınamaz!\nDevam etmek istiyor musunuz?";
         if (!window.confirm(confirmMsg)) return;
-
-        // İkinci onay
         if (!window.confirm("Gerçekten EMİN MİSİNİZ? Veriler silinecek!")) return;
 
         setIsFetching(true);
         try {
             await apiClient.post("/api/stock-cleanup/clean-all", {});
             alert("Tüm mağazalar için temizleme isteği gönderildi.\nSonuçları görmek için tekrar kontrol ediniz.");
-            // İşlem bitince otomatik yenile
             fetchData();
         } catch (error) {
             console.error("Clean All error:", error);
@@ -128,9 +111,11 @@ export default function StockCleanupPage() {
                     </p>
                 </div>
                 <div className="flex gap-4 items-center">
-                    <div className="text-xs text-slate-400 font-mono hidden md:block">
-                        {isFetching ? "İşlem yapılıyor..." : data ? `Son işlem: ${new Date().toLocaleTimeString()}` : ""}
-                    </div>
+                    {lastFetched ? (
+                        <div className="text-xs text-slate-400 font-mono hidden md:block">
+                            Son kontrol: {lastFetched.toLocaleTimeString()}
+                        </div>
+                    ) : null}
 
                     <button
                         onClick={handleCleanAll}
@@ -221,13 +206,11 @@ export default function StockCleanupPage() {
                                 <th className="px-4 py-3 text-xs font-semibold text-slate-400 uppercase tracking-widest">Mağaza</th>
                                 <th className="px-4 py-3 text-center text-xs font-semibold text-slate-400 uppercase tracking-widest w-32">IP Adresi</th>
                                 <th className="px-4 py-3 text-center text-xs font-semibold text-slate-400 uppercase tracking-widest w-24">Durum</th>
-
                                 <th className="px-3 py-3 text-center text-xs font-semibold text-blue-400 border-b border-white/5 w-20">PLU 0</th>
                                 <th className="px-3 py-3 text-center text-xs font-semibold text-cyan-400 border-b border-white/5 w-20">PLU 10</th>
                                 <th className="px-3 py-3 text-center text-xs font-semibold text-teal-400 border-b border-white/5 w-20">PLU 20</th>
                                 <th className="px-3 py-3 text-center text-xs font-semibold text-purple-400 border-b border-white/5 w-20">PLU {'>'} 30</th>
                                 <th className="px-3 py-3 text-center text-xs font-semibold text-amber-500 border-b border-white/5 w-24 bg-amber-500/10">Toplam</th>
-
                                 <th className="px-4 py-3 text-center text-xs font-semibold text-slate-400 uppercase tracking-widest w-24">İşlem</th>
                             </tr>
                         </thead>
@@ -288,14 +271,11 @@ export default function StockCleanupPage() {
                                                 </span>
                                             )}
                                         </td>
-
-                                        {/* PLU Sayıları */}
                                         <td className="px-3 py-3 text-center text-xs font-mono text-blue-400 border-l border-white/5">{d.status === "offline" ? '-' : d.plu0}</td>
                                         <td className="px-3 py-3 text-center text-xs font-mono text-cyan-400">{d.status === "offline" ? '-' : d.plu10}</td>
                                         <td className="px-3 py-3 text-center text-xs font-mono text-teal-400">{d.status === "offline" ? '-' : d.plu20}</td>
                                         <td className="px-3 py-3 text-center text-xs font-mono text-purple-400">{d.status === "offline" ? '-' : d.plu30}</td>
                                         <td className="px-3 py-3 text-center text-xs font-mono text-amber-400 font-bold bg-amber-500/10 border-l border-r border-white/5">{d.status === "offline" ? '-' : d.total}</td>
-
                                         <td className="px-4 py-3 text-center">
                                             <button
                                                 disabled={d.status !== "dirty" && d.status !== "clean"}

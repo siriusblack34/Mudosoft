@@ -6,10 +6,16 @@ interface Props {
 }
 
 const AuthGuard: React.FC<Props> = ({ children }) => {
-    // Basit Auth Kontrolü (Mock)
-    const isAuthenticated = localStorage.getItem('isAuthenticated') === 'true';
+    const token = localStorage.getItem('token');
+    const expiresAt = localStorage.getItem('tokenExpiresAt');
+
+    // Check token exists and is not expired
+    const isAuthenticated = !!token && (!expiresAt || new Date(expiresAt) > new Date());
 
     if (!isAuthenticated) {
+        localStorage.removeItem('token');
+        localStorage.removeItem('tokenExpiresAt');
+        localStorage.removeItem('isAuthenticated');
         return <Navigate to="/login" replace />;
     }
 

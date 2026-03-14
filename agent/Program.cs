@@ -3,8 +3,9 @@ using Microsoft.Extensions.DependencyInjection;
 using Mudosoft.Agent;
 using Mudosoft.Agent.Models;
 using Mudosoft.Agent.Services;
-using Mudosoft.Agent.Interfaces; 
-using System.Diagnostics; 
+using Mudosoft.Agent.Interfaces;
+using Mudosoft.Agent.Services.Collectors;
+using System.Diagnostics;
 using System.Security.Principal;
 using System.Linq; 
 using System; 
@@ -111,9 +112,25 @@ var hostBuilder = Host.CreateDefaultBuilder(args)
         
         // Tray Communication - Named Pipe Server
         services.AddHostedService<PipeServer>();
-        
+
         // 8. Telemetry Service (Real-time Dashboard)
         services.AddHostedService<TelemetryService>();
+
+        // 9. Collector System
+        services.Configure<CollectorsConfig>(hostContext.Configuration.GetSection("Agent:Collectors"));
+        services.AddSingleton<CollectorReportSender>();
+        services.AddSingleton<ICollector, PortMonitorCollector>();
+        services.AddSingleton<ICollector, ProcessUsageCollector>();
+        services.AddSingleton<ICollector, ServiceMonitorCollector>();
+        services.AddSingleton<ICollector, EventLogCollector>();
+        services.AddSingleton<ICollector, DiskHealthCollector>();
+        services.AddSingleton<ICollector, WindowsUpdateCollector>();
+        services.AddSingleton<ICollector, TemperatureCollector>();
+        services.AddSingleton<ICollector, UpsStatusCollector>();
+        services.AddSingleton<ICollector, NetworkSpeedCollector>();
+        services.AddSingleton<ICollector, UptimeReportCollector>();
+        services.AddSingleton<ICollector, ScheduledCleanupCollector>();
+        services.AddHostedService<CollectorOrchestrator>();
     });
 
 var host = hostBuilder.Build();

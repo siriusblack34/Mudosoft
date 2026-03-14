@@ -3,7 +3,7 @@ import { NavLink } from 'react-router-dom';
 import {
   LayoutDashboard, Monitor, ShoppingCart, Users, Database,
   Inbox, Trash2, FileBarChart2, HardDrive, StickyNote,
-  RefreshCw, Settings, History, LogOut, ChevronRight,
+  RefreshCw, Settings, History, LogOut, ChevronRight, WifiOff, Printer,
 } from 'lucide-react';
 
 interface NavItem {
@@ -25,6 +25,8 @@ const navGroups: NavGroup[] = [
       { to: '/',        label: 'Kontrol Paneli', icon: <LayoutDashboard className="w-4 h-4" />, exact: true },
       { to: '/devices', label: 'Cihazlar',        icon: <Monitor className="w-4 h-4" /> },
       { to: '/kasa',    label: 'Kasalar',          icon: <ShoppingCart className="w-4 h-4" /> },
+      { to: '/offline-logs', label: 'Offline Geçmişi', icon: <WifiOff className="w-4 h-4" /> },
+      { to: '/fiscal-errors', label: 'Mali Hata Kodları', icon: <Printer className="w-4 h-4" /> },
     ],
   },
   {
