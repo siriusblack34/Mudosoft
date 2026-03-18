@@ -311,6 +311,7 @@ const InboxCleanupPage: React.FC = () => {
                                 <tr className="bg-white/5 border-b border-white/5">
                                     <th className="px-4 py-3 text-left text-xs font-semibold text-slate-400 uppercase tracking-widest w-16">Kod</th>
                                     <th className="px-4 py-3 text-left text-xs font-semibold text-slate-400 uppercase tracking-widest">Mağaza</th>
+                                    <th className="px-4 py-3 text-center text-xs font-semibold text-slate-400 uppercase tracking-widest w-20">Tip</th>
                                     <th className="px-4 py-3 text-left text-xs font-semibold text-slate-400 uppercase tracking-widest w-32">IP Adresi</th>
                                     <th className="px-4 py-3 text-center text-xs font-semibold text-slate-400 uppercase tracking-widest w-24">Durum</th>
                                     <th className="px-3 py-3 text-center text-xs font-semibold text-orange-400 border-b border-white/5 w-14 lg:w-16">RDY</th>
@@ -334,6 +335,13 @@ const InboxCleanupPage: React.FC = () => {
                                         </td>
                                         <td className="px-3 py-1.5 border-b border-slate-800">
                                             <span className="text-white text-xs">{d.storeName}</span>
+                                        </td>
+                                        <td className="px-3 py-1.5 border-b border-slate-800 text-center">
+                                            {(d.deviceType ?? '').toLowerCase() === 'gecici' ? (
+                                                <span className="px-1.5 py-px rounded text-[10px] font-bold bg-orange-500/15 text-orange-400 border border-orange-500/25">GEÇİCİ</span>
+                                            ) : (
+                                                <span className="px-1.5 py-px rounded text-[10px] font-bold bg-sky-500/15 text-sky-400 border border-sky-500/25">PC</span>
+                                            )}
                                         </td>
                                         <td className="px-3 py-1.5 border-b border-slate-800">
                                             <span className="text-slate-400 text-xs font-mono">{d.ipAddress}</span>

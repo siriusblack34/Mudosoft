@@ -560,6 +560,10 @@ echo [%date% %time%] Force killing agent... >> ""{logPath}""
 taskkill /F /IM MudoSoft.Agent.exe 2>> ""{logPath}""
 timeout /t 2 /nobreak > nul
 
+REM Remove appsettings from extracted to preserve machine-specific config
+if exist ""{extractDir}\appsettings.json"" del /F /Q ""{extractDir}\appsettings.json""
+if exist ""{extractDir}\appsettings.Development.json"" del /F /Q ""{extractDir}\appsettings.Development.json""
+
 REM Copy files
 echo [%date% %time%] Copying files... >> ""{logPath}""
 xcopy /E /Y /Q ""{extractDir}\*"" ""{currentDir}\"" >> ""{logPath}"" 2>&1
@@ -575,21 +579,12 @@ echo [%date% %time%] Update complete! >> ""{logPath}""
             File.WriteAllText(batchPath, batchContent);
             _logger.LogInformation("Batch file created at: {Path}", batchPath);
 
-            // Start the batch file in a detached process
-            // UseShellExecute=false is required for Session 0 (Windows Service) especially on Windows 7
-            var psi = new ProcessStartInfo
-            {
-                FileName = "cmd.exe",
-                Arguments = $"/C \"{batchPath}\"",
-                UseShellExecute = false,
-                CreateNoWindow = true,
-                RedirectStandardOutput = false,
-                RedirectStandardError = false,
-                WindowStyle = ProcessWindowStyle.Hidden
-            };
-            
-            var process = Process.Start(psi);
-            _logger.LogInformation("Update process started with PID: {PID}", process?.Id);
+            // Start the batch file DETACHED from service Job Object
+            // On W11, services kill all child processes when stopped.
+            // CREATE_BREAKAWAY_FROM_JOB (0x01000000) breaks out of the Job Object.
+            _logger.LogInformation("Starting updater with CREATE_BREAKAWAY_FROM_JOB...");
+            var pid = StartDetachedProcess("cmd.exe", $"/C \"{batchPath}\"");
+            _logger.LogInformation("Update process started with PID: {PID}", pid);
 
             result.Success = true;
             result.Output = $"Update initiated. Downloaded {downloadedBytes / 1024}KB. Agent will restart in ~10 seconds.";
@@ -602,6 +597,105 @@ echo [%date% %time%] Update complete! >> ""{logPath}""
         }
 
         return result;
+    }
+
+    /// <summary>
+    /// Starts a process detached from the service Job Object using CREATE_BREAKAWAY_FROM_JOB.
+    /// This ensures the child process survives when the service is stopped (critical for W11).
+    /// </summary>
+    private int StartDetachedProcess(string fileName, string arguments)
+    {
+        const uint CREATE_BREAKAWAY_FROM_JOB = 0x01000000;
+        const uint CREATE_NO_WINDOW = 0x08000000;
+
+        var si = new NativeMethods.STARTUPINFO();
+        si.cb = System.Runtime.InteropServices.Marshal.SizeOf(si);
+
+        var pi = new NativeMethods.PROCESS_INFORMATION();
+
+        var commandLine = $"{fileName} {arguments}";
+
+        bool success = NativeMethods.CreateProcess(
+            null,
+            commandLine,
+            IntPtr.Zero,
+            IntPtr.Zero,
+            false,
+            CREATE_BREAKAWAY_FROM_JOB | CREATE_NO_WINDOW,
+            IntPtr.Zero,
+            null,
+            ref si,
+            out pi
+        );
+
+        if (!success)
+        {
+            var error = System.Runtime.InteropServices.Marshal.GetLastWin32Error();
+            _logger.LogWarning("CREATE_BREAKAWAY_FROM_JOB failed (error {Error}), falling back to normal process start", error);
+
+            // Fallback to normal process start (works on W7 and when Job Object allows it)
+            var psi = new ProcessStartInfo
+            {
+                FileName = fileName,
+                Arguments = arguments,
+                UseShellExecute = false,
+                CreateNoWindow = true
+            };
+            var proc = Process.Start(psi);
+            return proc?.Id ?? 0;
+        }
+
+        var pid = pi.dwProcessId;
+        // Close handles
+        NativeMethods.CloseHandle(pi.hProcess);
+        NativeMethods.CloseHandle(pi.hThread);
+        return pid;
+    }
+
+    private static class NativeMethods
+    {
+        [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+        public struct STARTUPINFO
+        {
+            public int cb;
+            public string? lpReserved;
+            public string? lpDesktop;
+            public string? lpTitle;
+            public int dwX, dwY, dwXSize, dwYSize;
+            public int dwXCountChars, dwYCountChars;
+            public int dwFillAttribute;
+            public int dwFlags;
+            public short wShowWindow;
+            public short cbReserved2;
+            public IntPtr lpReserved2;
+            public IntPtr hStdInput, hStdOutput, hStdError;
+        }
+
+        [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+        public struct PROCESS_INFORMATION
+        {
+            public IntPtr hProcess;
+            public IntPtr hThread;
+            public int dwProcessId;
+            public int dwThreadId;
+        }
+
+        [System.Runtime.InteropServices.DllImport("kernel32.dll", SetLastError = true, CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
+        public static extern bool CreateProcess(
+            string? lpApplicationName,
+            string lpCommandLine,
+            IntPtr lpProcessAttributes,
+            IntPtr lpThreadAttributes,
+            bool bInheritHandles,
+            uint dwCreationFlags,
+            IntPtr lpEnvironment,
+            string? lpCurrentDirectory,
+            ref STARTUPINFO lpStartupInfo,
+            out PROCESS_INFORMATION lpProcessInformation
+        );
+
+        [System.Runtime.InteropServices.DllImport("kernel32.dll", SetLastError = true)]
+        public static extern bool CloseHandle(IntPtr hObject);
     }
 
     private class UpdatePayload

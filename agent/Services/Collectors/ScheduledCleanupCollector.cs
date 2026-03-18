@@ -72,6 +72,7 @@ public sealed class ScheduledCleanupCollector : ICollector
         var cutoff = DateTime.UtcNow.AddDays(-maxAgeDays);
         long totalFreed = 0;
         int deleted = 0;
+        int folderDeleted = 0;
 
         try
         {
@@ -89,9 +90,10 @@ public sealed class ScheduledCleanupCollector : ICollector
                         deleted++;
                     }
                 }
-                catch
+                catch (Exception ex)
                 {
-                    // Kilitli veya erişilemeyen dosyaları atla
+                    // Kilitli veya erişilemeyen dosyaları kaydet
+                    dto.Errors.Add($"{Path.GetFileName(file)}: {ex.Message}");
                 }
             }
 
@@ -107,16 +109,24 @@ public sealed class ScheduledCleanupCollector : ICollector
                         var files = dirInfo.GetFiles("*", SearchOption.AllDirectories);
                         if (files.All(f => f.LastWriteTimeUtc < cutoff))
                         {
-                            var dirSize = files.Sum(f => f.Length);
-                            dirInfo.Delete(true);
-                            totalFreed += dirSize;
-                            deleted += files.Length;
+                            try
+                            {
+                                var dirSize = files.Sum(f => f.Length);
+                                dirInfo.Delete(true);
+                                totalFreed += dirSize;
+                                deleted += files.Length;
+                                folderDeleted++;
+                            }
+                            catch (Exception ex)
+                            {
+                                dto.Errors.Add($"{dirInfo.Name}: {ex.Message}");
+                            }
                         }
                     }
                 }
-                catch
+                catch (Exception ex)
                 {
-                    // Erişilemeyen klasörleri atla
+                    dto.Errors.Add($"{Path.GetFileName(dir)}: {ex.Message}");
                 }
             }
         }
@@ -127,6 +137,7 @@ public sealed class ScheduledCleanupCollector : ICollector
         }
 
         dto.FilesDeleted = deleted;
+        dto.FolderDeleted = folderDeleted;
         dto.FreedMB = Math.Round(totalFreed / (1024.0 * 1024.0), 2);
         return dto;
     }

@@ -478,26 +478,28 @@ if (app.Environment.IsDevelopment())
             Console.WriteLine("✅ Store 196 IP updated to 192.168.196.5");
         }
 
-        // =====================================================
-        // MAĞAZA 139 DÜZELTMESİ - Pendik Marina Home, sadece Kasa-1
-        // =====================================================
-        var store139Devices = db.StoreDevices.Where(d => d.StoreCode == 139).ToList();
-        foreach (var d in store139Devices)
-        {
-            // İsmi düzelt
-            if (d.StoreName != "Pendik Marina Home")
-            {
-                d.StoreName = "Pendik Marina Home";
-            }
-        }
-        // K2 ve K3 varsa sil (sadece K1 kalacak)
-        var store139ToRemove = store139Devices.Where(d => d.DeviceType == "Kasa-2" || d.DeviceType == "Kasa-3" || d.DeviceType == "PC").ToList();
-        if (store139ToRemove.Any())
-        {
-            db.StoreDevices.RemoveRange(store139ToRemove);
-            Console.WriteLine($"✅ Store 139 cleaned: removed {store139ToRemove.Count} extra devices, kept only Kasa-1");
-        }
         db.SaveChanges();
+    }
+
+    // Seed default admin user if no users exist
+    if (!db.Users.Any())
+    {
+        var adminUsername = Environment.GetEnvironmentVariable("ADMIN_USERNAME") ?? "admin";
+        var adminPassword = Environment.GetEnvironmentVariable("ADMIN_PASSWORD") ?? "admin";
+        if (adminUsername.StartsWith("${")) adminUsername = "admin";
+        if (adminPassword.StartsWith("${")) adminPassword = "admin";
+
+        db.Users.Add(new MudoSoft.Backend.Models.User
+        {
+            Username = adminUsername.ToLower(),
+            PasswordHash = BCrypt.Net.BCrypt.HashPassword(adminPassword),
+            Role = "Admin",
+            FullName = "Administrator",
+            IsActive = true,
+            CreatedAt = DateTime.UtcNow
+        });
+        db.SaveChanges();
+        Console.WriteLine($"✅ Default admin user created: {adminUsername}");
     }
 }
 

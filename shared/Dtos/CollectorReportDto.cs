@@ -128,6 +128,8 @@ public class CleanupResultDto
 {
     public string TargetPath { get; set; } = "";
     public int FilesDeleted { get; set; }
+    public int FolderDeleted { get; set; }
     public double FreedMB { get; set; }
     public string? Error { get; set; }
+    public List<string> Errors { get; set; } = new();  // Per-file errors
 }

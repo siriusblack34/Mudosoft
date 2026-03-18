@@ -6,6 +6,17 @@ import { Check, Terminal, Play, RotateCcw, Monitor, Server, XCircle, AlertCircle
 
 type FilterType = "ALL" | "PC" | "POS" | "GECICI";
 
+const DeviceTypeBadge: React.FC<{ type: string }> = ({ type }) => {
+    const t = type.toLowerCase();
+    if (t === 'pc')
+        return <span className="px-1.5 py-px rounded text-[10px] font-bold bg-sky-500/15 text-sky-400 border border-sky-500/25">PC</span>;
+    if (t === 'gecici')
+        return <span className="px-1.5 py-px rounded text-[10px] font-bold bg-orange-500/15 text-orange-400 border border-orange-500/25">GEÇİCİ</span>;
+    if (t.includes('kasa'))
+        return <span className="px-1.5 py-px rounded text-[10px] font-bold bg-amber-500/15 text-amber-400 border border-amber-500/25">{type}</span>;
+    return <span className="px-1.5 py-px rounded text-[10px] font-bold bg-ms-border text-ms-text-muted">{type}</span>;
+};
+
 interface QueryResult {
     deviceId: string;
     storeName: string;
@@ -126,8 +137,10 @@ const SQLQueryPage: React.FC = () => {
     };
 
     // =====================================================
-    // BULK EXECUTION
+    // BULK EXECUTION (concurrency-limited)
     // =====================================================
+    const MAX_CONCURRENCY = 10;
+
     const handleExecute = async () => {
         if (selectedDeviceIds.size === 0) return;
         setIsExecuting(true);
@@ -135,7 +148,7 @@ const SQLQueryPage: React.FC = () => {
 
         const targets = devices.filter(d => selectedDeviceIds.has(d.deviceId));
 
-        // Initialize results as "running"
+        // Initialize results as "pending"
         const initialResults: QueryResult[] = targets.map(d => ({
             deviceId: d.deviceId,
             storeName: `[${d.storeCode}] ${d.storeName}`,
@@ -143,26 +156,38 @@ const SQLQueryPage: React.FC = () => {
         }));
         setResults(initialResults);
 
-        // Execute sequentially or in parallel? Parallel for speed.
-        const promises = targets.map(async (device) => {
-            try {
-                const res = await apiClient.runSqlQuery(device.deviceId, sqlQuery);
-                setResults(prev => prev.map(r =>
-                    r.deviceId === device.deviceId
-                        ? { ...r, status: "success", data: res }
-                        : r
-                ));
-            } catch (err: any) {
-                setResults(prev => prev.map(r =>
-                    r.deviceId === device.deviceId
-                        ? { ...r, status: "error", error: err.message || "Query failed" }
-                        : r
-                ));
+        // Concurrency-limited execution to avoid browser connection saturation
+        let idx = 0;
+        const runNext = async (): Promise<void> => {
+            while (idx < targets.length) {
+                const current = idx++;
+                const device = targets[current];
+                try {
+                    const res = await apiClient.runSqlQuery(device.deviceId, sqlQuery);
+                    setResults(prev => prev.map(r =>
+                        r.deviceId === device.deviceId
+                            ? { ...r, status: "success", data: res }
+                            : r
+                    ));
+                } catch (err: any) {
+                    setResults(prev => prev.map(r =>
+                        r.deviceId === device.deviceId
+                            ? { ...r, status: "error", error: err.message || "Query failed" }
+                            : r
+                    ));
+                }
             }
-        });
+        };
 
-        await Promise.all(promises);
+        const workers = Array.from({ length: Math.min(MAX_CONCURRENCY, targets.length) }, () => runNext());
+        await Promise.all(workers);
         setIsExecuting(false);
+    };
+
+    // Select only devices that returned errors
+    const selectFailed = () => {
+        const failedIds = new Set(results.filter(r => r.status === "error").map(r => r.deviceId));
+        setSelectedDeviceIds(failedIds);
     };
 
     if (isLoading) {
@@ -291,6 +316,11 @@ const SQLQueryPage: React.FC = () => {
                             <span>{selectedCount} selected</span>
                             <div className="flex gap-2">
                                 <button onClick={selectAllDisplayed} className="hover:text-white">Select Visible</button>
+                                {results.some(r => r.status === "error") && (
+                                    <button onClick={selectFailed} className="hover:text-rose-400 text-rose-500 font-medium">
+                                        Select Failed ({results.filter(r => r.status === "error").length})
+                                    </button>
+                                )}
                                 <button onClick={deselectAll} className="hover:text-white">Clear</button>
                             </div>
                         </div>
@@ -321,10 +351,10 @@ const SQLQueryPage: React.FC = () => {
                                             </span>
                                             {d.isOnline && <span className="w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.4)]"></span>}
                                         </div>
-                                        <div className="flex items-center gap-2 text-xs text-slate-500">
+                                        <div className="flex items-center gap-2 text-xs text-ms-text-muted">
                                             {d.deviceType.toLowerCase().includes('kasa') ? <Monitor className="w-3 h-3" /> : <Server className="w-3 h-3" />}
                                             <span className="font-mono">{d.calculatedIpAddress}</span>
-                                            <span className="bg-slate-800 px-1.5 rounded">{d.deviceType}</span>
+                                            <DeviceTypeBadge type={d.deviceType} />
                                         </div>
                                     </div>
                                 </div>
@@ -364,9 +394,19 @@ const SQLQueryPage: React.FC = () => {
                         <div className="px-5 py-3 border-b border-white/5 flex items-center justify-between shrink-0 bg-white/5">
                             <span className="text-xs font-mono uppercase tracking-widest text-slate-400 font-semibold">Execution Output</span>
                             {results.length > 0 && (
-                                <span className="text-xs text-slate-400">
-                                    {results.filter(r => r.status === 'success').length} Success, {results.filter(r => r.status === 'error').length} Failed
-                                </span>
+                                <div className="flex items-center gap-3">
+                                    <span className="text-xs text-slate-400">
+                                        {results.filter(r => r.status === 'success').length} Success, {results.filter(r => r.status === 'error').length} Failed
+                                    </span>
+                                    {results.some(r => r.status === "error") && (
+                                        <button
+                                            onClick={selectFailed}
+                                            className="text-xs px-2.5 py-1 rounded-lg bg-rose-500/15 text-rose-400 hover:bg-rose-500/25 border border-rose-500/25 transition-all font-medium"
+                                        >
+                                            Hatalıları Seç & Tekrar Çalıştır
+                                        </button>
+                                    )}
+                                </div>
                             )}
                         </div>
 

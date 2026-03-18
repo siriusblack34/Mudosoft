@@ -35,6 +35,7 @@ namespace MudoSoft.Backend.Controllers
             public int StoreCode { get; set; }
             public string StoreName { get; set; } = "";
             public string IpAddress { get; set; } = "";
+            public string DeviceType { get; set; } = "";
             public bool IsOnline { get; set; }
             public int RdyCount { get; set; }
             public int TxtCount { get; set; }
@@ -278,7 +279,8 @@ namespace MudoSoft.Backend.Controllers
                         DeviceId = device.DeviceId,
                         StoreCode = device.StoreCode,
                         StoreName = device.StoreName,
-                        IpAddress = device.CalculatedIpAddress
+                        IpAddress = device.CalculatedIpAddress,
+                        DeviceType = device.DeviceType
                     };
 
                     // Online kontrolü (SQL -> SMB -> Ping)
@@ -364,7 +366,8 @@ namespace MudoSoft.Backend.Controllers
                 DeviceId = device.DeviceId,
                 StoreCode = device.StoreCode,
                 StoreName = device.StoreName,
-                IpAddress = device.CalculatedIpAddress
+                IpAddress = device.CalculatedIpAddress,
+                DeviceType = device.DeviceType
             };
 
             var isOnline = await IsDeviceOnlineAsync(device.CalculatedIpAddress, 2000);

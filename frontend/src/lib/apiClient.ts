@@ -60,7 +60,8 @@ export interface StoreManager {
 // ==========================
 // BASE CONFIG
 // ==========================
-export const API_BASE_URL = `http://${window.location.hostname}:5102`;
+export const API_BASE_URL = import.meta.env.VITE_API_BASE
+    || `http://${window.location.hostname}:5102`;
 const API_BASE = API_BASE_URL;
 const DEFAULT_TIMEOUT_MS = 30_000;
 
@@ -207,7 +208,7 @@ export const apiClient = {
     },
 
     runSqlQuery(deviceId: string, query: string) {
-        return this.post("/api/sqlquery/execute", { deviceId, query });
+        return this.post("/api/sqlquery/execute", { deviceId, query }, 120_000);
     },
 
     getDeviceSystemInfo(deviceId: string): Promise<{ hostname: string | null; serialNumber: string | null; hostnameError?: string; serialError?: string }> {

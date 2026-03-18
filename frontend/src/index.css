@@ -4,6 +4,37 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ── Theme CSS Variables ── */
+:root {
+  --ms-bg:         #f4f4f5;   /* zinc-100 */
+  --ms-bg-soft:    #ffffff;   /* white */
+  --ms-panel:      #fafafa;   /* zinc-50 */
+  --ms-border:     #d4d4d8;   /* zinc-300 */
+  --ms-text:       #18181b;   /* zinc-900 */
+  --ms-text-muted: #71717a;   /* zinc-500 */
+  --ms-input-bg:   #ffffff;
+  --ms-input-border:#d4d4d8;
+  --ms-hover-bg:   #e4e4e7;   /* zinc-200 */
+  --ms-table-row-border: #e4e4e7;
+  --ms-scrollbar:  #a1a1aa;
+  --ms-scrollbar-hover: #71717a;
+}
+
+.dark {
+  --ms-bg:         #09090b;   /* zinc-950 */
+  --ms-bg-soft:    #18181b;   /* zinc-900 */
+  --ms-panel:      #1c1c1f;
+  --ms-border:     #27272a;   /* zinc-800 */
+  --ms-text:       #fafafa;   /* zinc-50 */
+  --ms-text-muted: #a1a1aa;   /* zinc-400 */
+  --ms-input-bg:   #18181b;
+  --ms-input-border:#3f3f46;
+  --ms-hover-bg:   #27272a;
+  --ms-table-row-border: rgba(39,39,42,0.6);
+  --ms-scrollbar:  #3f3f46;
+  --ms-scrollbar-hover: #52525b;
+}
+
 @layer base {
   *, *::before, *::after {
     box-sizing: border-box;
@@ -17,8 +48,10 @@
   }
 
   input, textarea, select {
-    @apply bg-zinc-900 border border-zinc-700 text-ms-text rounded-lg px-3 py-2 text-sm
-           placeholder-zinc-500
+    background-color: var(--ms-input-bg);
+    border: 1px solid var(--ms-input-border);
+    @apply text-ms-text rounded-lg px-3 py-2 text-sm
+           placeholder-zinc-500 dark:placeholder-zinc-500
            focus:outline-none focus:ring-2 focus:ring-violet-500/50 focus:border-violet-500
            transition-colors;
   }
@@ -39,15 +72,18 @@
 
   .btn-secondary {
     @apply inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold
-           bg-zinc-800 hover:bg-zinc-700 active:bg-zinc-900
-           text-ms-text border border-zinc-700 hover:border-zinc-600
-           transition-colors disabled:opacity-50 disabled:cursor-not-allowed;
+           text-ms-text border border-ms-border transition-colors
+           disabled:opacity-50 disabled:cursor-not-allowed;
+    background-color: var(--ms-hover-bg);
+  }
+  .btn-secondary:hover {
+    background-color: var(--ms-border);
   }
 
   .btn-danger {
     @apply inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold
            bg-red-600/20 hover:bg-red-600/30 active:bg-red-700/30
-           text-red-400 border border-red-600/30 hover:border-red-500/50
+           text-red-500 dark:text-red-400 border border-red-600/30 hover:border-red-500/50
            transition-colors disabled:opacity-50 disabled:cursor-not-allowed;
   }
 
@@ -70,7 +106,11 @@
   }
 
   .data-table tbody tr {
-    @apply border-b border-zinc-800/60 hover:bg-zinc-800/40 transition-colors cursor-pointer;
+    border-bottom: 1px solid var(--ms-table-row-border);
+    @apply transition-colors cursor-pointer;
+  }
+  .data-table tbody tr:hover {
+    background-color: var(--ms-hover-bg);
   }
 
   .data-table tbody tr:last-child {
@@ -88,28 +128,33 @@
 
   /* ── Eski sayfa class'ları — yeni tema renkleriyle uyumlu ── */
 
-  /* glass-card → zinc-900 solid kart */
+  /* glass-card → tema uyumlu kart */
   .glass-card {
-    @apply bg-zinc-900 border border-zinc-800 shadow-sm;
+    @apply bg-ms-bg-soft border border-ms-border shadow-sm;
   }
 
   /* glass-card-hover → hover efektli kart */
   .glass-card-hover {
-    @apply bg-zinc-900 border border-zinc-800 shadow-sm
+    @apply bg-ms-bg-soft border border-ms-border shadow-sm
            transition-all duration-200
-           hover:bg-zinc-800/80 hover:border-zinc-700 hover:shadow-md hover:-translate-y-0.5;
+           hover:shadow-md hover:-translate-y-0.5;
+  }
+  .glass-card-hover:hover {
+    background-color: var(--ms-hover-bg);
   }
 
   /* glass-panel → biraz daha koyu panel */
   .glass-panel {
-    @apply bg-zinc-950/80 border border-zinc-800 shadow-sm;
+    @apply bg-ms-bg border border-ms-border shadow-sm;
   }
 
   /* glass-button → secondary buton stili */
   .glass-button {
-    @apply bg-zinc-800 border border-zinc-700 text-ms-text
-           hover:bg-zinc-700 hover:border-zinc-600
-           transition-colors;
+    @apply border border-ms-border text-ms-text transition-colors;
+    background-color: var(--ms-hover-bg);
+  }
+  .glass-button:hover {
+    background-color: var(--ms-border);
   }
 
   /* hover-lift → yukarı kaydırma */
@@ -163,12 +208,12 @@
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #3f3f46;
+  background: var(--ms-scrollbar);
   border-radius: 9999px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #52525b;
+  background: var(--ms-scrollbar-hover);
 }
 
 /* Animasyonlar */

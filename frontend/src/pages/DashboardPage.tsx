@@ -124,11 +124,13 @@ const DashboardPage: React.FC = () => {
 
     // ─── Computed stats ───
     const pcDevices = sqlDevices.filter(d => d.deviceType?.toUpperCase() === 'PC');
-    const posDevices = sqlDevices.filter(d => d.deviceType?.toUpperCase() !== 'PC');
+    const posDevices = sqlDevices.filter(d => d.deviceType?.toUpperCase().startsWith('KASA'));
     const posClosed = posDevices.filter(d => d.isTemporarilyClosed).length;
     const pcOnline = pcDevices.filter(d => d.isOnline).length;
+    const pcOfflineList = pcDevices.filter(d => !d.isOnline);
     const posOnline = posDevices.filter(d => d.isOnline && !d.isTemporarilyClosed).length;
     const posOffline = posDevices.filter(d => !d.isOnline && !d.isTemporarilyClosed).length;
+    const posOfflineList = posDevices.filter(d => !d.isOnline && !d.isTemporarilyClosed);
     const totalSqlOnline = pcOnline + posOnline;
     const sqlPercent = sqlDevices.length > 0 ? Math.round((totalSqlOnline / (sqlDevices.length - posClosed)) * 100) : 0;
     const agentPercent = data && data.totalDevices > 0 ? Math.round((data.online / data.totalDevices) * 100) : 0;
@@ -146,7 +148,8 @@ const DashboardPage: React.FC = () => {
             .map(([storeCode, { storeName, kasalar }]) => {
                 const ts = kasalar.map(k => k.lastSeen).filter(Boolean) as string[];
                 const earliest = ts.length > 0 ? ts.reduce((a, b) => (new Date(a) < new Date(b) ? a : b)) : null;
-                return { storeCode, storeName, count: kasalar.length, offlineSince: earliest };
+                const deviceNames = kasalar.map(k => k.deviceType || k.deviceName).join(', ');
+                return { storeCode, storeName, count: kasalar.length, offlineSince: earliest, deviceNames };
             })
             .sort((a, b) => a.storeCode - b.storeCode);
     }, [sqlDevices]);
@@ -161,7 +164,8 @@ const DashboardPage: React.FC = () => {
         }
         return Array.from(storeMap.entries())
             .map(([storeCode, { storeName, kasalar }]) => ({
-                storeCode, storeName, count: kasalar.length, reason: kasalar[0]?.temporaryCloseReason
+                storeCode, storeName, count: kasalar.length, reason: kasalar[0]?.temporaryCloseReason,
+                deviceNames: kasalar.map(k => k.deviceType || k.deviceName).join(', ')
             }))
             .sort((a, b) => a.storeCode - b.storeCode);
     }, [sqlDevices]);
@@ -278,11 +282,12 @@ const DashboardPage: React.FC = () => {
                                     <span className="text-sm font-medium">Tüm mağazalar erişilebilir</span>
                                 </div>
                             ) : (
-                                offlineStoreAlerts.map(({ storeCode, storeName, count, offlineSince }, i) => (
+                                offlineStoreAlerts.map(({ storeCode, storeName, count, offlineSince, deviceNames }, i) => (
                                     <div
                                         key={storeCode}
                                         className="flex items-center gap-3 px-4 py-2.5 rounded-xl bg-red-500/5 hover:bg-red-500/10 border border-transparent hover:border-red-500/20 transition-all group cursor-default"
                                         style={{ animationDelay: `${i * 30}ms` }}
+                                        title={`${storeName} (${storeCode})\nKapalı: ${deviceNames}${offlineSince ? '\nSüre: ' + formatOfflineDuration(offlineSince) : ''}`}
                                     >
                                         <span className="w-2 h-2 rounded-full bg-red-500 shrink-0 animate-pulse shadow-[0_0_6px_rgba(239,68,68,0.6)]" />
                                         <span className="font-mono text-xs text-red-300 font-bold w-8 shrink-0">{storeCode}</span>
@@ -312,10 +317,11 @@ const DashboardPage: React.FC = () => {
                                 </span>
                             </div>
                             <div className="p-2 space-y-1 max-h-[200px] overflow-y-auto scrollbar-thin scrollbar-thumb-slate-700 scrollbar-track-transparent">
-                                {closedStoreAlerts.map(({ storeCode, storeName, count, reason }) => (
+                                {closedStoreAlerts.map(({ storeCode, storeName, count, reason, deviceNames }) => (
                                     <div
                                         key={storeCode}
                                         className="flex items-center gap-3 px-4 py-2.5 rounded-xl bg-amber-500/5 hover:bg-amber-500/10 border border-transparent hover:border-amber-500/20 transition-all"
+                                        title={`${storeName} (${storeCode})\nKapalı: ${deviceNames}${reason ? '\nSebep: ' + reason : ''}`}
                                     >
                                         <span className="w-2 h-2 rounded-full bg-amber-500 shrink-0" />
                                         <span className="font-mono text-xs text-amber-300 font-bold w-8 shrink-0">{storeCode}</span>
@@ -340,7 +346,7 @@ const DashboardPage: React.FC = () => {
 
                         <div className="grid grid-cols-2 gap-3">
                             {/* PC Card */}
-                            <div className="bg-slate-900/50 border border-slate-700/40 rounded-xl p-4 hover:border-sky-500/30 transition-colors">
+                            <div className="group bg-slate-900/50 border border-slate-700/40 rounded-xl p-4 hover:border-sky-500/30 transition-all">
                                 <div className="flex items-center gap-2 mb-3">
                                     <div className="p-1.5 bg-sky-500/10 rounded-lg text-sky-400">
                                         <Monitor className="w-4 h-4" />
@@ -356,17 +362,33 @@ const DashboardPage: React.FC = () => {
                                 </div>
                                 <div className="flex justify-between text-[11px]">
                                     <span className="text-emerald-400">{pcOnline} online</span>
-                                    <span className="text-rose-400">{pcDevices.length - pcOnline} offline</span>
+                                    <span className="text-rose-400">{pcOfflineList.length} offline</span>
                                 </div>
+                                {/* Hover expand - offline PC list */}
+                                {pcOfflineList.length > 0 && (
+                                    <div className="max-h-0 group-hover:max-h-[300px] overflow-hidden transition-all duration-300 ease-in-out">
+                                        <div className="mt-3 pt-3 border-t border-sky-500/10 space-y-1">
+                                            <span className="text-[10px] font-bold text-rose-400/70 uppercase tracking-wider">Offline PC'ler ({pcOfflineList.length})</span>
+                                            {pcOfflineList.map(d => (
+                                                <div key={d.deviceId} className="flex items-center gap-2 text-[11px] py-1 px-2 rounded-lg bg-rose-500/5">
+                                                    <span className="w-1.5 h-1.5 rounded-full bg-rose-500 shrink-0" />
+                                                    <span className="text-rose-300 font-mono font-bold w-7 shrink-0">{d.storeCode}</span>
+                                                    <span className="text-slate-300 truncate flex-1">{d.storeName}</span>
+                                                    <span className="text-slate-500 font-mono shrink-0">{d.calculatedIpAddress}</span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
                             </div>
 
                             {/* POS Card */}
-                            <div className="bg-slate-900/50 border border-slate-700/40 rounded-xl p-4 hover:border-amber-500/30 transition-colors">
+                            <div className="group bg-slate-900/50 border border-slate-700/40 rounded-xl p-4 hover:border-amber-500/30 transition-all">
                                 <div className="flex items-center gap-2 mb-3">
                                     <div className="p-1.5 bg-amber-500/10 rounded-lg text-amber-400">
                                         <MonitorSmartphone className="w-4 h-4" />
                                     </div>
-                                    <span className="text-sm font-bold text-white">POS / Kasa</span>
+                                    <span className="text-sm font-bold text-white">KASA</span>
                                     <span className="ml-auto text-xs text-slate-500 font-mono">{posDevices.length}</span>
                                 </div>
                                 <div className="h-1.5 bg-slate-700/40 rounded-full overflow-hidden mb-2">
@@ -380,6 +402,22 @@ const DashboardPage: React.FC = () => {
                                     <span className="text-rose-400">{posOffline} offline</span>
                                     {posClosed > 0 && <span className="text-amber-400">{posClosed} kapalı</span>}
                                 </div>
+                                {/* Hover expand - offline POS list */}
+                                {posOfflineList.length > 0 && (
+                                    <div className="max-h-0 group-hover:max-h-[300px] overflow-hidden transition-all duration-300 ease-in-out">
+                                        <div className="mt-3 pt-3 border-t border-amber-500/10 space-y-1">
+                                            <span className="text-[10px] font-bold text-rose-400/70 uppercase tracking-wider">Offline Kasalar ({posOfflineList.length})</span>
+                                            {posOfflineList.map(d => (
+                                                <div key={d.deviceId} className="flex items-center gap-2 text-[11px] py-1 px-2 rounded-lg bg-rose-500/5">
+                                                    <span className="w-1.5 h-1.5 rounded-full bg-rose-500 shrink-0" />
+                                                    <span className="text-rose-300 font-mono font-bold w-7 shrink-0">{d.storeCode}</span>
+                                                    <span className="text-slate-300 truncate flex-1">{d.storeName} / {d.deviceType}</span>
+                                                    <span className="text-slate-500 font-mono shrink-0">{d.calculatedIpAddress}</span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
                             </div>
                         </div>
 

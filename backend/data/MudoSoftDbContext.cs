@@ -22,6 +22,8 @@ namespace MudoSoft.Backend.Data
         public DbSet<StoreManager> StoreManagers { get; set; }
         public DbSet<StoreOfflineLog> StoreOfflineLogs { get; set; }
         public DbSet<CollectorReport> CollectorReports { get; set; }
+        public DbSet<User> Users { get; set; }
+        public DbSet<LoginHistory> LoginHistories { get; set; }
 
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -111,6 +113,20 @@ namespace MudoSoft.Backend.Data
                 e.HasIndex(r => r.CollectorName);
                 e.HasIndex(r => new { r.DeviceId, r.TimestampUtc });
                 e.HasIndex(r => new { r.DeviceId, r.CollectorName, r.TimestampUtc });
+            });
+
+            //
+            // USER
+            //
+            modelBuilder.Entity<User>(e =>
+            {
+                e.HasIndex(u => u.Username).IsUnique();
+            });
+
+            modelBuilder.Entity<LoginHistory>(e =>
+            {
+                e.HasIndex(l => l.UserId);
+                e.HasIndex(l => l.LoginAt);
             });
         }
     }

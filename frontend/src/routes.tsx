@@ -18,11 +18,13 @@ import DbLogCleanupPage from "./pages/DbLogCleanupPage";
 import DiskStatusPage from "./pages/DiskStatusPage";
 
 import AuthGuard from "./layout/AuthGuard";
+import AdminGuard from "./layout/AdminGuard";
 import LoginPage from "./pages/LoginPage";
 import StoreManagersPage from "./pages/StoreManagersPage";
 import OfflineLogsPage from "./pages/OfflineLogsPage";
 import DeviceHealthPage from "./pages/DeviceHealthPage";
 import FiscalErrorCodesPage from "./pages/FiscalErrorCodesPage";
+import PrinterLicensesPage from "./pages/PrinterLicensesPage";
 import { Navigate } from "react-router-dom";
 
 const routes = [
@@ -113,7 +115,7 @@ const routes = [
                 path: "/sql-query",
                 element: (
                     <ShellLayout>
-                        <SQLQueryPage />
+                        <AdminGuard><SQLQueryPage /></AdminGuard>
                     </ShellLayout>
                 ),
             },
@@ -129,7 +131,7 @@ const routes = [
                 path: "/agent-update",
                 element: (
                     <ShellLayout>
-                        <AgentUpdatePage />
+                        <AdminGuard><AgentUpdatePage /></AdminGuard>
                     </ShellLayout>
                 ),
             },
@@ -145,7 +147,7 @@ const routes = [
                 path: "/store-managers",
                 element: (
                     <ShellLayout>
-                        <StoreManagersPage />
+                        <AdminGuard><StoreManagersPage /></AdminGuard>
                     </ShellLayout>
                 ),
             },
@@ -169,7 +171,7 @@ const routes = [
                 path: "/db-log-cleanup",
                 element: (
                     <ShellLayout>
-                        <DbLogCleanupPage />
+                        <AdminGuard><DbLogCleanupPage /></AdminGuard>
                     </ShellLayout>
                 ),
             },
@@ -202,6 +204,14 @@ const routes = [
                 element: (
                     <ShellLayout>
                         <FiscalErrorCodesPage />
+                    </ShellLayout>
+                ),
+            },
+            {
+                path: "/printer-licenses",
+                element: (
+                    <ShellLayout>
+                        <PrinterLicensesPage />
                     </ShellLayout>
                 ),
             },

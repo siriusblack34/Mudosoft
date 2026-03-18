@@ -41,6 +41,8 @@ const LoginPage: React.FC = () => {
       localStorage.setItem('tokenExpiresAt', data.expiresAt);
       localStorage.setItem('isAuthenticated', 'true');
       localStorage.setItem('username', data.username);
+      localStorage.setItem('role', data.role || 'Admin');
+      localStorage.setItem('fullName', data.fullName || data.username);
       navigate('/');
     } catch {
       setError('Sunucuya bağlanılamadı. Lütfen tekrar deneyin.');

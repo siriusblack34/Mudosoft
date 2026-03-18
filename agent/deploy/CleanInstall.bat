@@ -1,6 +1,6 @@
 @echo off
-title MudoSoft Agent Kurulumu
-color 0A
+title MudoSoft Agent - Temiz Kurulum
+color 0C
 setlocal enabledelayedexpansion
 
 :: Admin kontrolu
@@ -15,25 +15,43 @@ if %errorLevel% neq 0 (
 
 echo.
 echo  ==========================================
-echo   MudoSoft Agent - Tek Tusla Kurulum
+echo   MudoSoft Agent - TEMIZ KURULUM
+echo   Tum MudoSoft dosyalari silinip
+echo   sifirdan kurulum yapilacak.
 echo  ==========================================
 echo.
 
 set INSTALL_DIR=C:\Program Files\MudoSoft\Agent
+set UPDATE_DIR=C:\Users\Public\MudoSoftUpdate
 set SERVICE_NAME=MudosoftAgentService
-set SCRIPT_DIR=%~dp0
 set BACKEND_URL=http://10.0.210.99:5102
 
 :: ==========================================
-:: IP'den magaza kodu tespit et (3. oktet)
+:: 1. KOMPLE TEMIZLIK
 :: ==========================================
-echo  [*] Magaza kodu tespit ediliyor...
+echo  [1/6] Servis durduruluyor ve siliniyor...
+sc stop %SERVICE_NAME% >nul 2>&1
+timeout /t 3 /nobreak >nul
+taskkill /F /IM MudoSoft.Agent.exe >nul 2>&1
+taskkill /F /IM MudoSoft.Tray.exe >nul 2>&1
+timeout /t 2 /nobreak >nul
+sc delete %SERVICE_NAME% >nul 2>&1
+timeout /t 2 /nobreak >nul
+
+echo  [2/6] Tum MudoSoft dosyalari siliniyor...
+if exist "%INSTALL_DIR%" rmdir /S /Q "%INSTALL_DIR%"
+if exist "%UPDATE_DIR%" rmdir /S /Q "%UPDATE_DIR%"
+echo        Temizlik tamamlandi.
+
+:: ==========================================
+:: 2. MAGAZA KODU TESPIT
+:: ==========================================
+echo  [3/6] Magaza kodu tespit ediliyor...
 
 set STORE_CODE=
 for /f "tokens=2 delims=:" %%a in ('ipconfig ^| findstr /c:"IPv4"') do (
     for /f "tokens=1-4 delims=." %%i in ("%%a") do (
         set OCTET3=%%k
-        :: Bos degilse ve 0 degilse kullan
         if not "!OCTET3!"=="" if not "!OCTET3!"=="0" if not "!OCTET3!"=="1" (
             if "!STORE_CODE!"=="" (
                 set STORE_CODE=!OCTET3!
@@ -43,7 +61,6 @@ for /f "tokens=2 delims=:" %%a in ('ipconfig ^| findstr /c:"IPv4"') do (
     )
 )
 
-:: Trim
 if defined STORE_CODE set STORE_CODE=%STORE_CODE: =%
 if defined LOCAL_IP set LOCAL_IP=%LOCAL_IP: =%
 
@@ -62,29 +79,43 @@ if "%STORE_CODE%"=="" (
     )
 )
 
+:: ==========================================
+:: 3. GUNCEL AGENT INDIR
+:: ==========================================
 echo.
-echo  Magaza Kodu: %STORE_CODE%
-echo  Backend:     %BACKEND_URL%
-echo.
+echo  [4/6] Guncel agent indiriliyor...
+mkdir "%INSTALL_DIR%" 2>nul
+mkdir "%UPDATE_DIR%" 2>nul
+
+powershell -NoProfile -Command "(New-Object Net.WebClient).DownloadFile('%BACKEND_URL%/api/updates/download','%UPDATE_DIR%\agent.zip')"
+
+if not exist "%UPDATE_DIR%\agent.zip" (
+    echo.
+    echo  HATA: Agent indirilemedi! Backend erisilebildiginden emin olun.
+    echo  URL: %BACKEND_URL%/api/updates/download
+    pause
+    exit /b 1
+)
 
 :: ==========================================
-:: Kurulum
+:: 4. ZIP CIKAR
 :: ==========================================
+echo  [5/6] Dosyalar cikartiliyor...
+powershell -NoProfile -Command "if (Get-Command Expand-Archive -ErrorAction SilentlyContinue) { Expand-Archive -Path '%UPDATE_DIR%\agent.zip' -DestinationPath '%INSTALL_DIR%' -Force } else { $s = New-Object -ComObject Shell.Application; $z = $s.NameSpace('%UPDATE_DIR%\agent.zip'); $d = $s.NameSpace('%INSTALL_DIR%'); $d.CopyHere($z.Items(), 256) }"
 
-:: Mevcut servisi durdur
-echo  [1/4] Mevcut servis durduruluyor...
-sc stop %SERVICE_NAME% >nul 2>&1
-sc delete %SERVICE_NAME% >nul 2>&1
-taskkill /F /IM MudoSoft.Agent.exe >nul 2>&1
-timeout /t 2 /nobreak >nul
+dir "%INSTALL_DIR%\MudoSoft.Agent.exe" >nul 2>&1
+if %errorlevel% neq 0 (
+    echo.
+    echo  HATA: Agent dosyasi cikartilamadi!
+    pause
+    exit /b 1
+)
 
-:: Dosyalari kopyala
-echo  [2/4] Dosyalar kopyalaniyor...
-if not exist "%INSTALL_DIR%" mkdir "%INSTALL_DIR%"
-copy /Y "%SCRIPT_DIR%MudoSoft.Agent.exe" "%INSTALL_DIR%\" >nul
+:: ==========================================
+:: 5. AYARLAR + SERVIS KURULUMU
+:: ==========================================
+echo  [6/6] Servis kuruluyor...
 
-:: appsettings.json olustur
-echo  [3/4] Yapilandirma olusturuluyor...
 (
 echo {
 echo   "Agent": {
@@ -124,20 +155,20 @@ echo   }
 echo }
 ) > "%INSTALL_DIR%\appsettings.json"
 
-:: Servis kur ve baslat
-echo  [4/4] Servis kuruluyor ve baslatiliyor...
 sc create %SERVICE_NAME% binPath= "\"%INSTALL_DIR%\MudoSoft.Agent.exe\" --service" start= auto DisplayName= "MudoSoft Agent Service" >nul 2>&1
 sc description %SERVICE_NAME% "MudoSoft RMM Agent" >nul 2>&1
 sc failure %SERVICE_NAME% reset= 60 actions= restart/5000/restart/10000/restart/30000 >nul 2>&1
 sc start %SERVICE_NAME% >nul 2>&1
 timeout /t 3 /nobreak >nul
 
-:: Kontrol
+:: ==========================================
+:: KONTROL
+:: ==========================================
 sc query %SERVICE_NAME% | find "RUNNING" >nul 2>&1
 if %errorLevel% equ 0 (
     echo.
     echo  ==========================================
-    echo   KURULUM BASARILI!
+    echo   TEMIZ KURULUM BASARILI!
     echo  ==========================================
     echo   Magaza: %STORE_CODE%  ^|  Servis: CALISIYOR
     echo   Cihaz ID: Otomatik (donanim hash)
@@ -145,8 +176,11 @@ if %errorLevel% equ 0 (
 ) else (
     echo.
     echo   UYARI: Servis baslatilamadi.
-    echo   Log: C:\mudosoft_helper.log
+    echo   Kontrol: sc query %SERVICE_NAME%
 )
+
+:: Temizlik
+if exist "%UPDATE_DIR%\agent.zip" del /Q "%UPDATE_DIR%\agent.zip"
 
 echo.
 pause

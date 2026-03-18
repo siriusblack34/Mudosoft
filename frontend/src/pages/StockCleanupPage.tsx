@@ -204,6 +204,7 @@ export default function StockCleanupPage() {
                             <tr className="bg-white/5 border-b border-white/5">
                                 <th className="px-4 py-3 text-xs font-semibold text-slate-400 uppercase tracking-widest w-16">Kod</th>
                                 <th className="px-4 py-3 text-xs font-semibold text-slate-400 uppercase tracking-widest">Mağaza</th>
+                                <th className="px-4 py-3 text-center text-xs font-semibold text-slate-400 uppercase tracking-widest w-20">Tip</th>
                                 <th className="px-4 py-3 text-center text-xs font-semibold text-slate-400 uppercase tracking-widest w-32">IP Adresi</th>
                                 <th className="px-4 py-3 text-center text-xs font-semibold text-slate-400 uppercase tracking-widest w-24">Durum</th>
                                 <th className="px-3 py-3 text-center text-xs font-semibold text-blue-400 border-b border-white/5 w-20">PLU 0</th>
@@ -217,7 +218,7 @@ export default function StockCleanupPage() {
                         <tbody className="divide-y divide-white/5">
                             {isFetching && filteredData.length === 0 ? (
                                 <tr>
-                                    <td colSpan={10} className="p-12 text-center text-slate-500">
+                                    <td colSpan={11} className="p-12 text-center text-slate-500">
                                         <div className="flex flex-col items-center gap-3">
                                             <Spinner size="lg" className="text-cyan-500" />
                                             <span>Veriler yükleniyor...</span>
@@ -226,7 +227,7 @@ export default function StockCleanupPage() {
                                 </tr>
                             ) : filteredData.length === 0 ? (
                                 <tr>
-                                    <td colSpan={10} className="p-12 text-center text-slate-500">
+                                    <td colSpan={11} className="p-12 text-center text-slate-500">
                                         <div className="flex flex-col items-center gap-3 opacity-50">
                                             <Database className="h-12 w-12 text-slate-600" />
                                             <span>Görüntülenecek kayıt bulunamadı.</span>
@@ -241,6 +242,13 @@ export default function StockCleanupPage() {
                                         </td>
                                         <td className="px-4 py-3 text-sm text-slate-200 font-medium">
                                             {d.storeName}
+                                        </td>
+                                        <td className="px-4 py-3 text-center">
+                                            {(d.deviceType ?? '').toLowerCase() === 'gecici' ? (
+                                                <span className="px-1.5 py-px rounded text-[10px] font-bold bg-orange-500/15 text-orange-400 border border-orange-500/25">GEÇİCİ</span>
+                                            ) : (
+                                                <span className="px-1.5 py-px rounded text-[10px] font-bold bg-sky-500/15 text-sky-400 border border-sky-500/25">PC</span>
+                                            )}
                                         </td>
                                         <td className="px-4 py-3 text-center text-xs font-mono text-slate-500 group-hover:text-slate-400 transition-colors">
                                             {d.ipAddress}

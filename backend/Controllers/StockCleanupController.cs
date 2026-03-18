@@ -36,6 +36,7 @@ namespace MudoSoft.Backend.Controllers
             public int StoreCode { get; set; }
             public string StoreName { get; set; } = "";
             public string IpAddress { get; set; } = "";
+            public string DeviceType { get; set; } = "";
             public bool IsOnline { get; set; }
             public int Plu0 { get; set; }
             public int Plu10 { get; set; }
@@ -70,7 +71,8 @@ namespace MudoSoft.Backend.Controllers
                         DeviceId = device.DeviceId,
                         StoreCode = device.StoreCode,
                         StoreName = device.StoreName,
-                        IpAddress = device.CalculatedIpAddress
+                        IpAddress = device.CalculatedIpAddress,
+                        DeviceType = device.DeviceType
                     };
 
                     // Online kontrolü (1433 portu)
@@ -140,7 +142,8 @@ namespace MudoSoft.Backend.Controllers
                             StoreCode = device.StoreCode,
                             StoreName = device.StoreName,
                             IpAddress = device.CalculatedIpAddress,
-                            IsOnline = true, 
+                            DeviceType = device.DeviceType,
+                            IsOnline = true,
                             Status = "error",
                             ErrorMessage = ex.Message
                         };

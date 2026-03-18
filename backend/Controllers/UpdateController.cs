@@ -179,30 +179,26 @@ public class UpdateController : ControllerBase
     /// </summary>
     [HttpPost("trigger")]
     public IActionResult TriggerUpdate(
-        [FromQuery] string deviceId, 
+        [FromQuery] string deviceId,
         [FromQuery] string? backendUrl,
         [FromServices] MudoSoft.Backend.Data.CommandQueue queue)
     {
         if (string.IsNullOrEmpty(deviceId))
             return BadRequest("deviceId required");
 
-        // Use provided backendUrl or fallback to Request.Host
-        var url = !string.IsNullOrEmpty(backendUrl) 
-            ? backendUrl 
+        var url = !string.IsNullOrEmpty(backendUrl)
+            ? backendUrl
             : $"{Request.Scheme}://{Request.Host}";
 
         var commandId = Guid.NewGuid();
-        var payload = System.Text.Json.JsonSerializer.Serialize(new
-        {
-            backendUrl = url
-        });
+        var updatePayload = System.Text.Json.JsonSerializer.Serialize(new { backendUrl = url.TrimEnd('/') });
 
         queue.Enqueue(new Mudosoft.Shared.Dtos.CommandDto
         {
             Id = commandId,
             DeviceId = deviceId,
             Type = Mudosoft.Shared.Enums.CommandType.UpdateAgent,
-            Payload = payload,
+            Payload = updatePayload,
             CreatedAtUtc = DateTime.UtcNow
         });
 
@@ -224,43 +220,72 @@ public class UpdateController : ControllerBase
             : $"{Request.Scheme}://{Request.Host}";
 
         var batch = $@"@echo off
-set LOG=""C:\Users\Public\MudoSoftUpdate\update.log""
-echo [%date% %time%] === MudoSoft Agent Updater === > %LOG%
+set LOG=C:\Users\Public\MudoSoftUpdate\update.log
+set UPDATEDIR=C:\Users\Public\MudoSoftUpdate
+set ZIPFILE=C:\Users\Public\MudoSoftUpdate\agent.zip
+set EXTRACTDIR=C:\Users\Public\MudoSoftUpdate\extracted
+set INSTALLDIR=C:\Program Files\MudoSoft\Agent
+set SERVICENAME=MudosoftAgentService
+
+echo [%date% %time%] === MudoSoft Agent Updater v3 === > %LOG%
 
 echo [%date% %time%] Step 1: Stopping service... >> %LOG%
-net stop MudosoftAgentService >> %LOG% 2>&1
+net stop %SERVICENAME% >> %LOG% 2>&1
+timeout /t 3 /nobreak > nul
 
-echo [%date% %time%] Step 2: Killing ALL MudoSoft processes... >> %LOG%
+echo [%date% %time%] Step 2: Killing processes... >> %LOG%
 taskkill /F /IM MudoSoft.Tray.exe 2>nul
 taskkill /F /IM MudoSoft.Agent.exe 2>nul
-timeout /t 10 /nobreak > nul
+timeout /t 5 /nobreak > nul
 
-echo [%date% %time%] Step 3: Cleaning old update files... >> %LOG%
-if exist ""C:\Users\Public\MudoSoftUpdate\extracted"" rmdir /S /Q ""C:\Users\Public\MudoSoftUpdate\extracted""
-if exist ""C:\Users\Public\MudoSoftUpdate\agent.zip"" del /F /Q ""C:\Users\Public\MudoSoftUpdate\agent.zip""
+echo [%date% %time%] Step 3: Cleaning old files... >> %LOG%
+if exist %EXTRACTDIR% rmdir /S /Q %EXTRACTDIR%
+if exist %ZIPFILE% del /F /Q %ZIPFILE%
 
 echo [%date% %time%] Step 4: Downloading ZIP... >> %LOG%
-powershell -Command ""(New-Object Net.WebClient).DownloadFile('{url}/api/updates/download','C:\Users\Public\MudoSoftUpdate\agent.zip')"" >> %LOG% 2>&1
+powershell -NoProfile -Command ""(New-Object Net.WebClient).DownloadFile('{url}/api/updates/download','C:\Users\Public\MudoSoftUpdate\agent.zip')"" >> %LOG% 2>&1
 
-if not exist ""C:\Users\Public\MudoSoftUpdate\agent.zip"" (
-    echo [%date% %time%] DOWNLOAD FAILED - restarting service >> %LOG%
-    net start MudosoftAgentService >> %LOG% 2>&1
+if not exist %ZIPFILE% (
+    echo [%date% %time%] DOWNLOAD FAILED >> %LOG%
+    net start %SERVICENAME% >> %LOG% 2>&1
     exit /b 1
 )
 
 echo [%date% %time%] Step 5: Extracting... >> %LOG%
-mkdir ""C:\Users\Public\MudoSoftUpdate\extracted"" 2>nul
-echo Set objShell = CreateObject(""Shell.Application"") > ""C:\Users\Public\MudoSoftUpdate\unzip.vbs""
-echo Set objSource = objShell.NameSpace(""C:\Users\Public\MudoSoftUpdate\agent.zip"") >> ""C:\Users\Public\MudoSoftUpdate\unzip.vbs""
-echo Set objTarget = objShell.NameSpace(""C:\Users\Public\MudoSoftUpdate\extracted"") >> ""C:\Users\Public\MudoSoftUpdate\unzip.vbs""
-echo objTarget.CopyHere objSource.Items, 256 >> ""C:\Users\Public\MudoSoftUpdate\unzip.vbs""
-cscript //nologo ""C:\Users\Public\MudoSoftUpdate\unzip.vbs"" >> %LOG% 2>&1
+mkdir %EXTRACTDIR% 2>nul
 
-echo [%date% %time%] Step 6: Copying files... >> %LOG%
-xcopy ""C:\Users\Public\MudoSoftUpdate\extracted\*"" ""C:\Program Files\MudoSoft\Agent\"" /E /Y /Q >> %LOG% 2>&1
+REM Try Expand-Archive (PS 5+, W10/W11), fallback to Shell.Application COM (PS 2+, W7)
+powershell -NoProfile -Command ""if (Get-Command Expand-Archive -ErrorAction SilentlyContinue) {{ Expand-Archive -Path 'C:\Users\Public\MudoSoftUpdate\agent.zip' -DestinationPath 'C:\Users\Public\MudoSoftUpdate\extracted' -Force }} else {{ $s = New-Object -ComObject Shell.Application; $z = $s.NameSpace('C:\Users\Public\MudoSoftUpdate\agent.zip'); $d = $s.NameSpace('C:\Users\Public\MudoSoftUpdate\extracted'); $d.CopyHere($z.Items(), 256) }}"" >> %LOG% 2>&1
+timeout /t 3 /nobreak > nul
+
+REM Verify extraction
+dir %EXTRACTDIR%\*.exe >nul 2>&1
+if %errorlevel% neq 0 (
+    echo [%date% %time%] EXTRACT FAILED - no exe found >> %LOG%
+    net start %SERVICENAME% >> %LOG% 2>&1
+    exit /b 1
+)
+echo [%date% %time%] Extraction OK >> %LOG%
+
+REM Preserve existing appsettings.json (contains machine-specific StoreCode)
+echo [%date% %time%] Step 6: Preserving config and copying files... >> %LOG%
+if exist %EXTRACTDIR%\appsettings.json del /F /Q %EXTRACTDIR%\appsettings.json
+if exist %EXTRACTDIR%\appsettings.Development.json del /F /Q %EXTRACTDIR%\appsettings.Development.json
+xcopy %EXTRACTDIR%\* ""%INSTALLDIR%\"" /E /Y /Q >> %LOG% 2>&1
 
 echo [%date% %time%] Step 7: Starting service... >> %LOG%
-net start MudosoftAgentService >> %LOG% 2>&1
+net start %SERVICENAME% >> %LOG% 2>&1
+if %errorlevel% neq 0 (
+    timeout /t 5 /nobreak > nul
+    net start %SERVICENAME% >> %LOG% 2>&1
+)
+
+sc query %SERVICENAME% | findstr RUNNING >> %LOG% 2>&1
+if %errorlevel% equ 0 (
+    echo [%date% %time%] Service running OK >> %LOG%
+) else (
+    echo [%date% %time%] WARNING: Service NOT running! >> %LOG%
+)
 
 echo [%date% %time%] === UPDATE COMPLETE === >> %LOG%
 ";
@@ -268,7 +293,7 @@ echo [%date% %time%] === UPDATE COMPLETE === >> %LOG%
     }
 
     /// <summary>
-    /// Force update using a simple one-liner that downloads and runs updater.cmd
+    /// Force update on a specific device
     /// POST /api/updates/force-update
     /// </summary>
     [HttpPost("force-update")]
@@ -284,18 +309,15 @@ echo [%date% %time%] === UPDATE COMPLETE === >> %LOG%
             ? backendUrl.TrimEnd('/')
             : $"{Request.Scheme}://{Request.Host}";
 
-        // Pure PowerShell - PS 2.0 compatible, no & or complex quoting
-        // Uses ; separator and simple cmdlets only
-        var downloadUrl = url + "/api/updates/updater-cmd?backendUrl=" + url;
-        var script = "if (!(Test-Path 'C:\\Users\\Public\\MudoSoftUpdate')) { $null = New-Item 'C:\\Users\\Public\\MudoSoftUpdate' -ItemType Directory }; $wc = New-Object System.Net.WebClient; $wc.DownloadFile('" + downloadUrl + "','C:\\Users\\Public\\MudoSoftUpdate\\updater.cmd'); Start-Process 'C:\\Users\\Public\\MudoSoftUpdate\\updater.cmd'";
-
         var commandId = Guid.NewGuid();
+        var updatePayload = System.Text.Json.JsonSerializer.Serialize(new { backendUrl = url.TrimEnd('/') });
+
         queue.Enqueue(new Mudosoft.Shared.Dtos.CommandDto
         {
             Id = commandId,
             DeviceId = deviceId,
-            Type = Mudosoft.Shared.Enums.CommandType.ExecuteScript,
-            Payload = script,
+            Type = Mudosoft.Shared.Enums.CommandType.UpdateAgent,
+            Payload = updatePayload,
             CreatedAtUtc = DateTime.UtcNow
         });
 
@@ -313,32 +335,35 @@ echo [%date% %time%] === UPDATE COMPLETE === >> %LOG%
         [FromServices] MudoSoft.Backend.Data.CommandQueue queue, 
         [FromServices] MudoSoft.Backend.Data.MudoSoftDbContext dbContext)
     {
-        // Use provided backendUrl or fallback to Request.Host
-        var url = !string.IsNullOrEmpty(backendUrl) 
-            ? backendUrl 
+        var url = !string.IsNullOrEmpty(backendUrl)
+            ? backendUrl
             : $"{Request.Scheme}://{Request.Host}";
-        var payload = System.Text.Json.JsonSerializer.Serialize(new { backendUrl = url });
+        var updatePayload = System.Text.Json.JsonSerializer.Serialize(new { backendUrl = url.TrimEnd('/') });
 
-        var onlineDevices = await dbContext.Devices
-            .Where(d => d.Online && !string.IsNullOrEmpty(d.AgentVersion))
-            .Select(d => d.Id)
+        // Son 5 dakika içinde heartbeat göndermiş TÜM cihazlara gönder
+        var cutoff = DateTime.UtcNow.AddMinutes(-5);
+        var targetDevices = await dbContext.Devices
+            .Where(d => d.LastSeen != null && d.LastSeen > cutoff)
+            .Select(d => new { d.Id, d.Hostname, d.AgentVersion })
             .ToListAsync();
 
-        foreach (var deviceId in onlineDevices)
+        foreach (var device in targetDevices)
         {
             queue.Enqueue(new Mudosoft.Shared.Dtos.CommandDto
             {
                 Id = Guid.NewGuid(),
-                DeviceId = deviceId,
+                DeviceId = device.Id,
                 Type = Mudosoft.Shared.Enums.CommandType.UpdateAgent,
-                Payload = payload,
+                Payload = updatePayload,
                 CreatedAtUtc = DateTime.UtcNow
             });
         }
 
-        _logger.LogInformation("Update command queued for {Count} devices", onlineDevices.Count);
+        _logger.LogInformation("Update command queued for {Count} devices: {Devices}",
+            targetDevices.Count,
+            string.Join(", ", targetDevices.Select(d => $"{d.Hostname}({d.AgentVersion})")));
 
-        return Ok(new { count = onlineDevices.Count, message = $"Update queued for {onlineDevices.Count} devices" });
+        return Ok(new { count = targetDevices.Count, message = $"Update queued for {targetDevices.Count} devices" });
     }
 
     /// <summary>
@@ -437,6 +462,14 @@ echo [%date% %time%] === UPDATE COMPLETE === >> %LOG%
                 await RunDotnetPublish(Path.Combine(projectRoot, "tray"), outputDir);
                 _buildStatus = $"v{newVersion} — ZIP oluşturuluyor...";
 
+                // 5.5. Remove appsettings from output to prevent overwriting machine-specific config
+                var appSettingsInOutput = Path.Combine(outputDir, "appsettings.json");
+                var appSettingsDevInOutput = Path.Combine(outputDir, "appsettings.Development.json");
+                if (System.IO.File.Exists(appSettingsInOutput))
+                    System.IO.File.Delete(appSettingsInOutput);
+                if (System.IO.File.Exists(appSettingsDevInOutput))
+                    System.IO.File.Delete(appSettingsDevInOutput);
+
                 // 6. Create ZIP
                 var destFileName = $"MudoSoft.Agent_{newVersion}.zip";
                 var destPath = Path.Combine(_updatesPath, destFileName);
@@ -506,10 +539,14 @@ echo [%date% %time%] === UPDATE COMPLETE === >> %LOG%
     /// </summary>
     private async Task RunDotnetPublish(string projectPath, string outputDir)
     {
+        var projectFile = Path.GetFileName(projectPath);
+        var projectDir = Path.GetDirectoryName(projectPath);
+
         var psi = new System.Diagnostics.ProcessStartInfo
         {
             FileName = "dotnet",
-            Arguments = $"publish \"{projectPath}\" -c Release -r win-x64 --self-contained true -p:PublishSingleFile=false -o \"{outputDir}\"",
+            Arguments = $"publish \"{projectFile}\" -c Release -r win-x64 --self-contained true -p:PublishSingleFile=false -o \"{outputDir}\"",
+            WorkingDirectory = projectDir,  // Set working directory to project folder
             RedirectStandardOutput = true,
             RedirectStandardError = true,
             UseShellExecute = false,
@@ -517,14 +554,20 @@ echo [%date% %time%] === UPDATE COMPLETE === >> %LOG%
         };
 
         using var process = System.Diagnostics.Process.Start(psi);
-        if (process == null) throw new Exception($"Failed to start dotnet publish for {projectPath}");
+        if (process == null) throw new Exception($"Failed to start dotnet publish for {projectFile}");
 
+        var stdout = await process.StandardOutput.ReadToEndAsync();
         var stderr = await process.StandardError.ReadToEndAsync();
         await process.WaitForExitAsync();
 
         if (process.ExitCode != 0)
         {
-            throw new Exception($"dotnet publish failed for {Path.GetFileName(projectPath)}. Exit: {process.ExitCode}. Error: {stderr}");
+            var errorMsg = $"{projectFile} publish failed (Exit: {process.ExitCode})";
+            if (!string.IsNullOrEmpty(stderr))
+                errorMsg += $"\n{stderr}";
+            if (!string.IsNullOrEmpty(stdout))
+                errorMsg += $"\n{stdout}";
+            throw new Exception(errorMsg);
         }
     }
 
@@ -541,6 +584,23 @@ echo [%date% %time%] === UPDATE COMPLETE === >> %LOG%
             status = _buildStatus,
             error = _buildError
         });
+    }
+
+    /// <summary>
+    /// Builds a simple PowerShell one-liner that downloads updater.cmd and launches it detached.
+    /// Uses cmd.exe /C start to ensure updater runs independently of agent process (Session 0 compatible).
+    /// </summary>
+    private string BuildUpdateScript(string backendUrl)
+    {
+        var url = backendUrl.TrimEnd('/');
+        var downloadUrl = url + "/api/updates/updater-cmd?backendUrl=" + url;
+
+        // Download updater.cmd then launch via WMI - creates a fully detached process
+        // that survives agent shutdown on W11 (unlike Start-Process which dies with parent)
+        return "if (!(Test-Path 'C:\\Users\\Public\\MudoSoftUpdate')) { $null = New-Item 'C:\\Users\\Public\\MudoSoftUpdate' -ItemType Directory }; "
+             + "$wc = New-Object System.Net.WebClient; "
+             + "$wc.DownloadFile('" + downloadUrl + "','C:\\Users\\Public\\MudoSoftUpdate\\updater.cmd'); "
+             + "wmic process call create 'cmd.exe /C C:\\Users\\Public\\MudoSoftUpdate\\updater.cmd'";
     }
 
     private class LatestVersionInfo

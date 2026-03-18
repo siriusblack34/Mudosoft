@@ -1,4 +1,5 @@
 module.exports = {
+  darkMode: 'class',
   content: ['./index.html', './src/**/*.{ts,tsx,js,jsx}'],
   theme: {
     extend: {
@@ -6,22 +7,19 @@ module.exports = {
         sans: ['Inter', 'system-ui', 'sans-serif'],
       },
       colors: {
-        // Ana arka plan renkleri
-        'ms-bg':         '#09090b', // zinc-950
-        'ms-bg-soft':    '#18181b', // zinc-900
-        'ms-panel':      '#1c1c1f', // zinc-900 variant
-        'ms-border':     '#27272a', // zinc-800
-        // Accent — Electric Violet
-        'ms-accent':     '#8b5cf6', // violet-500
-        'ms-accent-soft':'#7c3aed', // violet-700
-        // Durum renkleri
-        'ms-success':    '#22c55e', // green-500
-        'ms-danger':     '#ef4444', // red-500
-        'ms-warning':    '#f59e0b', // amber-500
-        'ms-info':       '#3b82f6', // blue-500
-        // Metin renkleri
-        'ms-text':       '#fafafa', // zinc-50
-        'ms-text-muted': '#a1a1aa', // zinc-400
+        // CSS-variable driven theme colors
+        'ms-bg':         'var(--ms-bg)',
+        'ms-bg-soft':    'var(--ms-bg-soft)',
+        'ms-panel':      'var(--ms-panel)',
+        'ms-border':     'var(--ms-border)',
+        'ms-accent':     '#8b5cf6',
+        'ms-accent-soft':'#7c3aed',
+        'ms-success':    '#22c55e',
+        'ms-danger':     '#ef4444',
+        'ms-warning':    '#f59e0b',
+        'ms-info':       '#3b82f6',
+        'ms-text':       'var(--ms-text)',
+        'ms-text-muted': 'var(--ms-text-muted)',
       },
       borderRadius: {
         xl:  '0.75rem',

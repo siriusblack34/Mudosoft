@@ -27,6 +27,7 @@ export interface InboxStatus {
     storeCode: number;
     storeName: string;
     ipAddress: string;
+    deviceType?: string;
     isOnline: boolean;
     rdyCount: number;
     txtCount: number;
@@ -45,6 +46,7 @@ export interface StockStatus {
     storeCode: number;
     storeName: string;
     ipAddress: string;
+    deviceType?: string;
     isOnline: boolean;
     plu0: number;
     plu10: number;
