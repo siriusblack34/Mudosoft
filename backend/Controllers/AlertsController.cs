@@ -1,9 +1,11 @@
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Authorization;
 using MudoSoft.Backend.Services;
 
 namespace MudoSoft.Backend.Controllers;
 
 [ApiController]
+[Authorize]
 [Route("api/alerts")]
 public class AlertsController : ControllerBase
 {

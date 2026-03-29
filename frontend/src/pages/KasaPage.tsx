@@ -224,6 +224,7 @@ const KasaPage: React.FC = () => {
     const [isLoading, setIsLoading] = useState(true);
     const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
     const [selectedStoreCode, setSelectedStoreCode] = useState<number | null>(null);
+    const [statusFilter, setStatusFilter] = useState<"offline" | "closed" | null>(null);
 
     const handleDeleteDevice = async (deviceId: string) => {
         try {
@@ -314,13 +315,31 @@ const KasaPage: React.FC = () => {
     }, [devices]);
 
     const filteredRows = useMemo(() => {
+        let rows = storeRows;
         const s = search.trim().toLowerCase();
-        if (!s) return storeRows;
-        return storeRows.filter(row =>
-            row.storeName.toLowerCase().includes(s) ||
-            String(row.storeCode).includes(s)
-        );
-    }, [storeRows, search]);
+        if (s) {
+            rows = rows.filter(row =>
+                row.storeName.toLowerCase().includes(s) ||
+                String(row.storeCode).includes(s)
+            );
+        }
+
+        if (statusFilter) {
+            const hasMatch = (row: StoreRow) => {
+                const kasas = [row.kasa1, row.kasa2, row.kasa3];
+                if (statusFilter === "offline") return kasas.some(k => k && !k.isOnline && !k.isTemporarilyClosed);
+                if (statusFilter === "closed") return kasas.some(k => k && k.isTemporarilyClosed);
+                return false;
+            };
+            rows = [...rows].sort((a, b) => {
+                const aMatch = hasMatch(a) ? 0 : 1;
+                const bMatch = hasMatch(b) ? 0 : 1;
+                return aMatch - bMatch || a.storeCode - b.storeCode;
+            });
+        }
+
+        return rows;
+    }, [storeRows, search, statusFilter]);
 
     const selectedStore = useMemo(() => {
         if (selectedStoreCode === null) return null;
@@ -401,7 +420,10 @@ const KasaPage: React.FC = () => {
                         <div className="text-4xl font-black text-white tabular-nums">{onlineCount}</div>
                     </div>
                 </div>
-                <div className="flex-[0.3] bg-gradient-to-br from-rose-900/30 to-rose-900/10 border border-rose-500/20 rounded-2xl p-5 flex items-center gap-5 shadow-lg shadow-rose-900/10 relative overflow-hidden group">
+                <div
+                    onClick={() => setStatusFilter(f => f === "offline" ? null : "offline")}
+                    className={`flex-[0.3] bg-gradient-to-br from-rose-900/30 to-rose-900/10 border rounded-2xl p-5 flex items-center gap-5 shadow-lg shadow-rose-900/10 relative overflow-hidden group cursor-pointer transition-all ${statusFilter === "offline" ? "border-rose-400 ring-2 ring-rose-500/30" : "border-rose-500/20"}`}
+                >
                     <div className="absolute top-0 right-0 w-32 h-32 bg-rose-500/5 rounded-full blur-3xl -translate-y-10 translate-x-10 group-hover:bg-rose-500/10 transition-colors" />
                     <div className="p-4 bg-rose-500/10 rounded-2xl relative z-10 border border-rose-500/20">
                         <WifiOff className="w-8 h-8 text-rose-400" />
@@ -412,7 +434,10 @@ const KasaPage: React.FC = () => {
                     </div>
                 </div>
                 {closedCount > 0 && (
-                    <div className="flex-[0.3] bg-gradient-to-br from-amber-900/30 to-amber-900/10 border border-amber-500/20 rounded-2xl p-5 flex items-center gap-5 shadow-lg shadow-amber-900/10 relative overflow-hidden group">
+                    <div
+                        onClick={() => setStatusFilter(f => f === "closed" ? null : "closed")}
+                        className={`flex-[0.3] bg-gradient-to-br from-amber-900/30 to-amber-900/10 border rounded-2xl p-5 flex items-center gap-5 shadow-lg shadow-amber-900/10 relative overflow-hidden group cursor-pointer transition-all ${statusFilter === "closed" ? "border-amber-400 ring-2 ring-amber-500/30" : "border-amber-500/20"}`}
+                    >
                         <div className="absolute top-0 right-0 w-32 h-32 bg-amber-500/5 rounded-full blur-3xl -translate-y-10 translate-x-10 group-hover:bg-amber-500/10 transition-colors" />
                         <div className="p-4 bg-amber-500/10 rounded-2xl relative z-10 border border-amber-500/20">
                             <PauseCircle className="w-8 h-8 text-amber-400" />

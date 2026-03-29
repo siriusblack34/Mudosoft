@@ -122,6 +122,26 @@ public class AgentService : IAgentService
         };
 
         _dbContext.CommandResultRecords.Add(record);
+
+        // Extract VNC password from InstallVnc command result (sent via SignalR)
+        if (record.CommandType == Mudosoft.Shared.Enums.CommandType.InstallVnc
+            && result.Success
+            && result.Output?.Contains("VNC_PWD=") == true)
+        {
+            var pwdMatch = System.Text.RegularExpressions.Regex.Match(result.Output, @"VNC_PWD=(\S+)");
+            if (pwdMatch.Success)
+            {
+                var device = await _dbContext.Devices.FindAsync(result.DeviceId);
+                if (device != null)
+                {
+                    device.VncInstalled = true;
+                    device.VncPassword = pwdMatch.Groups[1].Value;
+                    device.VncPort = 5900;
+                    _logger.LogInformation("[VNC] Password saved for device {DeviceId} via command result", result.DeviceId);
+                }
+            }
+        }
+
         await _dbContext.SaveChangesAsync();
     }
 

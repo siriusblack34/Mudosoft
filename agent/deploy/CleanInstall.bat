@@ -121,8 +121,8 @@ echo {
 echo   "Agent": {
 echo     "BackendUrl": "%BACKEND_URL%",
 echo     "StoreCode": "%STORE_CODE%",
-echo     "HeartbeatIntervalSeconds": 5,
-echo     "CommandPollIntervalSeconds": 1,
+echo     "HeartbeatIntervalSeconds": 15,
+echo     "CommandPollIntervalSeconds": 5,
 echo     "IpAddress": "",
 echo     "Collectors": {
 echo       "PortMonitor": {
@@ -134,28 +134,29 @@ echo           { "Port": 3389, "ServiceName": "RDP" }
 echo         ],
 echo         "TimeoutMs": 3000
 echo       },
-echo       "ProcessUsage": { "Enabled": true, "IntervalSeconds": 60, "TopCount": 10 },
+echo       "ProcessUsage": { "Enabled": false, "IntervalSeconds": 300, "TopCount": 10 },
 echo       "ServiceMonitor": {
-echo         "Enabled": true,
-echo         "IntervalSeconds": 60,
+echo         "Enabled": false,
+echo         "IntervalSeconds": 300,
 echo         "MonitoredServices": [ "MSSQL$SQLEXPRESS", "SQLBrowser" ],
 echo         "AutoRestart": true,
 echo         "MaxRestartsPerHour": 3
 echo       },
-echo       "EventLog": { "Enabled": true, "IntervalSeconds": 300, "LogNames": [ "System", "Application" ], "MaxEventsPerCycle": 50 },
-echo       "DiskHealth": { "Enabled": true, "IntervalSeconds": 3600 },
-echo       "WindowsUpdate": { "Enabled": true, "IntervalSeconds": 3600 },
-echo       "Temperature": { "Enabled": true, "IntervalSeconds": 60 },
-echo       "UpsStatus": { "Enabled": true, "IntervalSeconds": 30 },
-echo       "NetworkSpeed": { "Enabled": true, "IntervalSeconds": 3600, "TestUrl": "http://speedtest.tele2.net/10MB.zip", "TimeoutSeconds": 30 },
-echo       "UptimeReport": { "Enabled": true, "IntervalSeconds": 600 },
-echo       "ScheduledCleanup": { "Enabled": true, "IntervalSeconds": 86400, "Targets": [ { "Path": "%%TEMP%%", "MaxAgeDays": 7 }, { "Path": "C:\\Windows\\Prefetch", "MaxAgeDays": 30 }, { "Path": "C:\\Windows\\SoftwareDistribution\\Download", "MaxAgeDays": 7 } ] }
+echo       "EventLog": { "Enabled": false, "IntervalSeconds": 300, "LogNames": [ "System", "Application" ], "MaxEventsPerCycle": 50 },
+echo       "DiskHealth": { "Enabled": false, "IntervalSeconds": 3600 },
+echo       "WindowsUpdate": { "Enabled": false, "IntervalSeconds": 3600 },
+echo       "Temperature": { "Enabled": false, "IntervalSeconds": 300 },
+echo       "UpsStatus": { "Enabled": false, "IntervalSeconds": 300 },
+echo       "NetworkSpeed": { "Enabled": false, "IntervalSeconds": 3600, "TestUrl": "http://speedtest.tele2.net/10MB.zip", "TimeoutSeconds": 30 },
+echo       "UptimeReport": { "Enabled": false, "IntervalSeconds": 600 },
+echo       "ScheduledCleanup": { "Enabled": false, "IntervalSeconds": 86400, "Targets": [ { "Path": "%%TEMP%%", "MaxAgeDays": 7 }, { "Path": "C:\\Windows\\Prefetch", "MaxAgeDays": 30 }, { "Path": "C:\\Windows\\SoftwareDistribution\\Download", "MaxAgeDays": 7 } ] }
 echo     }
 echo   }
 echo }
 ) > "%INSTALL_DIR%\appsettings.json"
 
-sc create %SERVICE_NAME% binPath= "\"%INSTALL_DIR%\MudoSoft.Agent.exe\" --service" start= auto DisplayName= "MudoSoft Agent Service" >nul 2>&1
+reg add "HKLM\SYSTEM\CurrentControlSet\Control" /v ServicesPipeTimeout /t REG_DWORD /d 120000 /f >nul 2>&1
+sc create %SERVICE_NAME% binPath= "\"%INSTALL_DIR%\MudoSoft.Agent.exe\" --service" start= delayed-auto DisplayName= "MudoSoft Agent Service" >nul 2>&1
 sc description %SERVICE_NAME% "MudoSoft RMM Agent" >nul 2>&1
 sc failure %SERVICE_NAME% reset= 60 actions= restart/5000/restart/10000/restart/30000 >nul 2>&1
 sc start %SERVICE_NAME% >nul 2>&1

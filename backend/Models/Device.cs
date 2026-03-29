@@ -43,6 +43,9 @@ namespace MudoSoft.Backend.Models
 
         // ONLINE STATUS & TIMING
         public bool Online { get; set; }
+        public bool ExcludeFromOfflineList { get; set; }
+        public bool IsTemporarilyClosed { get; set; }
+        public string? TemporaryCloseReason { get; set; }
         public DateTime FirstSeen { get; set; } = DateTime.UtcNow;
         public DateTime? LastSeen { get; set; }
         public DateTime? SystemBootTime { get; set; } // For uptime calculation
@@ -50,7 +53,7 @@ namespace MudoSoft.Backend.Models
         // HEALTH
         public string HealthStatus { get; set; } = "Unknown";
         public int HealthScore { get; set; } = 100;
-        
+
         // LIVE METRICS
         public float CurrentCpuUsagePercent { get; set; }
         public float CurrentRamUsagePercent { get; set; }
@@ -59,6 +62,11 @@ namespace MudoSoft.Backend.Models
         // D DRIVE METRICS
         public float? CurrentDiskDUsagePercent { get; set; }
         public long? TotalDiskDGB { get; set; }
+
+        // VNC (Web Remote Desktop)
+        public bool VncInstalled { get; set; }
+        public string? VncPassword { get; set; } // Encrypted, per-device unique
+        public int VncPort { get; set; } = 5900;
 
         // NAVIGATION PROPERTY
         public List<DeviceMetric> Metrics { get; set; } = new();

@@ -22,7 +22,30 @@ namespace MudoSoft.Backend.Controllers
         public async Task<IActionResult> GetStoreManagers()
         {
             var managers = await _context.StoreManagers.ToListAsync();
-            return Ok(managers);
+
+            // StoreDevices tablosundan gerçek mağaza kodlarını al (mağaza adına göre eşleştir)
+            var storeCodeMap = await _context.StoreDevices
+                .AsNoTracking()
+                .Where(d => d.DeviceType == "PC")
+                .GroupBy(d => d.StoreName)
+                .Select(g => new { StoreName = g.Key, ActualStoreCode = g.First().StoreCode })
+                .ToDictionaryAsync(x => x.StoreName, x => x.ActualStoreCode);
+
+            var result = managers.Select(m =>
+            {
+                storeCodeMap.TryGetValue(m.StoreName, out var actualCode);
+                return new
+                {
+                    m.Id,
+                    m.StoreCode,
+                    m.StoreName,
+                    m.FullName,
+                    m.Phone,
+                    ActualStoreCode = actualCode > 0 ? actualCode : (int?)null
+                };
+            });
+
+            return Ok(result);
         }
 
         [HttpPost("import")]

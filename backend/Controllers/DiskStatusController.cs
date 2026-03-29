@@ -9,7 +9,7 @@ using System.Collections.Concurrent;
 namespace MudoSoft.Backend.Controllers
 {
     [ApiController]
-    [AllowAnonymous]
+    [Authorize]
     [Route("api/disk-status")]
     public class DiskStatusController : ControllerBase
     {

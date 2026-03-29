@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
 using MudoSoft.Backend.Data;
 using MudoSoft.Backend.Models;
@@ -6,6 +7,7 @@ using MudoSoft.Backend.Models;
 namespace MudoSoft.Backend.Controllers
 {
     [ApiController]
+    [Authorize]
     [Route("api/scheduled-tasks")]
     public class ScheduledTasksController : ControllerBase
     {

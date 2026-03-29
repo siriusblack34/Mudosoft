@@ -98,6 +98,7 @@ var hostBuilder = Host.CreateDefaultBuilder(args)
         // --- NORMAL MODE (Console or Service) ---
         // Tüm yönetim servisleri
         services.AddHostedService<AgentWorker>();
+        services.AddSingleton<VncInstallerService>();
         services.AddSingleton<ICommandExecutor, CommandExecutor>();
         services.AddSingleton<ICommandPoller, CommandPoller>(); 
         
@@ -113,8 +114,10 @@ var hostBuilder = Host.CreateDefaultBuilder(args)
         // Tray Communication - Named Pipe Server
         services.AddHostedService<PipeServer>();
 
-        // 8. Telemetry Service (Real-time Dashboard)
-        services.AddHostedService<TelemetryService>();
+        // Emergency hotfix:
+        // Telemetry reconnect + debug log spam was causing unnecessary load on store PCs.
+        // Keep the type in the codebase, but do not start it in the hotfix build.
+        // services.AddHostedService<TelemetryService>();
 
         // 9. Collector System
         services.Configure<CollectorsConfig>(hostContext.Configuration.GetSection("Agent:Collectors"));
@@ -130,7 +133,9 @@ var hostBuilder = Host.CreateDefaultBuilder(args)
         services.AddSingleton<ICollector, NetworkSpeedCollector>();
         services.AddSingleton<ICollector, UptimeReportCollector>();
         services.AddSingleton<ICollector, ScheduledCleanupCollector>();
-        services.AddHostedService<CollectorOrchestrator>();
+        // Emergency hotfix:
+        // Suspend non-essential collectors until we re-enable them one by one safely.
+        // services.AddHostedService<CollectorOrchestrator>();
     });
 
 var host = hostBuilder.Build();

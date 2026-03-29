@@ -7,8 +7,11 @@ import {
   Clock,
   Settings,
   RefreshCw,
-  // DÜZELTME: Close ikonunu ekleyin
-  X, // 'X' lucide-react kütüphanesinde genellikle çarpı/kapatma ikonudur
+  X,
+  RotateCcw,
+  Terminal,
+  FileUp,
+  DatabaseZap,
 } from "lucide-react";
 
 export const HomeIcon = Home;
@@ -17,5 +20,8 @@ export const DatabaseIcon = Database;
 export const ClockIcon = Clock;
 export const SettingsIcon = Settings;
 export const ReloadIcon = RefreshCw;
-// DÜZELTME: X ikonunu CloseIcon adı altında dışa aktarın
 export const CloseIcon = X;
+export const RebootIcon = RotateCcw;
+export const TerminalIcon = Terminal;
+export const FileIcon = FileUp;
+export const SqlIcon = DatabaseZap;

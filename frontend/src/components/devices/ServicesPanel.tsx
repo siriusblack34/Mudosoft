@@ -5,13 +5,17 @@ import { Play, Square, RotateCcw, RefreshCw, Search, Loader2 } from 'lucide-reac
 interface ServiceItem {
     Name: string;
     DisplayName: string;
-    Status: number; // 4=Running, 1=Stopped (PowerShell enum values)
-    StartType: number; // 2=Auto, 3=Manual, 4=Disabled
+    Status: string;
+    StartType: string;
 }
 
 interface ServicesPanelProps {
     deviceId: string;
 }
+
+const JSON_BEGIN_MARKER = '__MUDOSOFT_JSON_BEGIN__';
+const JSON_END_MARKER = '__MUDOSOFT_JSON_END__';
+const ERROR_MARKER = '__MUDOSOFT_ERROR__';
 
 const ServicesPanel: React.FC<ServicesPanelProps> = ({ deviceId }) => {
     const [services, setServices] = useState<ServiceItem[]>([]);
@@ -29,9 +33,7 @@ const ServicesPanel: React.FC<ServicesPanelProps> = ({ deviceId }) => {
         setLoading(true);
         setError(null);
         try {
-            // PowerShell command to get services as JSON
-            const script = `Get-Service | Select-Object Name, DisplayName, Status, StartType | ConvertTo-Json -Compress`;
-            const res = await apiClient.runScript(deviceId, script);
+            const res = await apiClient.listServices(deviceId);
             currentCommandId.current = res.commandId;
 
             // Start polling for result
@@ -68,13 +70,46 @@ const ServicesPanel: React.FC<ServicesPanelProps> = ({ deviceId }) => {
         }, 300); // Reduced from 1000ms
     };
 
-    const parseServiceData = (jsonString: string) => {
+    const extractJsonPayload = (rawOutput: string) => {
+        const beginIndex = rawOutput.indexOf(JSON_BEGIN_MARKER);
+        const endIndex = rawOutput.indexOf(JSON_END_MARKER);
+
+        if (beginIndex >= 0 && endIndex > beginIndex) {
+            return rawOutput
+                .slice(beginIndex + JSON_BEGIN_MARKER.length, endIndex)
+                .trim();
+        }
+
+        return rawOutput.trim();
+    };
+
+    const parseServiceData = (rawOutput: string) => {
         try {
-            const data = JSON.parse(jsonString);
+            if (!rawOutput || rawOutput.includes(ERROR_MARKER)) {
+                const errorText = rawOutput
+                    ?.split(ERROR_MARKER)
+                    ?.pop()
+                    ?.replace(JSON_BEGIN_MARKER, '')
+                    ?.replace(JSON_END_MARKER, '')
+                    ?.trim();
+
+                setServices([]);
+                setError(errorText || 'Service scan failed on agent.');
+                return;
+            }
+
+            const jsonPayload = extractJsonPayload(rawOutput);
+            const data = JSON.parse(jsonPayload);
             // Handle single object vs array
             const list = Array.isArray(data) ? data : [data];
-            setServices(list);
+            setServices(list.map((item: any) => ({
+                Name: item.Name || item.name || '',
+                DisplayName: item.DisplayName || item.displayName || '',
+                Status: item.Status || item.status || '',
+                StartType: item.StartType || item.startType || '',
+            })));
         } catch (err) {
+            setServices([]);
             setError("Failed to parse service data from agent.");
             console.error(err);
         }
@@ -115,6 +150,8 @@ const ServicesPanel: React.FC<ServicesPanelProps> = ({ deviceId }) => {
         s.Name.toLowerCase().includes(search.toLowerCase()) ||
         s.DisplayName.toLowerCase().includes(search.toLowerCase())
     );
+
+    const isRunning = (status: string) => status.toLowerCase() === 'running';
 
     return (
         <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden shadow-sm">
@@ -178,17 +215,17 @@ const ServicesPanel: React.FC<ServicesPanelProps> = ({ deviceId }) => {
                                     <td className="p-3 font-medium text-slate-200">{svc.Name}</td>
                                     <td className="p-3 text-slate-400 truncate max-w-xs" title={svc.DisplayName}>{svc.DisplayName}</td>
                                     <td className="p-3">
-                                        <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border ${svc.Status === 4
+                                        <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border ${isRunning(svc.Status)
                                             ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
                                             : 'bg-slate-800 text-slate-400 border-slate-700'
                                             }`}>
-                                            <span className={`w-1.5 h-1.5 rounded-full ${svc.Status === 4 ? 'bg-emerald-400' : 'bg-slate-500'}`}></span>
-                                            {svc.Status === 4 ? 'Running' : 'Stopped'}
+                                            <span className={`w-1.5 h-1.5 rounded-full ${isRunning(svc.Status) ? 'bg-emerald-400' : 'bg-slate-500'}`}></span>
+                                            {svc.Status || 'Unknown'}
                                         </span>
                                     </td>
                                     <td className="p-3 text-right">
                                         <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                            {svc.Status !== 4 ? (
+                                            {!isRunning(svc.Status) ? (
                                                 <button
                                                     onClick={() => handleServiceAction(svc.Name, 'Start')}
                                                     className="p-1.5 text-emerald-400 hover:bg-emerald-500/10 rounded transition-colors"

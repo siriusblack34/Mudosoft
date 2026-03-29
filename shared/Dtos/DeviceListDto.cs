@@ -9,8 +9,12 @@ namespace Mudosoft.Shared.Dtos
         public OsInfoDto? Os { get; set; }
 
         public int StoreCode { get; set; }
+        public string? StoreName { get; set; }
         public string? Type { get; set; }
         public bool Online { get; set; }
+        public bool ExcludeFromOfflineList { get; set; }
+        public bool IsTemporarilyClosed { get; set; }
+        public string? TemporaryCloseReason { get; set; }
         public string? LastSeen { get; set; }
 
         public int? CpuUsage { get; set; }

@@ -8,9 +8,17 @@ using System.Linq; // Select
 
 namespace MudoSoft.Backend.Services
 {
+    public class CleanResultItem
+    {
+        public string DeviceId { get; set; } = "";
+        public string StoreName { get; set; } = "";
+        public bool Success { get; set; }
+        public string Reason { get; set; } = "";
+    }
+
     public interface IInboxCleanupService
     {
-        Task<(int successCount, int totalCount, List<object> results)> CleanAllAsync();
+        Task<(int successCount, int totalCount, List<CleanResultItem> results)> CleanAllAsync();
     }
 
     public class InboxCleanupService : IInboxCleanupService
@@ -34,17 +42,17 @@ namespace MudoSoft.Backend.Services
         private string GetProcessedPath(string ip) => $@"\\{ip}\C$\{PROCESSED_FOLDER}";
         private string GetSeqPath(string ip) => $@"\\{ip}\C$\{SEQ_FOLDER}";
 
-        public async Task<(int successCount, int totalCount, List<object> results)> CleanAllAsync()
+        public async Task<(int successCount, int totalCount, List<CleanResultItem> results)> CleanAllAsync()
         {
             using var scope = _scopeFactory.CreateScope();
             var db = scope.ServiceProvider.GetRequiredService<MudoSoftDbContext>();
-            
+
             var pcDevices = await db.StoreDevices
                 .AsNoTracking()
                 .Where(d => d.DeviceType == "PC" || d.DeviceType.ToLower() == "gecici")
                 .ToListAsync();
 
-            var results = new ConcurrentBag<object>();
+            var results = new ConcurrentBag<CleanResultItem>();
             using var sem = new SemaphoreSlim(20);
 
             var tasks = pcDevices.Select(async device =>
@@ -55,7 +63,7 @@ namespace MudoSoft.Backend.Services
                     var isOnline = await IsDeviceOnlineAsync(device.CalculatedIpAddress, 2000);
                     if (!isOnline)
                     {
-                        results.Add(new { device.DeviceId, device.StoreName, success = false, reason = "offline" });
+                        results.Add(new CleanResultItem { DeviceId = device.DeviceId, StoreName = device.StoreName, Success = false, Reason = "offline" });
                         return;
                     }
 
@@ -79,9 +87,9 @@ namespace MudoSoft.Backend.Services
                     var anyError = err1 ?? err2 ?? err3 ?? err4;
 
                     if (totalDeleted == 0 && anyError != null)
-                        results.Add(new { device.DeviceId, device.StoreName, success = false, reason = anyError });
+                        results.Add(new CleanResultItem { DeviceId = device.DeviceId, StoreName = device.StoreName, Success = false, Reason = anyError });
                     else
-                        results.Add(new { device.DeviceId, device.StoreName, success = true, reason = $"{totalDeleted} dosya silindi" });
+                        results.Add(new CleanResultItem { DeviceId = device.DeviceId, StoreName = device.StoreName, Success = true, Reason = $"{totalDeleted} dosya silindi" });
                 }
                 finally
                 {
@@ -92,8 +100,8 @@ namespace MudoSoft.Backend.Services
             await Task.WhenAll(tasks);
 
             var resultList = results.ToList();
-            var successCount = resultList.Cast<dynamic>().Count(r => r.success);
-            
+            var successCount = resultList.Count(r => r.Success);
+
             return (successCount, resultList.Count, resultList);
         }
 

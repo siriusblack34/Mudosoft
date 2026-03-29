@@ -78,6 +78,12 @@ const OfflineLogsPage: React.FC = () => {
 
     useEffect(() => { load(); }, [days]);
 
+    // Auto-refresh every 60 seconds
+    useEffect(() => {
+        const interval = setInterval(load, 60000);
+        return () => clearInterval(interval);
+    }, [days]);
+
     const filteredLogs = search.trim()
         ? logs.filter(l => l.storeName.toLowerCase().includes(search.toLowerCase()) || String(l.storeCode).includes(search))
         : logs;
@@ -159,6 +165,26 @@ const OfflineLogsPage: React.FC = () => {
                     </button>
                 </div>
             </div>
+
+            {/* Summary Bar */}
+            {!loading && stats.length > 0 && (
+                <div className="flex items-center gap-4 text-xs">
+                    <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-500/10 border border-red-500/20">
+                        <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+                        <span className="font-bold text-red-400">{stats.filter(s => s.isCurrentlyOffline).length}</span>
+                        <span className="text-red-400/70">simdi offline</span>
+                    </div>
+                    <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-700/50">
+                        <AlertTriangle className="w-3 h-3 text-slate-400" />
+                        <span className="font-bold text-slate-300">{logs.length}</span>
+                        <span className="text-slate-400">toplam kesinti</span>
+                    </div>
+                    <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-700/50">
+                        <span className="font-bold text-slate-300">{stats.length}</span>
+                        <span className="text-slate-400">etkilenen magaza</span>
+                    </div>
+                </div>
+            )}
 
             {loading ? (
                 <div className="flex items-center justify-center h-64 text-slate-600">

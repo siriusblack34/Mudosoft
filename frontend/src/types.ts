@@ -37,6 +37,7 @@ export interface Device {
     posVersion?: string;
     online: boolean;
     lastSeen: string;
+    firstSeen?: string;
 
     // Live Metrics
     cpuUsage?: number;
@@ -58,6 +59,7 @@ export interface Device {
 
     // Uptime (boot time from server)
     systemBootTime?: string;
+    vncInstalled?: boolean;
 }
 
 export interface SqlResult {

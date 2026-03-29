@@ -1,450 +1,447 @@
-import React, { useEffect, useState } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import React, { useEffect, useMemo, useState } from "react";
+import { useNavigate, useParams } from "react-router-dom";
+import {
+  Activity, ArrowLeft, Cpu, Download, FolderOpen, HardDrive,
+  MemoryStick, Monitor, Package, Power, Radar, Settings,
+  Terminal, Trash2, Wifi, WifiOff, X, Clock, User, Server,
+  Gauge, Zap, ThermometerSun, Eye,
+} from "lucide-react";
 import MetricChart from "../components/ui/MetricChart";
 import { apiClient } from "../lib/apiClient";
 import type { Device, DeviceMetric, OsInfo } from "../types";
-import {
-    Cpu, HardDrive, MemoryStick, Monitor,
-    Power, Settings, FolderOpen, Package, ArrowLeft, User, Clock, Terminal, Trash2, Activity
-} from "lucide-react";
 
-// UTC to Local Time formatter
-const formatTimeLocal = (utcString: string | null | undefined) => {
-    if (!utcString) return "N/A";
-    const cleanString = utcString.endsWith('Z') ? utcString : utcString + 'Z';
-    const date = new Date(cleanString);
-    if (isNaN(date.getTime())) return "Invalid Date";
-
-    const options: Intl.DateTimeFormatOptions = {
-        year: 'numeric', month: 'numeric', day: 'numeric',
-        hour: '2-digit', minute: '2-digit', second: '2-digit',
-        hour12: false,
-    };
-    return date.toLocaleString(undefined, options);
+/* ------------------------------------------------------------------ */
+/*  Helpers                                                            */
+/* ------------------------------------------------------------------ */
+const fmt = (s?: string | null) => {
+  if (!s) return "-";
+  const d = new Date(s.endsWith("Z") ? s : `${s}Z`);
+  return Number.isNaN(d.getTime())
+    ? "-"
+    : d.toLocaleString("tr-TR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
 };
 
-// Format uptime from boot time
-const formatUptime = (bootTimeStr: string | null | undefined) => {
-    if (!bootTimeStr) return "N/A";
-    const cleanString = bootTimeStr.endsWith('Z') ? bootTimeStr : bootTimeStr + 'Z';
-    const bootTime = new Date(cleanString);
-    if (isNaN(bootTime.getTime())) return "N/A";
-
-    const now = new Date();
-    const diffMs = now.getTime() - bootTime.getTime();
-
-    const days = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-    const hours = Math.floor((diffMs % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
-    const minutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
-
-    if (days > 0) return `${days}d ${hours}h ${minutes}m`;
-    if (hours > 0) return `${hours}h ${minutes}m`;
-    return `${minutes}m`;
+const fmtUptime = (s?: string | null) => {
+  if (!s) return "-";
+  const boot = new Date(s.endsWith("Z") ? s : `${s}Z`);
+  if (Number.isNaN(boot.getTime())) return "-";
+  const ms = Date.now() - boot.getTime();
+  const d = Math.floor(ms / 86400000);
+  const h = Math.floor((ms % 86400000) / 3600000);
+  const m = Math.floor((ms % 3600000) / 60000);
+  if (d > 0) return `${d}g ${h}s ${m}dk`;
+  if (h > 0) return `${h}s ${m}dk`;
+  return `${m}dk`;
 };
 
-// OS name formatter
-const formatOsName = (osInfo?: OsInfo) => {
-    if (!osInfo || !osInfo.name) return "N/A";
-    const name = osInfo.name.trim();
-    if (!name) return "N/A";
-    if (name.includes('NT 6.1')) return 'Windows 7';
-    if (name.includes('NT 6.2')) return 'Windows 8';
-    if (name.includes('NT 6.3')) return 'Windows 8.1';
-    if (name.includes('NT 10.0')) return 'Windows 10/11';
-    return name;
+const fmtOs = (o?: OsInfo) => {
+  if (!o?.name) return "-";
+  const n = o.name.trim();
+  if (n.includes("NT 6.1")) return "Windows 7";
+  if (n.includes("NT 10.0")) return "Windows 10/11";
+  return n;
 };
 
-// Format RAM size
-const formatRam = (mb?: number) => {
-    if (!mb) return "N/A";
-    const gb = Math.round(mb / 1024);
-    return `${gb} GB`;
-};
+const fmtRam = (mb?: number) => (mb ? `${Math.round(mb / 1024)} GB` : "-");
+const clamp = (v = 0) => Math.max(0, Math.min(100, Math.round(v)));
 
+/* ------------------------------------------------------------------ */
+/*  Page                                                               */
+/* ------------------------------------------------------------------ */
 const DeviceDetailsPage: React.FC = () => {
-    const { deviceId } = useParams<{ deviceId: string }>();
-    const navigate = useNavigate();
-    const [deviceData, setDeviceData] = useState<Device | null>(null);
-    const [loading, setLoading] = useState(true);
-    const [restarting, setRestarting] = useState(false);
-    const [cleanupPaths, setCleanupPaths] = useState<string[]>([]);
-    const [customPath, setCustomPath] = useState('');
-    const [cleaning, setCleaning] = useState(false);
-    const [cleanupResult, setCleanupResult] = useState<string | null>(null);
+  const { deviceId } = useParams<{ deviceId: string }>();
+  const navigate = useNavigate();
+  const [dev, setDev] = useState<Device | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [restarting, setRestarting] = useState(false);
+  const [installingVnc, setInstallingVnc] = useState(false);
 
-    useEffect(() => {
-        if (!deviceId) {
-            setLoading(false);
-            return;
-        }
+  // Cleanup
+  const [cleanPaths, setCleanPaths] = useState<string[]>([]);
+  const [customPath, setCustomPath] = useState("");
+  const [cleaning, setCleaning] = useState(false);
+  const [cleanResult, setCleanResult] = useState<string | null>(null);
 
-        let cancelled = false;
+  // Scanner
+  const [scanOpen, setScanOpen] = useState(false);
+  const [scanning, setScanning] = useState(false);
+  const [scanResults, setScanResults] = useState<any[]>([]);
+  const [scanInfo, setScanInfo] = useState<{ subnet: string; range: string; total: number } | null>(null);
+  const [scanError, setScanError] = useState<string | null>(null);
 
-        const loadData = async () => {
-            try {
-                const fullDeviceData = await apiClient.getDevice(deviceId);
-                if (!cancelled) setDeviceData(fullDeviceData);
-            } catch (err) {
-                console.error("❌ Failed to load device:", err);
-                if (!cancelled) setDeviceData(null);
-            } finally {
-                if (!cancelled) setLoading(false);
-            }
-        };
-
-        loadData();
-        const dataIntervalId = setInterval(loadData, 10000);
-
-        return () => {
-            cancelled = true;
-            clearInterval(dataIntervalId);
-        };
-    }, [deviceId]);
-
-    const handleRestart = async () => {
-        if (!deviceId) return;
-        const confirmed = window.confirm('Are you sure you want to restart this computer? This will close all open applications.');
-        if (!confirmed) return;
-
-        setRestarting(true);
-        try {
-            await apiClient.runScript(deviceId, 'shutdown /r /t 0');
-            alert('Restart komutu gönderildi! Bilgisayar şimdi yeniden başlatılıyor.');
-        } catch (err) {
-            console.error('Restart failed:', err);
-            alert('Failed to send restart command.');
-        } finally {
-            setRestarting(false);
-        }
+  /* ---- data fetch ---- */
+  useEffect(() => {
+    if (!deviceId) { setLoading(false); return; }
+    let off = false;
+    const load = async () => {
+      try { const d = await apiClient.getDevice(deviceId); if (!off) setDev(d); }
+      catch { if (!off) setDev(null); }
+      finally { if (!off) setLoading(false); }
     };
+    load();
+    const iv = setInterval(load, 10000);
+    return () => { off = true; clearInterval(iv); };
+  }, [deviceId]);
 
-    const predefinedPaths = [
-        { label: 'Windows Temp', path: 'C:\\Windows\\Temp' },
-        { label: 'User Temp', path: '%USERTEMP%' },
-        { label: 'Prefetch', path: 'C:\\Windows\\Prefetch' },
-    ];
+  /* ---- actions ---- */
+  const doVnc = async () => {
+    if (!deviceId) return;
+    setInstallingVnc(true);
+    try { await apiClient.post(`/api/agent/vnc-install/${deviceId}`); alert("VNC kurulum komutu gönderildi."); }
+    catch { alert("VNC kurulum komutu gönderilemedi."); }
+    finally { setInstallingVnc(false); }
+  };
 
-    const togglePath = (path: string) => {
-        setCleanupPaths(prev =>
-            prev.includes(path)
-                ? prev.filter(p => p !== path)
-                : [...prev, path]
-        );
-    };
+  const doRestart = async () => {
+    if (!deviceId || !window.confirm("Bu cihazı yeniden başlatmak istediğinize emin misiniz?")) return;
+    setRestarting(true);
+    try { await apiClient.runScript(deviceId, "shutdown /r /t 0"); alert("Yeniden başlatma komutu gönderildi."); }
+    catch { alert("Komut gönderilemedi."); }
+    finally { setRestarting(false); }
+  };
 
-    const handleCleanup = async () => {
-        if (!deviceId) return;
+  const doScan = async () => {
+    if (!dev?.ipAddress) return;
+    const parts = dev.ipAddress.split(".");
+    if (parts.length < 4) return;
+    const subnet = parts.slice(0, 3).join(".");
+    setScanOpen(true); setScanning(true); setScanResults([]); setScanError(null);
+    setScanInfo({ subnet, range: `${subnet}.1 - ${subnet}.254`, total: 0 });
+    try {
+      const body: any = { subnet }; if (deviceId) body.deviceId = deviceId;
+      const res = await apiClient.post<any>("/api/agent/remote-install/scan", body, 360000);
+      setScanResults(res.devices || []);
+      setScanInfo({ subnet: res.subnet, range: res.scannedRange, total: res.total });
+      setScanError(res.error || null);
+    } catch (err: any) { setScanError(err?.message || String(err)); }
+    finally { setScanning(false); }
+  };
 
-        const pathsToClean = [...cleanupPaths];
-        if (customPath.trim()) {
-            pathsToClean.push(customPath.trim());
-        }
+  const cleanupPaths = [
+    { label: "Windows Temp", path: "C:\\Windows\\Temp" },
+    { label: "Kullanıcı Temp", path: "%USERTEMP%" },
+    { label: "Prefetch", path: "C:\\Windows\\Prefetch" },
+  ];
 
-        if (pathsToClean.length === 0) {
-            alert('Lütfen en az bir klasör seçin veya path girin.');
-            return;
-        }
+  const doClean = async () => {
+    if (!deviceId) return;
+    const all = [...cleanPaths, ...(customPath.trim() ? [customPath.trim()] : [])];
+    if (!all.length) { alert("En az bir klasör seçin."); return; }
+    if (!window.confirm(`${all.length} klasör temizlenecek. Onaylıyor musunuz?`)) return;
+    setCleaning(true); setCleanResult(null);
+    try {
+      const r: string[] = [];
+      for (const p of all) { const { commandId } = await apiClient.folderCleanup(deviceId, p); r.push(`${p} (${commandId.slice(0, 8)}...)`); }
+      setCleanResult(r.join("\n")); setCleanPaths([]); setCustomPath("");
+    } catch { setCleanResult("Temizlik komutu gönderilemedi!"); }
+    finally { setCleaning(false); }
+  };
 
-        const confirmed = window.confirm(`${pathsToClean.length} klasör temizlenecek. Onaylıyor musunuz?`);
-        if (!confirmed) return;
+  /* ---- chart data ---- */
+  const metrics: DeviceMetric[] = dev?.metrics || [];
+  const cpuData = useMemo(() => metrics.map(m => ({ name: fmt(m.timestampUtc), value: m.cpuUsagePercent })), [metrics]);
+  const ramData = useMemo(() => metrics.map(m => ({ name: fmt(m.timestampUtc), value: m.ramUsagePercent })), [metrics]);
+  const diskData = useMemo(() => metrics.map(m => ({ name: fmt(m.timestampUtc), value: m.diskUsagePercent })), [metrics]);
 
-        setCleaning(true);
-        setCleanupResult(null);
-
-        try {
-            const results: string[] = [];
-            for (const path of pathsToClean) {
-                const { commandId } = await apiClient.folderCleanup(deviceId, path);
-                results.push(`✓ ${path} (Command: ${commandId.substring(0, 8)}...)`);
-            }
-            setCleanupResult(results.join('\n'));
-            setCleanupPaths([]);
-            setCustomPath('');
-        } catch (err) {
-            console.error('Cleanup failed:', err);
-            setCleanupResult('❌ Temizlik komutu gönderilemedi!');
-        } finally {
-            setCleaning(false);
-        }
-    };
-
-    if (loading || !deviceId) {
-        return (
-            <div className="flex items-center justify-center min-h-[400px]">
-                <div className="w-8 h-8 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin" />
-            </div>
-        );
-    }
-
-    if (!deviceData) {
-        return (
-            <div className="flex flex-col items-center justify-center min-h-[400px] text-gray-400">
-                <Monitor className="w-16 h-16 mb-4 opacity-50" />
-                <p>Could not load device details for {deviceId}.</p>
-                <button
-                    onClick={() => navigate('/devices')}
-                    className="mt-4 px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg"
-                >
-                    Back to Devices
-                </button>
-            </div>
-        );
-    }
-
-    const metrics: DeviceMetric[] = deviceData.metrics || [];
-    const cpuData = metrics.map(m => ({ name: formatTimeLocal(m.timestampUtc), value: m.cpuUsagePercent }));
-    const ramData = metrics.map(m => ({ name: formatTimeLocal(m.timestampUtc), value: m.ramUsagePercent }));
-    const diskData = metrics.map(m => ({ name: formatTimeLocal(m.timestampUtc), value: m.diskUsagePercent }));
-
-    const latestCpu = deviceData.cpuUsage ?? 0;
-    const latestRam = deviceData.ramUsage ?? 0;
-    const latestDisk = deviceData.diskUsage ?? 0;
-
-    return (
-        <div className="space-y-6">
-            {/* Header */}
-            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-                <div className="flex items-center gap-4">
-                    <button
-                        onClick={() => navigate('/devices')}
-                        className="p-2 hover:bg-gray-700/50 rounded-xl transition-colors"
-                    >
-                        <ArrowLeft className="w-5 h-5 text-gray-400" />
-                    </button>
-                    <div>
-                        <div className="flex items-center gap-3">
-                            <h1 className="text-2xl font-bold text-white">{deviceData.hostname}</h1>
-                            <span className={`px-3 py-1 rounded-full text-xs font-semibold ${deviceData.online
-                                ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
-                                : 'bg-red-500/20 text-red-400 border border-red-500/30'
-                                }`}>
-                                {deviceData.online ? '● Online' : '○ Offline'}
-                            </span>
-                        </div>
-                        <p className="text-sm text-gray-500 mt-1">{deviceData.ipAddress} • {deviceData.storeCode || 'No Store'}</p>
-                    </div>
-                </div>
-
-                {/* Action Buttons */}
-                <div className="flex flex-wrap gap-2">
-                    <ActionButton icon={Activity} label="Health" color="emerald" onClick={() => navigate(`/devices/${deviceId}/health`)} />
-                    <ActionButton icon={Settings} label="Services" color="indigo" onClick={() => navigate(`/devices/${deviceId}/services`)} />
-                    <ActionButton icon={FolderOpen} label="Files" color="violet" onClick={() => navigate(`/devices/${deviceId}/files`)} />
-                    <ActionButton icon={Package} label="Software" color="fuchsia" onClick={() => navigate(`/devices/${deviceId}/software`)} />
-                    <ActionButton icon={Terminal} label="Script" color="amber" onClick={() => navigate(`/devices/${deviceId}/script`)} />
-                    <ActionButton
-                        icon={Power}
-                        label={restarting ? 'Sending...' : 'Restart'}
-                        color="red"
-                        onClick={handleRestart}
-                        disabled={restarting || !deviceData.online}
-                    />
-                </div>
-            </div>
-
-            {/* Main Grid */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                {/* Device Information */}
-                <div className="p-6 rounded-2xl glass-card relative overflow-hidden group">
-                    <div className="absolute top-0 right-0 w-32 h-32 bg-emerald-500/10 rounded-full blur-3xl group-hover:bg-emerald-500/20 transition-all duration-500"></div>
-                    <h2 className="text-lg font-semibold mb-5 flex items-center gap-2 text-white relative z-10">
-                        <div className="p-2 rounded-xl bg-emerald-500/10 shadow-inner border border-white/5">
-                            <Monitor className="w-5 h-5 text-emerald-400" />
-                        </div>
-                        Device Information
-                    </h2>
-                    <div className="space-y-4">
-                        <InfoRow label="Hostname" value={deviceData.hostname} />
-                        <InfoRow label="IP Address" value={deviceData.ipAddress} />
-                        <InfoRow label="OS" value={deviceData.os?.version && deviceData.os.version !== '-' ? deviceData.os.version : formatOsName(deviceData.os)} />
-                        <InfoRow label="Store Code" value={deviceData.storeCode ? String(deviceData.storeCode) : 'N/A'} />
-                        <InfoRow label="Agent Version" value={deviceData.agentVersion ? String(deviceData.agentVersion) : 'N/A'} highlight />
-                        <div className="h-px bg-white/5 my-4" />
-                        <InfoRow label="Uptime" value={formatUptime(deviceData.systemBootTime)} icon={Clock} valueClass="text-emerald-400" />
-                        <InfoRow label="Logged In User" value={deviceData.lastLoggedInUser ?? 'N/A'} icon={User} />
-                        <InfoRow label="Last Seen" value={formatTimeLocal(deviceData.lastSeen)} small />
-                    </div>
-                </div>
-
-                {/* Hardware Inventory */}
-                <div className="p-6 rounded-2xl glass-card relative overflow-hidden group">
-                    <div className="absolute -bottom-10 right-10 w-40 h-40 bg-blue-500/10 rounded-full blur-3xl group-hover:bg-blue-500/20 transition-all duration-500"></div>
-                    <h2 className="text-lg font-semibold mb-5 flex items-center gap-2 text-white relative z-10">
-                        <div className="p-2 rounded-xl bg-blue-500/10 shadow-inner border border-white/5">
-                            <Cpu className="w-5 h-5 text-blue-400" />
-                        </div>
-                        Hardware Inventory
-                    </h2>
-                    <div className="grid grid-cols-2 gap-4">
-                        <HardwareCard icon={Cpu} label="PROCESSOR" value={deviceData.cpuModel ?? 'N/A'} color="blue" />
-                        <HardwareCard icon={MemoryStick} label="MEMORY" value={formatRam(deviceData.totalRamMB)} color="purple" />
-                        <HardwareCard
-                            icon={HardDrive}
-                            label="STORAGE"
-                            value={deviceData.totalDiskGB ? `${Math.round((deviceData.totalDiskGB * (deviceData.diskUsage || 0)) / 100)} / ${deviceData.totalDiskGB} GB` : 'N/A'}
-                            color="amber"
-                        />
-                        <HardwareCard icon={Monitor} label="GRAPHICS" value={deviceData.gpuModel ?? 'N/A'} color="green" />
-                    </div>
-                </div>
-            </div>
-
-            {/* Quick Cleanup */}
-            <div className="p-6 rounded-2xl glass-card relative overflow-hidden group">
-                <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-64 h-64 bg-rose-500/5 rounded-full blur-3xl group-hover:bg-rose-500/10 transition-all duration-500"></div>
-                <h2 className="text-lg font-semibold mb-5 flex items-center gap-2 text-white relative z-10">
-                    <div className="p-2 rounded-xl bg-rose-500/10 shadow-inner border border-white/5">
-                        <Trash2 className="w-5 h-5 text-rose-400" />
-                    </div>
-                    Quick Cleanup
-                </h2>
-                <div className="space-y-4">
-                    <div className="flex flex-wrap gap-2">
-                        {predefinedPaths.map(({ label, path }) => (
-                            <button
-                                key={path}
-                                onClick={() => togglePath(path)}
-                                className={`px-4 py-2 rounded-xl text-sm font-medium transition-all duration-200 ${cleanupPaths.includes(path)
-                                    ? 'bg-rose-500 text-white shadow-lg shadow-rose-500/25'
-                                    : 'bg-gray-700/50 text-gray-300 hover:bg-gray-600/50 border border-gray-600/50'
-                                    }`}
-                            >
-                                {cleanupPaths.includes(path) ? '✓ ' : ''}{label}
-                            </button>
-                        ))}
-                    </div>
-
-                    <div className="flex gap-3">
-                        <input
-                            type="text"
-                            value={customPath}
-                            onChange={(e) => setCustomPath(e.target.value)}
-                            placeholder="Özel path girin (örn: C:\Users\...\Downloads)"
-                            className="flex-1 px-4 py-3 rounded-xl glass-panel text-sm text-white placeholder-slate-400 focus-ring transition-all relative z-10"
-                        />
-                        <button
-                            onClick={handleCleanup}
-                            disabled={cleaning || !deviceData.online || (cleanupPaths.length === 0 && !customPath.trim())}
-                            className="px-6 py-3 bg-gradient-to-r from-rose-600 to-rose-500 hover:from-rose-500 hover:to-rose-400 text-white rounded-xl flex items-center gap-2 transition-all duration-300 hover:shadow-[0_0_20px_rgba(244,63,94,0.4)] disabled:opacity-50 disabled:cursor-not-allowed hover:-translate-y-0.5 relative z-10"
-                        >
-                            <Trash2 className="w-4 h-4" />
-                            {cleaning ? 'Temizleniyor...' : 'Temizle'}
-                        </button>
-                    </div>
-
-                    {cleanupResult && (
-                        <div className="p-4 rounded-xl bg-gray-800/50 border border-gray-600/50 text-sm whitespace-pre-line text-gray-300">
-                            {cleanupResult}
-                        </div>
-                    )}
-
-                    {!deviceData.online && (
-                        <p className="text-sm text-amber-400 flex items-center gap-2">
-                            <Activity className="w-4 h-4" />
-                            Cihaz offline - temizlik komutu gönderilemez.
-                        </p>
-                    )}
-                </div>
-            </div>
-
-            {/* Performance Metrics */}
-            <div className="space-y-4">
-                <h2 className="text-lg font-semibold text-white flex items-center gap-2">
-                    <Activity className="w-5 h-5 text-emerald-400" />
-                    Performance Metrics
-                    <span className="text-xs text-gray-500 font-normal ml-2">Last 24 Hours</span>
-                </h2>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <MetricCard title="CPU Usage" data={cpuData} value={latestCpu} color="#f87171" />
-                    <MetricCard title="RAM Usage" data={ramData} value={latestRam} color="#60a5fa" />
-                    <MetricCard title="Disk Usage" data={diskData} value={latestDisk} color="#34d399" />
-                </div>
-            </div>
-        </div>
-    );
-};
-
-// Helper Components
-const ActionButton: React.FC<{
-    icon: React.FC<{ className?: string }>;
-    label: string;
-    color: string;
-    onClick: () => void;
-    disabled?: boolean;
-}> = ({ icon: Icon, label, color, onClick, disabled }) => {
-    const colorMap: Record<string, string> = {
-        emerald: 'bg-emerald-600 hover:bg-emerald-500 shadow-emerald-900/20',
-        indigo: 'bg-indigo-600 hover:bg-indigo-500 shadow-indigo-900/20',
-        violet: 'bg-violet-600 hover:bg-violet-500 shadow-violet-900/20',
-        fuchsia: 'bg-fuchsia-600 hover:bg-fuchsia-500 shadow-fuchsia-900/20',
-        amber: 'bg-amber-600 hover:bg-amber-500 shadow-amber-900/20',
-        red: 'bg-red-600 hover:bg-red-500 shadow-red-900/20',
-    };
-
-    return (
-        <button
-            onClick={onClick}
-            disabled={disabled}
-            className={`${colorMap[color]} text-white px-4 py-2 rounded-xl flex items-center gap-2 transition-all text-sm font-medium shadow-lg disabled:opacity-50 disabled:cursor-not-allowed`}
-        >
-            <Icon className="w-4 h-4" />
-            {label}
-        </button>
-    );
-};
-
-const InfoRow: React.FC<{
-    label: string;
-    value: string | null | undefined;
-    icon?: React.FC<{ className?: string }>;
-    valueClass?: string;
-    highlight?: boolean;
-    small?: boolean;
-}> = ({ label, value, icon: Icon, valueClass, highlight, small }) => (
-    <div className="flex justify-between items-center">
-        <span className="text-gray-500 flex items-center gap-2 text-sm">
-            {Icon && <Icon className="w-4 h-4" />}
-            {label}
-        </span>
-        <span className={`${valueClass || 'text-white'} ${highlight ? 'px-2 py-1 bg-emerald-500/10 rounded-md text-emerald-400' : ''} ${small ? 'text-xs text-gray-400' : 'font-medium'}`}>
-            {value || 'N/A'}
-        </span>
+  /* ---- loading / error ---- */
+  if (loading) return (
+    <div className="flex items-center justify-center min-h-[500px]">
+      <div className="relative">
+        <div className="w-12 h-12 rounded-full border-2 border-violet-500/20 border-t-violet-500 animate-spin" />
+        <div className="absolute inset-0 w-12 h-12 rounded-full border-2 border-transparent border-b-sky-500/40 animate-spin" style={{ animationDirection: "reverse", animationDuration: "1.5s" }} />
+      </div>
     </div>
+  );
+
+  if (!dev) return (
+    <div className="flex flex-col items-center justify-center min-h-[500px] animate-fade-in">
+      <Monitor className="w-16 h-16 mb-4 text-slate-600" />
+      <p className="text-slate-400 mb-4">Cihaz bilgileri yüklenemedi</p>
+      <button onClick={() => navigate("/devices")} className="btn-secondary">Cihazlara Dön</button>
+    </div>
+  );
+
+  const osText = dev.os?.version && dev.os.version !== "-" ? dev.os.version : fmtOs(dev.os);
+  const isKasa = dev.hostname?.startsWith("KSTR");
+  const cpu = clamp(dev.cpuUsage);
+  const ram = clamp(dev.ramUsage);
+  const disk = clamp(dev.diskUsage);
+
+  return (
+    <div className="space-y-6 animate-fade-in">
+
+      {/* ═══════════ HEADER ═══════════ */}
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+        <div className="flex items-center gap-3">
+          <button onClick={() => navigate("/devices")} className="p-2.5 rounded-xl bg-ms-panel border border-ms-border hover:bg-ms-hover-bg transition-all hover:-translate-x-0.5">
+            <ArrowLeft className="w-4 h-4 text-ms-text-muted" />
+          </button>
+          <div>
+            <div className="flex items-center gap-3">
+              <h1 className="text-xl font-bold text-ms-text">{dev.storeName || dev.hostname}</h1>
+              <StatusPill online={dev.online} />
+              <span className={`px-2 py-0.5 rounded text-[10px] font-semibold tracking-wide uppercase ${isKasa ? "bg-amber-500/10 text-amber-500 dark:text-amber-400" : "bg-sky-500/10 text-sky-600 dark:text-sky-400"}`}>
+                {isKasa ? "Kasa" : "Mağaza PC"}
+              </span>
+            </div>
+            <p className="text-xs text-ms-text-muted mt-0.5 font-mono">{dev.ipAddress} · M:{dev.storeCode} · {dev.hostname}</p>
+          </div>
+        </div>
+
+        {/* Action Buttons */}
+        <div className="flex flex-wrap gap-1.5">
+          <Pill icon={Activity} label="Sağlık" color="emerald" onClick={() => navigate(`/devices/${deviceId}/health`)} />
+          <Pill icon={Monitor} label="Uzak Masaüstü" color="blue" onClick={() => navigate(`/devices/${deviceId}/rdp`)} disabled={!dev.online || !dev.vncInstalled} />
+          {!dev.vncInstalled && <Pill icon={Download} label={installingVnc ? "Kuruluyor..." : "VNC Kur"} color="cyan" onClick={doVnc} disabled={installingVnc || !dev.online} />}
+          <Pill icon={Settings} label="Servisler" color="indigo" onClick={() => navigate(`/devices/${deviceId}/services`)} />
+          <Pill icon={FolderOpen} label="Dosyalar" color="violet" onClick={() => navigate(`/devices/${deviceId}/files`)} />
+          <Pill icon={Package} label="Yazılımlar" color="fuchsia" onClick={() => navigate(`/devices/${deviceId}/software`)} />
+          <Pill icon={Terminal} label="Betik" color="amber" onClick={() => navigate(`/devices/${deviceId}/script`)} />
+          <Pill icon={Radar} label={scanning ? "Taranıyor..." : "IP Tarama"} color="teal" onClick={doScan} disabled={scanning} />
+          <Pill icon={Power} label={restarting ? "Gönderiliyor..." : "Yeniden Başlat"} color="red" onClick={doRestart} disabled={restarting || !dev.online} />
+        </div>
+      </div>
+
+      {/* ═══════════ LIVE GAUGES ═══════════ */}
+      <div className="grid grid-cols-3 gap-4">
+        <GaugeCard label="İşlemci" value={cpu} icon={Cpu} color="rose" />
+        <GaugeCard label="Bellek" value={ram} icon={MemoryStick} color="blue" />
+        <GaugeCard label="Disk" value={disk} icon={HardDrive} color="emerald"
+          extra={dev.totalDiskGB ? `${Math.round((dev.totalDiskGB * disk) / 100)} / ${dev.totalDiskGB} GB` : undefined} />
+      </div>
+
+      {/* ═══════════ DEVICE INFO TABLE ═══════════ */}
+      <section className="rounded-2xl bg-ms-bg-soft border border-ms-border p-6 relative overflow-hidden">
+        {/* subtle glow */}
+        <div className="absolute -top-20 -right-20 w-60 h-60 bg-violet-500/[0.04] rounded-full blur-3xl pointer-events-none" />
+        <h2 className="text-sm font-semibold text-ms-text mb-5 flex items-center gap-2 relative z-10">
+          <span className="p-1.5 rounded-lg bg-violet-500/10"><Monitor className="w-4 h-4 text-violet-500 dark:text-violet-400" /></span>
+          Cihaz Bilgileri
+        </h2>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-x-8 gap-y-1 relative z-10">
+          <InfoRow label="PC Adı" value={dev.hostname} icon={Server} />
+          <InfoRow label="IP Adresi" value={dev.ipAddress} mono />
+          <InfoRow label="İşletim Sistemi" value={osText} />
+          <InfoRow label="Mağaza Kodu" value={String(dev.storeCode || "-")} />
+          <InfoRow label="Agent Sürümü" value={dev.agentVersion} badge />
+          <InfoRow label="Çalışma Süresi" value={fmtUptime(dev.systemBootTime)} icon={Clock} accent />
+          <InfoRow label="Oturum Açan" value={dev.lastLoggedInUser} icon={User} />
+          <InfoRow label="Son Görülme" value={fmt(dev.lastSeen)} />
+          <InfoRow label="SQL Sürümü" value={dev.sqlVersion} />
+          <InfoRow label="Kurulum Tarihi" value={fmt(dev.firstSeen)} accent />
+          <InfoRow label="İşlemci" value={dev.cpuModel} icon={Cpu} />
+          <InfoRow label="Bellek" value={fmtRam(dev.totalRamMB)} icon={MemoryStick} />
+        </div>
+      </section>
+
+      {/* ═══════════ PERFORMANCE CHARTS ═══════════ */}
+      <section>
+        <div className="flex items-center gap-2 mb-3">
+          <span className="p-1.5 rounded-lg bg-emerald-500/10"><Activity className="w-4 h-4 text-emerald-500 dark:text-emerald-400" /></span>
+          <h2 className="text-sm font-semibold text-ms-text">Performans Metrikleri</h2>
+          <span className="text-[11px] text-ms-text-muted ml-1">Son 24 Saat</span>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <ChartCard title="İşlemci Kullanımı" data={cpuData} value={cpu} color="#f87171" />
+          <ChartCard title="Bellek Kullanımı" data={ramData} value={ram} color="#60a5fa" />
+          <ChartCard title="Disk Kullanımı" data={diskData} value={disk} color="#34d399" />
+        </div>
+      </section>
+
+      {/* ═══════════ QUICK CLEANUP ═══════════ */}
+      <section className="rounded-2xl bg-ms-bg-soft border border-ms-border p-5">
+        <div className="flex items-center gap-2 mb-3">
+          <span className="p-1.5 rounded-lg bg-rose-500/10"><Trash2 className="w-4 h-4 text-rose-500 dark:text-rose-400" /></span>
+          <h2 className="text-sm font-semibold text-ms-text">Hızlı Temizlik</h2>
+        </div>
+        <div className="flex items-center gap-2 flex-wrap">
+          {cleanupPaths.map(({ label, path }) => (
+            <button key={path} onClick={() => setCleanPaths(p => p.includes(path) ? p.filter(x => x !== path) : [...p, path])}
+              className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${cleanPaths.includes(path)
+                ? "bg-rose-500 text-white shadow-lg shadow-rose-500/20"
+                : "bg-ms-panel text-ms-text-muted hover:text-ms-text border border-ms-border hover:border-rose-500/30"
+              }`}>
+              {cleanPaths.includes(path) ? "✓ " : ""}{label}
+            </button>
+          ))}
+          <input type="text" value={customPath} onChange={e => setCustomPath(e.target.value)}
+            placeholder="Özel klasör yolu..."
+            className="flex-1 min-w-[200px] !py-1.5 !px-3 !text-xs" />
+          <button onClick={doClean} disabled={cleaning || !dev.online || (!cleanPaths.length && !customPath.trim())}
+            className="px-4 py-1.5 bg-rose-600 hover:bg-rose-500 text-white rounded-lg text-xs font-medium disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1.5 transition-colors shadow-lg shadow-rose-600/10">
+            <Trash2 className="w-3.5 h-3.5" />
+            {cleaning ? "Temizleniyor..." : "Temizle"}
+          </button>
+        </div>
+        {cleanResult && <pre className="mt-3 p-3 rounded-lg bg-ms-panel border border-ms-border text-xs text-ms-text-muted whitespace-pre-line">{cleanResult}</pre>}
+      </section>
+
+      {/* ═══════════ IP SCANNER ═══════════ */}
+      {scanOpen && (
+        <section className="rounded-2xl border border-teal-500/20 bg-ms-bg-soft overflow-hidden animate-fade-in">
+          <div className="flex items-center justify-between px-5 py-3 border-b border-teal-500/10">
+            <div className="flex items-center gap-2">
+              <span className="p-1.5 rounded-lg bg-teal-500/10"><Radar className="w-4 h-4 text-teal-500 dark:text-teal-400" /></span>
+              <h2 className="text-sm font-semibold text-teal-600 dark:text-teal-400">Ağ Taraması</h2>
+              {scanInfo && <span className="text-[11px] font-mono text-ms-text-muted ml-2">{scanInfo.range} · {scanInfo.total} cihaz</span>}
+            </div>
+            <div className="flex items-center gap-2">
+              {!scanning && <button onClick={doScan} className="text-[11px] font-medium text-teal-600 dark:text-teal-400 hover:underline">Tekrar Tara</button>}
+              <button onClick={() => setScanOpen(false)} className="p-1 text-ms-text-muted hover:text-ms-text"><X className="w-4 h-4" /></button>
+            </div>
+          </div>
+          {scanning ? (
+            <div className="flex items-center justify-center py-16 gap-3">
+              <div className="w-5 h-5 border-2 border-teal-500 border-t-transparent rounded-full animate-spin" />
+              <span className="text-sm text-ms-text-muted">Ağ taranıyor...</span>
+            </div>
+          ) : scanResults.length === 0 ? (
+            <div className="flex flex-col items-center py-16 text-ms-text-muted">
+              <Wifi className="w-6 h-6 mb-2 opacity-30" />
+              <span className="text-sm">{scanError || "Erişilebilir cihaz bulunamadı"}</span>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>IP Adresi</th><th>Cihaz Adı</th><th>MAC Adresi</th><th>Üretici</th><th>Ping</th><th>Durum</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {scanResults.map((r: any) => {
+                    const isSelf = r.ipAddress === dev.ipAddress;
+                    const rawName = (r.hostname || "").trim();
+                    const looksLikeIp = !rawName || /^\d{1,3}(\.\d{1,3}){3}$/.test(rawName) || rawName === r.ipAddress;
+                    if (looksLikeIp && r.vendor) r.hostname = r.vendor;
+                    return (
+                      <tr key={r.ipAddress} className={isSelf ? "!bg-teal-500/5" : ""}>
+                        <td className="font-mono font-medium">{r.ipAddress}{isSelf && <span className="ml-1.5 text-[9px] text-teal-500 dark:text-teal-400">(bu cihaz)</span>}</td>
+                        <td>{r.hostname || "—"}</td>
+                        <td className="font-mono text-[11px] text-ms-text-muted">{r.macAddress || "—"}</td>
+                        <td>{r.vendor ? <span className="text-[11px] px-1.5 py-0.5 rounded bg-ms-panel text-ms-text-muted">{r.vendor}</span> : "—"}</td>
+                        <td className="font-mono"><span className={r.pingMs < 5 ? "text-emerald-500" : r.pingMs < 50 ? "text-amber-500" : "text-red-500"}>{r.pingMs}ms</span></td>
+                        <td>
+                          {r.hasAgent ? (
+                            <span className={`inline-flex items-center gap-1 text-[11px] font-medium ${r.online ? "text-emerald-500" : "text-red-500"}`}>
+                              <span className={`w-1.5 h-1.5 rounded-full ${r.online ? "bg-emerald-500" : "bg-red-500"}`} />
+                              {r.online ? "Agent Online" : "Agent Offline"}
+                            </span>
+                          ) : <span className="text-[11px] text-ms-text-muted">Ağ cihazı</span>}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
+      )}
+    </div>
+  );
+};
+
+/* ================================================================== */
+/*  Sub-components                                                     */
+/* ================================================================== */
+
+/* ---- Online / Offline badge ---- */
+const StatusPill: React.FC<{ online: boolean }> = ({ online }) => (
+  <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold ${online
+    ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20"
+    : "bg-red-500/10 text-red-600 dark:text-red-400 border border-red-500/20"
+  }`}>
+    <span className={`w-1.5 h-1.5 rounded-full ${online ? "bg-emerald-500 animate-pulse" : "bg-red-500"}`} />
+    {online ? "Aktif" : "Kapalı"}
+  </span>
 );
 
-const HardwareCard: React.FC<{
-    icon: React.FC<{ className?: string }>;
-    label: string;
-    value: string;
-    color: string;
-}> = ({ icon: Icon, label, value, color }) => {
-    const colorMap: Record<string, string> = {
-        blue: 'bg-blue-500/10 text-blue-400',
-        purple: 'bg-purple-500/10 text-purple-400',
-        amber: 'bg-amber-500/10 text-amber-400',
-        green: 'bg-green-500/10 text-green-400',
-    };
-
-    return (
-        <div className="p-4 rounded-xl glass-panel relative z-10 hover-lift">
-            <div className={`inline-flex p-2 rounded-lg ${colorMap[color]} mb-3 shadow-inner border border-white/5`}>
-                <Icon className="w-4 h-4" />
-            </div>
-            <p className="text-[11px] font-semibold text-slate-400 mb-1 tracking-wider">{label}</p>
-            <p className="text-sm font-bold text-white truncate" title={value}>{value}</p>
-        </div>
-    );
+/* ---- Action pill button ---- */
+const pillColors: Record<string, string> = {
+  emerald: "bg-emerald-600 hover:bg-emerald-500 shadow-emerald-600/20",
+  blue: "bg-blue-600 hover:bg-blue-500 shadow-blue-600/20",
+  cyan: "bg-cyan-600 hover:bg-cyan-500 shadow-cyan-600/20",
+  indigo: "bg-indigo-600 hover:bg-indigo-500 shadow-indigo-600/20",
+  violet: "bg-violet-600 hover:bg-violet-500 shadow-violet-600/20",
+  fuchsia: "bg-fuchsia-600 hover:bg-fuchsia-500 shadow-fuchsia-600/20",
+  amber: "bg-amber-600 hover:bg-amber-500 shadow-amber-600/20",
+  red: "bg-red-600 hover:bg-red-500 shadow-red-600/20",
+  teal: "bg-teal-600 hover:bg-teal-500 shadow-teal-600/20",
 };
 
-const MetricCard: React.FC<{
-    title: string;
-    data: { name: string; value: number }[];
-    value: number;
-    color: string;
-}> = ({ title, data, value, color }) => (
-    <div className="p-4 rounded-2xl glass-card hover-lift">
-        <MetricChart title={title} data={data} value={value} color={color} height={150} />
+const Pill: React.FC<{ icon: React.FC<{ className?: string }>; label: string; color: string; onClick: () => void; disabled?: boolean }> = ({ icon: Icon, label, color, onClick, disabled }) => (
+  <button onClick={onClick} disabled={disabled}
+    className={`${pillColors[color]} text-white px-3 py-1.5 rounded-lg flex items-center gap-1.5 text-xs font-medium shadow-lg disabled:opacity-40 disabled:cursor-not-allowed transition-all hover:-translate-y-0.5 hover:shadow-xl active:translate-y-0`}>
+    <Icon className="w-3.5 h-3.5" />{label}
+  </button>
+);
+
+/* ---- Radial gauge card ---- */
+const gaugeTheme: Record<string, { stroke: string; text: string; glow: string; bg: string }> = {
+  rose:    { stroke: "stroke-rose-500",    text: "text-rose-400",    glow: "shadow-rose-500/20",    bg: "bg-rose-500/5" },
+  blue:    { stroke: "stroke-blue-500",    text: "text-blue-400",    glow: "shadow-blue-500/20",    bg: "bg-blue-500/5" },
+  emerald: { stroke: "stroke-emerald-500", text: "text-emerald-400", glow: "shadow-emerald-500/20", bg: "bg-emerald-500/5" },
+  amber:   { stroke: "stroke-amber-500",   text: "text-amber-400",  glow: "shadow-amber-500/20",   bg: "bg-amber-500/5" },
+};
+
+const GaugeCard: React.FC<{ label: string; value: number; icon: React.FC<{ className?: string }>; color: string; extra?: string }> = ({ label, value, icon: Icon, color, extra }) => {
+  const t = gaugeTheme[color] || gaugeTheme.blue;
+  // warn color override
+  const effectiveColor = value >= 90 ? "rose" : value >= 75 ? "amber" : color;
+  const et = gaugeTheme[effectiveColor] || t;
+  const r = 42; const c = 2 * Math.PI * r;
+  const offset = c - (c * value) / 100;
+
+  return (
+    <div className={`rounded-2xl bg-ms-bg-soft border border-ms-border p-5 flex items-center gap-5 transition-all hover:shadow-lg ${et.glow} group`}>
+      {/* SVG ring */}
+      <div className="relative w-20 h-20 flex-shrink-0">
+        <svg className="w-20 h-20 -rotate-90" viewBox="0 0 100 100">
+          <circle cx="50" cy="50" r={r} fill="none" className="stroke-ms-border" strokeWidth="6" />
+          <circle cx="50" cy="50" r={r} fill="none" className={`${et.stroke} transition-all duration-700 ease-out`}
+            strokeWidth="6" strokeLinecap="round" strokeDasharray={c} strokeDashoffset={offset} />
+        </svg>
+        <div className="absolute inset-0 flex items-center justify-center">
+          <span className={`text-lg font-bold ${et.text}`}>{value}%</span>
+        </div>
+      </div>
+      {/* Label */}
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2 text-ms-text-muted mb-1">
+          <Icon className="w-4 h-4" />
+          <span className="text-sm font-medium">{label}</span>
+        </div>
+        {extra && <p className="text-xs text-ms-text-muted truncate">{extra}</p>}
+        {/* mini bar */}
+        <div className="h-1.5 bg-ms-border/50 rounded-full overflow-hidden mt-2">
+          <div className={`h-full rounded-full bg-gradient-to-r ${et.stroke.replace("stroke-", "from-")} to-transparent transition-all duration-700`} style={{ width: `${value}%` }} />
+        </div>
+      </div>
     </div>
+  );
+};
+
+/* ---- Info Row ---- */
+const InfoRow: React.FC<{ label: string; value?: string | null; icon?: React.FC<{ className?: string }>; mono?: boolean; badge?: boolean; accent?: boolean }> = ({ label, value, icon: Icon, mono, badge, accent }) => (
+  <div className="flex items-center justify-between py-2.5 border-b border-ms-border/50 last:border-0 group/row hover:bg-ms-hover-bg -mx-2 px-2 rounded transition-colors">
+    <span className="text-[13px] text-ms-text-muted flex items-center gap-1.5">
+      {Icon && <Icon className="w-3.5 h-3.5 opacity-50" />}
+      {label}
+    </span>
+    {badge ? (
+      <span className="px-2 py-0.5 bg-emerald-500/10 rounded text-emerald-600 dark:text-emerald-400 text-[13px] font-semibold">{value || "-"}</span>
+    ) : (
+      <span className={`text-[13px] font-medium ${accent ? "text-violet-600 dark:text-violet-400" : "text-ms-text"} ${mono ? "font-mono" : ""} transition-colors`}>{value || "-"}</span>
+    )}
+  </div>
+);
+
+/* ---- Chart Card ---- */
+const ChartCard: React.FC<{ title: string; data: { name: string; value: number }[]; value: number; color: string }> = ({ title, data, value, color }) => (
+  <div className="p-4 rounded-2xl bg-ms-bg-soft border border-ms-border hover:shadow-md transition-all">
+    <MetricChart title={title} data={data} value={value} color={color} height={140} />
+  </div>
 );
 
 export default DeviceDetailsPage;

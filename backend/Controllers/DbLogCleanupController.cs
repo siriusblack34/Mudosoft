@@ -9,7 +9,7 @@ using System.Text.Json;
 namespace MudoSoft.Backend.Controllers
 {
     [ApiController]
-    [AllowAnonymous]
+    [Authorize]
     [Route("api/db-log-cleanup")]
     public class DbLogCleanupController : ControllerBase
     {

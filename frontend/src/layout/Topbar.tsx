@@ -1,8 +1,9 @@
-import React from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { useLocation } from 'react-router-dom';
-import { Bell, Sun, Moon } from 'lucide-react';
+import { Bell, Sun, Moon, Wifi, WifiOff } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 import { useAuth } from '../contexts/AuthContext';
+import { API_BASE_URL } from '../lib/apiClient';
 
 const PAGE_TITLES: Record<string, string> = {
   '/':               'Kontrol Paneli',
@@ -26,6 +27,28 @@ const Topbar: React.FC = () => {
   const location = useLocation();
   const { isDark, toggleTheme } = useTheme();
   const { fullName, role } = useAuth();
+  const [backendStatus, setBackendStatus] = useState<'connected' | 'disconnected' | 'checking'>('checking');
+
+  const checkBackend = useCallback(async () => {
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 5000);
+      const res = await fetch(`${API_BASE_URL}/api/dashboard/summary`, {
+        signal: controller.signal,
+        headers: { Authorization: `Bearer ${localStorage.getItem('token') || ''}` },
+      });
+      clearTimeout(timeout);
+      setBackendStatus(res.ok || res.status === 401 ? 'connected' : 'disconnected');
+    } catch {
+      setBackendStatus('disconnected');
+    }
+  }, []);
+
+  useEffect(() => {
+    checkBackend();
+    const interval = setInterval(checkBackend, 30000);
+    return () => clearInterval(interval);
+  }, [checkBackend]);
 
   const title =
     PAGE_TITLES[location.pathname] ||
@@ -39,6 +62,32 @@ const Topbar: React.FC = () => {
       <h1 className="text-sm font-semibold text-ms-text">{title}</h1>
 
       <div className="flex items-center gap-2">
+        {/* Backend Status */}
+        <button
+          onClick={checkBackend}
+          className={`h-8 flex items-center gap-1.5 px-2 rounded-lg text-xs font-medium transition-colors ${
+            backendStatus === 'connected'
+              ? 'text-emerald-400 hover:bg-emerald-500/10'
+              : backendStatus === 'disconnected'
+              ? 'text-red-400 hover:bg-red-500/10 animate-pulse'
+              : 'text-ms-text-muted'
+          }`}
+          title={backendStatus === 'connected' ? 'Backend bağlantısı aktif' : backendStatus === 'disconnected' ? 'Backend bağlantısı kesildi! Tıklayarak tekrar deneyin.' : 'Bağlantı kontrol ediliyor...'}
+        >
+          {backendStatus === 'connected' ? (
+            <Wifi className="w-3.5 h-3.5" />
+          ) : backendStatus === 'disconnected' ? (
+            <WifiOff className="w-3.5 h-3.5" />
+          ) : (
+            <Wifi className="w-3.5 h-3.5 opacity-50" />
+          )}
+          <span className="hidden sm:inline">
+            {backendStatus === 'connected' ? 'Bağlı' : backendStatus === 'disconnected' ? 'Bağlantı Yok' : '...'}
+          </span>
+        </button>
+
+        <div className="h-5 w-px bg-ms-border" />
+
         {/* Theme Toggle */}
         <button
           onClick={toggleTheme}

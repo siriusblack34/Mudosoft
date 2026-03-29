@@ -25,6 +25,11 @@ import OfflineLogsPage from "./pages/OfflineLogsPage";
 import DeviceHealthPage from "./pages/DeviceHealthPage";
 import FiscalErrorCodesPage from "./pages/FiscalErrorCodesPage";
 import PrinterLicensesPage from "./pages/PrinterLicensesPage";
+import WebRdpPage from "./pages/WebRdpPage";
+import HolidaysPage from "./pages/HolidaysPage";
+import RemoteInstallPage from "./pages/RemoteInstallPage";
+import BilgisayarlarPage from "./pages/BilgisayarlarPage";
+import PosLogAnalyzerPage from "./pages/PosLogAnalyzerPage";
 import { Navigate } from "react-router-dom";
 
 const routes = [
@@ -128,6 +133,14 @@ const routes = [
                 ),
             },
             {
+                path: "/bilgisayarlar",
+                element: (
+                    <ShellLayout>
+                        <BilgisayarlarPage />
+                    </ShellLayout>
+                ),
+            },
+            {
                 path: "/agent-update",
                 element: (
                     <ShellLayout>
@@ -200,6 +213,10 @@ const routes = [
                 ),
             },
             {
+                path: "/devices/:deviceId/rdp",
+                element: <WebRdpPage />,
+            },
+            {
                 path: "/fiscal-errors",
                 element: (
                     <ShellLayout>
@@ -212,6 +229,30 @@ const routes = [
                 element: (
                     <ShellLayout>
                         <PrinterLicensesPage />
+                    </ShellLayout>
+                ),
+            },
+            {
+                path: "/holidays",
+                element: (
+                    <ShellLayout>
+                        <HolidaysPage />
+                    </ShellLayout>
+                ),
+            },
+            {
+                path: "/pos-log-analyzer",
+                element: (
+                    <ShellLayout>
+                        <PosLogAnalyzerPage />
+                    </ShellLayout>
+                ),
+            },
+            {
+                path: "/remote-install",
+                element: (
+                    <ShellLayout>
+                        <AdminGuard><RemoteInstallPage /></AdminGuard>
                     </ShellLayout>
                 ),
             },

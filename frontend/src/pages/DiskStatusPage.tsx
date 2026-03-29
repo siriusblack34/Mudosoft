@@ -295,7 +295,7 @@ const PcTable: React.FC<{
             {sorted.map(device => (
                 <div
                     key={device.deviceId}
-                    className={`grid grid-cols-[180px_80px_80px_1fr_1fr] items-center px-6 py-4 hover:bg-slate-800/30 transition-colors ${device.status === "offline" ? "opacity-50" : ""}`}
+                    className={`grid grid-cols-[180px_80px_80px_1fr_1fr] items-center px-6 py-4 hover:bg-slate-800/30 transition-colors ${device.status === "offline" ? "opacity-50" : ""} ${(device.diskCPercent !== null && device.diskCPercent >= 90) || (device.diskDPercent !== null && device.diskDPercent >= 90) ? "bg-rose-500/5 border-l-2 border-l-rose-500/50" : ""}`}
                 >
                     <DeviceCell device={device} />
                     <StoreCodeCell device={device} />
@@ -304,7 +304,7 @@ const PcTable: React.FC<{
                     <DiskBar percent={device.diskDPercent} totalGB={device.diskDTotalGB} usedGB={device.diskDUsedGB} freeGB={device.diskDFreeGB} driveLabel="D:" offline={device.status === "offline"} />
                 </div>
             ))}
-            {sorted.length === 0 && <div className="text-center py-12 text-slate-500">Aramanıza uygun cihaz bulunamadı</div>}
+            {sorted.length === 0 && <div className="text-center py-12 text-slate-500">Aramaniza uygun cihaz bulunamadi</div>}
         </div>
     </div>
 );
@@ -328,7 +328,7 @@ const KasaTable: React.FC<{
             {sorted.map(device => (
                 <div
                     key={device.deviceId}
-                    className={`grid grid-cols-[200px_80px_80px_80px_1fr] items-center px-6 py-4 hover:bg-slate-800/30 transition-colors ${device.status === "offline" ? "opacity-50" : ""}`}
+                    className={`grid grid-cols-[200px_80px_80px_80px_1fr] items-center px-6 py-4 hover:bg-slate-800/30 transition-colors ${device.status === "offline" ? "opacity-50" : ""} ${device.diskCPercent !== null && device.diskCPercent >= 90 ? "bg-rose-500/5 border-l-2 border-l-rose-500/50" : ""}`}
                 >
                     <div className="flex flex-col">
                         <span className="text-sm font-medium text-white truncate">{device.storeName}</span>
@@ -340,7 +340,7 @@ const KasaTable: React.FC<{
                     <DiskBar percent={device.diskCPercent} totalGB={device.diskCTotalGB} usedGB={device.diskCUsedGB} freeGB={device.diskCFreeGB} driveLabel="C:" offline={device.status === "offline"} />
                 </div>
             ))}
-            {sorted.length === 0 && <div className="text-center py-12 text-slate-500">Aramanıza uygun kasa bulunamadı</div>}
+            {sorted.length === 0 && <div className="text-center py-12 text-slate-500">Aramaniza uygun kasa bulunamadi</div>}
         </div>
     </div>
 );

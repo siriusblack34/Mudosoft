@@ -1,4 +1,5 @@
 {
     "claudeCode.environmentVariables": [],
-    "claudeCode.allowDangerouslySkipPermissions": true
+    "claudeCode.allowDangerouslySkipPermissions": true,
+    "chatgpt.openOnStartup": false
 }

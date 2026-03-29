@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ShieldCheck, User, Lock, ArrowRight, Loader2 } from 'lucide-react';
+import { ShieldCheck, User, Lock, ArrowRight, Loader2, AlertCircle } from 'lucide-react';
 import { API_BASE_URL } from '../lib/apiClient';
 
 const LoginPage: React.FC = () => {
@@ -8,6 +8,14 @@ const LoginPage: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [formData, setFormData] = useState({ username: '', password: '' });
   const [error, setError] = useState('');
+  const [shake, setShake] = useState(false);
+  const usernameRef = useRef<HTMLInputElement>(null);
+  const passwordRef = useRef<HTMLInputElement>(null);
+
+  // Auto-focus username input on mount
+  useEffect(() => {
+    usernameRef.current?.focus();
+  }, []);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -15,6 +23,10 @@ const LoginPage: React.FC = () => {
 
     if (!formData.username || !formData.password) {
       setError('Kullanıcı adı ve şifre giriniz.');
+      setShake(true);
+      setTimeout(() => setShake(false), 600);
+      if (!formData.username) usernameRef.current?.focus();
+      else if (!formData.password) passwordRef.current?.focus();
       return;
     }
 
@@ -32,7 +44,16 @@ const LoginPage: React.FC = () => {
 
       if (!res.ok) {
         const body = await res.json().catch(() => null);
-        setError(body?.error || 'Giriş başarısız. Bilgilerinizi kontrol edin.');
+        const msg = body?.error || (res.status === 401
+          ? 'Kullanıcı adı veya şifre hatalı.'
+          : res.status >= 500
+          ? 'Sunucu hatası oluştu. Lütfen daha sonra tekrar deneyin.'
+          : 'Giriş başarısız. Bilgilerinizi kontrol edin.');
+        setError(msg);
+        setShake(true);
+        setTimeout(() => setShake(false), 600);
+        passwordRef.current?.focus();
+        passwordRef.current?.select();
         return;
       }
 
@@ -45,7 +66,9 @@ const LoginPage: React.FC = () => {
       localStorage.setItem('fullName', data.fullName || data.username);
       navigate('/');
     } catch {
-      setError('Sunucuya bağlanılamadı. Lütfen tekrar deneyin.');
+      setError('Sunucuya bağlanılamadı. Ağ bağlantınızı kontrol edip tekrar deneyin.');
+      setShake(true);
+      setTimeout(() => setShake(false), 600);
     } finally {
       setIsLoading(false);
     }
@@ -71,7 +94,7 @@ const LoginPage: React.FC = () => {
         </div>
 
         {/* Form */}
-        <div className="bg-ms-bg-soft border border-ms-border rounded-2xl p-6 shadow-2xl">
+        <div className={`bg-ms-bg-soft border border-ms-border rounded-2xl p-6 shadow-2xl transition-all ${shake ? 'animate-[shake_0.5s_ease-in-out]' : ''}`} style={shake ? { animation: 'shake 0.5s ease-in-out' } : undefined}>
           <form onSubmit={handleLogin} className="space-y-4">
             {/* Kullanıcı adı */}
             <div>
@@ -81,11 +104,12 @@ const LoginPage: React.FC = () => {
                   <User className="h-4 w-4 text-zinc-500" />
                 </div>
                 <input
+                  ref={usernameRef}
                   type="text"
                   className="w-full pl-9"
                   placeholder="admin"
                   value={formData.username}
-                  onChange={(e) => setFormData({ ...formData, username: e.target.value })}
+                  onChange={(e) => { setFormData({ ...formData, username: e.target.value }); setError(''); }}
                   autoComplete="username"
                 />
               </div>
@@ -99,11 +123,12 @@ const LoginPage: React.FC = () => {
                   <Lock className="h-4 w-4 text-zinc-500" />
                 </div>
                 <input
+                  ref={passwordRef}
                   type="password"
                   className="w-full pl-9"
                   placeholder="••••••••"
                   value={formData.password}
-                  onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                  onChange={(e) => { setFormData({ ...formData, password: e.target.value }); setError(''); }}
                   autoComplete="current-password"
                 />
               </div>
@@ -111,8 +136,9 @@ const LoginPage: React.FC = () => {
 
             {/* Hata mesajı */}
             {error && (
-              <div className="text-red-400 text-xs text-center bg-red-500/10 border border-red-500/20 rounded-lg py-2 px-3">
-                {error}
+              <div className="flex items-center gap-2 text-red-400 text-xs bg-red-500/10 border border-red-500/20 rounded-lg py-2.5 px-3">
+                <AlertCircle className="w-4 h-4 shrink-0" />
+                <span>{error}</span>
               </div>
             )}
 

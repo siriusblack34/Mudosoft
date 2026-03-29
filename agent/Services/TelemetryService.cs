@@ -2,10 +2,9 @@ using Microsoft.AspNetCore.SignalR.Client;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using Mudosoft.Agent.Models;
 using Mudosoft.Agent.Interfaces;
+using Mudosoft.Agent.Models;
 using System.Diagnostics;
-using System.Management;
 
 namespace Mudosoft.Agent.Services
 {
@@ -17,9 +16,12 @@ namespace Mudosoft.Agent.Services
         private HubConnection? _hubConnection;
         private PerformanceCounter? _cpuCounter;
         private PerformanceCounter? _ramCounter;
+        private TimeSpan _retryDelay = TimeSpan.FromSeconds(15);
+        private DateTime _lastFailureLogUtc = DateTime.MinValue;
+        private static readonly TimeSpan MaxRetryDelay = TimeSpan.FromMinutes(5);
 
         public TelemetryService(
-            ILogger<TelemetryService> logger, 
+            ILogger<TelemetryService> logger,
             IOptions<AgentConfig> config,
             IDeviceIdentityProvider identityProvider)
         {
@@ -32,23 +34,16 @@ namespace Mudosoft.Agent.Services
         {
             try
             {
-                // Init Performance Counters (Windows Only)
                 if (OperatingSystem.IsWindows())
                 {
-                    // Note: PerformanceCounter only works on Windows
                     _cpuCounter = new PerformanceCounter("Processor", "% Processor Time", "_Total");
                     _ramCounter = new PerformanceCounter("Memory", "Available MBytes");
-                    _cpuCounter.NextValue(); // First value is always 0
+                    _cpuCounter.NextValue();
                 }
             }
             catch (Exception ex)
             {
-                // DEBUG: Write to file since we are in a service
-                try 
-                {
-                    await File.AppendAllTextAsync(@"C:\mudosoft_agent_debug.log", $"{DateTime.Now}: Connection Error: {ex.Message} {Environment.NewLine} {ex.StackTrace} {Environment.NewLine}"); 
-                } catch { }
-
+                WriteDebugLine($"Telemetry counter init error: {ex.Message}");
                 _logger.LogError(ex, "Error streaming telemetry");
             }
 
@@ -57,76 +52,105 @@ namespace Mudosoft.Agent.Services
 
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
         {
-            // Initial delay to let Agent register/login
             await Task.Delay(5000, stoppingToken);
 
             while (!stoppingToken.IsCancellationRequested)
             {
                 try
                 {
-                    // Ensure connection
                     if (_hubConnection == null || _hubConnection.State == HubConnectionState.Disconnected)
                     {
-                        await ConnectToHubAsync();
+                        var connected = await ConnectToHubAsync(stoppingToken);
+                        if (!connected)
+                        {
+                            await Task.Delay(_retryDelay, stoppingToken);
+                            continue;
+                        }
                     }
 
                     if (_hubConnection?.State == HubConnectionState.Connected)
                     {
                         var cpu = _cpuCounter?.NextValue() ?? 0;
                         var ramAvailable = _ramCounter?.NextValue() ?? 0;
-                        
-                        // Get Total RAM for percentage calc (Basic way)
                         var totalRam = GetTotalRamMb();
                         var ramUsage = totalRam > 0 ? ((totalRam - ramAvailable) / totalRam) * 100 : 0;
-                        
-                        // Disk Usage (C:)
                         var diskUsage = GetDiskUsage();
 
-                        await _hubConnection.InvokeAsync("SendTelemetry", 
-                            _identityProvider.GetDeviceId(), 
-                            Math.Round(cpu, 1), 
-                            Math.Round(ramUsage, 1), 
+                        await _hubConnection.InvokeAsync(
+                            "SendTelemetry",
+                            _identityProvider.GetDeviceId(),
+                            Math.Round(cpu, 1),
+                            Math.Round(ramUsage, 1),
                             Math.Round(diskUsage, 1),
                             stoppingToken);
+
+                        _retryDelay = TimeSpan.FromSeconds(15);
                     }
                 }
                 catch (Exception ex)
                 {
-                    // _logger.LogWarning($"Telemetry error: {ex.Message}");
-                    // Wait a bit more on error
-                    await Task.Delay(5000, stoppingToken);
+                    LogFailure($"Telemetry loop error: {ex.Message}");
+                    await Task.Delay(_retryDelay, stoppingToken);
                 }
 
-                // Wait 3 seconds
-                await Task.Delay(3000, stoppingToken);
+                await Task.Delay(15000, stoppingToken);
             }
         }
 
-        private async Task ConnectToHubAsync()
+        private async Task<bool> ConnectToHubAsync(CancellationToken ct)
         {
             try
             {
                 var deviceId = _identityProvider.GetDeviceId();
                 var hubUrl = $"{_config.BackendUrl.TrimEnd('/')}/hubs/dashboard?deviceId={deviceId}";
-                // Token logic removed for anonymous access
+
+                if (_hubConnection != null)
+                {
+                    try { await _hubConnection.DisposeAsync(); } catch { }
+                    _hubConnection = null;
+                }
 
                 _hubConnection = new HubConnectionBuilder()
-                    .WithUrl(hubUrl) 
+                    .WithUrl(hubUrl)
                     .WithAutomaticReconnect()
                     .Build();
 
-                await _hubConnection.StartAsync();
-                _logger.LogInformation("✅ Connected to DashboardHub for Telemetry");
+                await _hubConnection.StartAsync(ct);
+                _retryDelay = TimeSpan.FromSeconds(15);
+                _logger.LogInformation("Connected to DashboardHub for telemetry");
+                return true;
             }
             catch (Exception ex)
             {
-                 // DEBUG: Write to file
-                try 
-                {
-                    await File.AppendAllTextAsync(@"C:\mudosoft_agent_debug.log", $"{DateTime.Now}: ConnectToHubAsync Error: {ex.Message} {Environment.NewLine} {ex.StackTrace} {Environment.NewLine}"); 
-                } catch { }
+                LogFailure($"ConnectToHubAsync error: {ex.Message}");
+                return false;
+            }
+        }
 
-                _logger.LogWarning($"Could not connect to DashboardHub: {ex.Message}");
+        private void LogFailure(string message)
+        {
+            var nowUtc = DateTime.UtcNow;
+            if (nowUtc - _lastFailureLogUtc >= TimeSpan.FromMinutes(5))
+            {
+                _lastFailureLogUtc = nowUtc;
+                WriteDebugLine(message);
+                _logger.LogWarning("{Message}", message);
+            }
+
+            var nextSeconds = Math.Min(_retryDelay.TotalSeconds * 2, MaxRetryDelay.TotalSeconds);
+            _retryDelay = TimeSpan.FromSeconds(nextSeconds);
+        }
+
+        private static void WriteDebugLine(string message)
+        {
+            try
+            {
+                File.AppendAllText(
+                    @"C:\mudosoft_agent_debug.log",
+                    $"{DateTime.Now:dd.MM.yyyy HH:mm:ss}: {message}{Environment.NewLine}");
+            }
+            catch
+            {
             }
         }
 
@@ -144,20 +168,25 @@ namespace Mudosoft.Agent.Services
                     }
                 }
             }
-            catch { }
+            catch
+            {
+            }
+
             return 0;
         }
 
         private double GetTotalRamMb()
         {
-            // Simplified total RAM fetch
-            try 
+            try
             {
                 var gcMemoryInfo = GC.GetGCMemoryInfo();
                 var installedMemory = gcMemoryInfo.TotalAvailableMemoryBytes;
                 return (double)installedMemory / (1024 * 1024);
             }
-            catch { return 16384; } // Default fallback 16GB
+            catch
+            {
+                return 16384;
+            }
         }
     }
 }

@@ -80,8 +80,8 @@ $settings = @{
         DeviceId                   = $deviceId
         BackendUrl                 = $BackendUrl
         StoreCode                  = $StoreCode
-        HeartbeatIntervalSeconds   = 5
-        CommandPollIntervalSeconds = 1
+        HeartbeatIntervalSeconds   = 15
+        CommandPollIntervalSeconds = 5
         IpAddress                  = ""
     }
 } | ConvertTo-Json -Depth 3
@@ -93,7 +93,11 @@ Write-Host "  Yapilandirma tamam." -ForegroundColor Green
 
 # 4. Windows servisini olustur
 Write-Host "[4/5] Windows servisi olusturuluyor..." -ForegroundColor Yellow
-sc.exe create $ServiceName binPath= "`"$ExePath`"" start= auto obj= "LocalSystem" DisplayName= "MudosoftAgentService" 2>&1 | Out-Null
+# Yavas acilan cihazlarda SCM timeout'a dusmemesi icin service startup timeout'u uzat
+reg.exe add "HKLM\SYSTEM\CurrentControlSet\Control" /v ServicesPipeTimeout /t REG_DWORD /d 120000 /f 2>&1 | Out-Null
+
+# Reboot sirasindaki yarisi azaltmak icin delayed-auto kullan
+sc.exe create $ServiceName binPath= "`"$ExePath`" --service" start= delayed-auto obj= "LocalSystem" DisplayName= "MudosoftAgentService" 2>&1 | Out-Null
 if ($LASTEXITCODE -ne 0) {
     Write-Host "  HATA: Servis olusturulamadi!" -ForegroundColor Red
     exit 1
@@ -102,7 +106,7 @@ if ($LASTEXITCODE -ne 0) {
 sc.exe description $ServiceName "MudoSoft Remote Management Agent" 2>&1 | Out-Null
 # Hata durumunda otomatik yeniden baslat
 sc.exe failure $ServiceName reset= 86400 actions= restart/5000/restart/10000/restart/30000 2>&1 | Out-Null
-Write-Host "  Servis olusturuldu (AutoStart, LocalSystem)." -ForegroundColor Green
+Write-Host "  Servis olusturuldu (DelayedAutoStart, LocalSystem)." -ForegroundColor Green
 
 # 5. Servisi baslat
 Write-Host "[5/5] Servis baslatiliyor..." -ForegroundColor Yellow

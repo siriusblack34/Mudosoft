@@ -24,6 +24,7 @@ namespace MudoSoft.Backend.Data
         public DbSet<CollectorReport> CollectorReports { get; set; }
         public DbSet<User> Users { get; set; }
         public DbSet<LoginHistory> LoginHistories { get; set; }
+        public DbSet<VncSessionLog> VncSessionLogs { get; set; }
 
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -127,6 +128,17 @@ namespace MudoSoft.Backend.Data
             {
                 e.HasIndex(l => l.UserId);
                 e.HasIndex(l => l.LoginAt);
+            });
+
+            modelBuilder.Entity<VncSessionLog>(e =>
+            {
+                e.HasKey(l => l.Id);
+                e.Property(l => l.DeviceId).HasMaxLength(450);
+                e.Property(l => l.Username).HasMaxLength(256);
+                e.Property(l => l.SessionId).HasMaxLength(64);
+                e.HasIndex(l => l.DeviceId);
+                e.HasIndex(l => l.StartedAtUtc);
+                e.HasIndex(l => l.SessionId);
             });
         }
     }

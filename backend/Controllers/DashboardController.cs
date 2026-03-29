@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Authorization;
 using MudoSoft.Backend.Models;
 using MudoSoft.Backend.Services;
 using MudoSoft.Backend.Dtos;
@@ -6,6 +7,7 @@ using MudoSoft.Backend.Dtos;
 namespace MudoSoft.Backend.Controllers;
 
 [ApiController]
+[Authorize]
 [Route("api/[controller]")]
 public class DashboardController : ControllerBase
 {
@@ -23,14 +25,14 @@ public class DashboardController : ControllerBase
 
         var total   = devices.Count;
         var online  = devices.Count(d => d.Online);
-        var offline = total - online;
+        var offline = devices.Count(d => !d.Online && !IsIgnoredForOfflineTracking(d));
 
         int healthy   = devices.Count(d => d.HealthStatus?.Equals("Healthy")  == true);
         int warning   = devices.Count(d => d.HealthStatus?.Equals("Warning")  == true);
         int critical  = devices.Count(d => d.HealthStatus?.Equals("Critical") == true);
 
         var recentOffline = devices
-            .Where(d => !d.Online)
+            .Where(d => !d.Online && !IsIgnoredForOfflineTracking(d))
             .OrderByDescending(d => d.LastSeen)
             .Take(10)
             .Select(d => new RecentOfflineDeviceDto
@@ -53,5 +55,10 @@ public class DashboardController : ControllerBase
             Critical      = critical,
             RecentOffline = recentOffline
         });
+    }
+
+    private static bool IsIgnoredForOfflineTracking(Device device)
+    {
+        return device.ExcludeFromOfflineList || device.IsTemporarilyClosed;
     }
 }

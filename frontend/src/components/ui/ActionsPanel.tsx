@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { apiService } from '../../services/apiService';
+import { apiClient } from '../../lib/apiClient';
 import { ActionType } from '../../types';
 import { RebootIcon, TerminalIcon, FileIcon, SqlIcon } from '../icons/Icons';
 import Modal from './Modal';
@@ -40,8 +40,18 @@ const ActionsPanel: React.FC<ActionsPanelProps> = ({ deviceId, onActionFeedback 
     const handleAction = async (action: ActionType, params?: any) => {
         setIsExecuting(true);
         try {
-            const result = await apiService.executeAction(deviceId, action, params);
-            onActionFeedback(result.success ? 'success' : 'error', result.message);
+            if (action === ActionType.Reboot) {
+                await apiClient.post('/api/actions/reboot', { deviceId });
+                onActionFeedback('success', 'Reboot command sent.');
+            } else if (action === ActionType.RunPS) {
+                await apiClient.runScript(deviceId, params?.script ?? '');
+                onActionFeedback('success', 'PowerShell script submitted.');
+            } else if (action === ActionType.RunSQL) {
+                await apiClient.runSqlQuery(deviceId, params?.script ?? '');
+                onActionFeedback('success', 'SQL query submitted.');
+            } else {
+                onActionFeedback('error', `Unknown action: ${action}`);
+            }
         } catch (error) {
             onActionFeedback('error', `An unexpected error occurred while performing ${action}.`);
         }

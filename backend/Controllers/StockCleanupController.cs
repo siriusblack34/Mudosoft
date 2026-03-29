@@ -9,7 +9,7 @@ using System.Text.Json;
 namespace MudoSoft.Backend.Controllers
 {
     [ApiController]
-    [AllowAnonymous]
+    [Authorize]
     [Route("api/stock-cleanup")]
     public class StockCleanupController : ControllerBase
     {

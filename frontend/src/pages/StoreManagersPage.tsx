@@ -56,15 +56,14 @@ const StoreManagersPage: React.FC = () => {
     };
 
     const filteredManagers = useMemo(() => {
+        const q = search.toLowerCase().trim();
+        if (!q) return managers;
         return managers.filter(m => {
-            const code = m.storeCode ? String(m.storeCode) : "";
-            const matchesSearch =
-                m.storeName.toLowerCase().includes(search.toLowerCase()) ||
-                m.fullName.toLowerCase().includes(search.toLowerCase()) ||
-                code.includes(search) ||
-                (m.phone && m.phone.includes(search));
-
-            return matchesSearch;
+            const actualCode = m.actualStoreCode ? String(m.actualStoreCode) : "";
+            return m.storeName.toLowerCase().includes(q) ||
+                m.fullName.toLowerCase().includes(q) ||
+                actualCode.includes(q) ||
+                (m.phone && m.phone.includes(q));
         });
     }, [managers, search]);
 
@@ -148,7 +147,7 @@ const StoreManagersPage: React.FC = () => {
                 ) : viewMode === "grid" ? (
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 pb-6">
                         {filteredManagers.map((manager, idx) => {
-                            const code = manager.storeCode ? String(manager.storeCode) : "-";
+                            const storeCode = manager.actualStoreCode ? String(manager.actualStoreCode) : null;
                             return (
                                 <div key={`manager-${idx}`} className="bg-slate-900/60 rounded-2xl border border-slate-700/50 p-6 flex flex-col hover:border-sky-500/40 transition-all duration-300 shadow-lg shadow-black/10 hover:shadow-sky-900/20 group relative overflow-hidden backdrop-blur-xl hover:-translate-y-1">
                                     <div className="absolute top-0 right-0 w-32 h-32 bg-sky-500/5 rounded-full blur-3xl -translate-y-10 translate-x-10 group-hover:bg-sky-500/10 transition-colors" />
@@ -157,9 +156,11 @@ const StoreManagersPage: React.FC = () => {
                                         <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-sky-500/20 to-indigo-500/20 flex items-center justify-center border border-sky-500/30 text-sky-400 font-bold text-lg shadow-inner uppercase">
                                             {manager.fullName.charAt(0)}
                                         </div>
-                                        <div className="px-2.5 py-1 bg-slate-800 rounded-md text-xs font-mono text-slate-400 border border-slate-700 flex flex-col items-end gap-1">
-                                            <div>Kod: <span className="text-amber-400 font-bold text-sm">{code}</span></div>
-                                        </div>
+                                        {storeCode && (
+                                            <div className="px-2.5 py-1 bg-slate-800 rounded-md text-xs font-mono text-slate-400 border border-slate-700 flex flex-col items-end gap-1">
+                                                <div>Mağaza: <span className="text-emerald-400 font-bold text-sm">[{storeCode}]</span></div>
+                                            </div>
+                                        )}
                                     </div>
 
                                     <div className="mb-6 relative z-10 flex-1">
@@ -173,9 +174,11 @@ const StoreManagersPage: React.FC = () => {
                                     <div className="space-y-3 relative z-10">
                                         <div className="flex items-center gap-3 p-3 rounded-xl bg-slate-800/50 border border-slate-700/50">
                                             <Store className="w-4 h-4 text-amber-500 shrink-0" />
-                                            <div className="overflow-hidden">
-                                                <div className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold">Mağaza Adı</div>
-                                                <div className="text-sm font-medium text-slate-200 truncate" title={manager.storeName}>{manager.storeName}</div>
+                                            <div className="overflow-hidden flex-1">
+                                                <div className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold">Mağaza</div>
+                                                <div className="text-sm font-medium text-slate-200 truncate" title={manager.storeName}>
+                                                    {storeCode && <span className="text-emerald-400 font-mono font-bold">[{storeCode}]</span>}{" "}{manager.storeName}
+                                                </div>
                                             </div>
                                         </div>
                                     </div>
@@ -188,7 +191,7 @@ const StoreManagersPage: React.FC = () => {
                         <table className="w-full text-left border-collapse">
                             <thead className="bg-slate-800/80 border-b border-slate-700/80 text-[11px] font-bold text-slate-400 uppercase tracking-wider sticky top-0 z-10 backdrop-blur-md">
                                 <tr>
-                                    <th className="px-5 py-4">KOD</th>
+                                    <th className="px-5 py-4">MAĞAZA KODU</th>
                                     <th className="px-5 py-4">MAĞAZA ADI</th>
                                     <th className="px-5 py-4">AD SOYAD</th>
                                     <th className="px-5 py-4">TELEFON</th>
@@ -196,13 +199,17 @@ const StoreManagersPage: React.FC = () => {
                             </thead>
                             <tbody className="divide-y divide-slate-800/60">
                                 {filteredManagers.map((manager, idx) => {
-                                    const code = manager.storeCode ? String(manager.storeCode) : "-";
+                                    const storeCode = manager.actualStoreCode ? String(manager.actualStoreCode) : null;
                                     return (
                                         <tr key={`manager-${idx}`} className="hover:bg-slate-800/40 transition-colors group">
                                             <td className="px-5 py-4 w-32">
-                                                <span className="font-mono text-sm text-amber-400 font-bold bg-amber-500/10 px-2 py-1 rounded-md border border-amber-500/20">
-                                                    {code}
-                                                </span>
+                                                {storeCode ? (
+                                                    <span className="font-mono text-sm text-emerald-400 font-bold bg-emerald-500/10 px-2 py-1 rounded-md border border-emerald-500/20">
+                                                        {storeCode}
+                                                    </span>
+                                                ) : (
+                                                    <span className="text-sm text-slate-600">—</span>
+                                                )}
                                             </td>
                                             <td className="px-5 py-4 w-1/3">
                                                 <span className="text-sm font-medium text-slate-300 flex items-center gap-2">

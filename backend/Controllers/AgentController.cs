@@ -76,7 +76,6 @@ public class AgentController : ControllerBase
     }
 
     // 🧪 Test command enqueue
-    [AllowAnonymous] // Frontend access for testing
     [HttpPost("enqueue-test-command")]
     public IActionResult EnqueueTestCommand(string deviceId)
     {
@@ -92,7 +91,6 @@ public class AgentController : ControllerBase
     }
 
     // 🏆 Ön Uca: Son Komut Sonucu
-    [AllowAnonymous] // Frontend access for command results
     [HttpGet("command-results/latest")]
     public async Task<ActionResult<CommandResultRecord>> GetLatestCommandResult([FromQuery] string deviceId)
     {
@@ -110,12 +108,83 @@ public class AgentController : ControllerBase
         return Ok(latestResult);
     }
 
+    #region VNC Management
+
+    /// <summary>
+    /// Agent reports VNC installation status and password.
+    /// Called by agent after TightVNC is installed.
+    /// </summary>
+    [AllowAnonymous]
+    [HttpPost("vnc-status")]
+    public async Task<IActionResult> VncStatus([FromBody] VncStatusReport report)
+    {
+        if (string.IsNullOrEmpty(report?.DeviceId))
+            return BadRequest("deviceId required");
+
+        var device = await _dbContext.Devices.FindAsync(report.DeviceId);
+        if (device == null)
+            return NotFound("Device not found");
+
+        device.VncInstalled = report.Installed;
+        device.VncPassword = report.Password; // Agent sends the generated password
+        device.VncPort = report.Port > 0 ? report.Port : 5900;
+        await _dbContext.SaveChangesAsync();
+
+        _logger.LogInformation("[VNC] Device {DeviceId} VNC status updated: installed={Installed}, port={Port}",
+            report.DeviceId, report.Installed, report.Port);
+
+        return Ok();
+    }
+
+    /// <summary>
+    /// Trigger VNC installation on a specific device.
+    /// </summary>
+    [HttpPost("vnc-install/{deviceId}")]
+    public IActionResult TriggerVncInstall(string deviceId)
+    {
+        _queue.Enqueue(new CommandDto
+        {
+            Id = Guid.NewGuid(),
+            DeviceId = deviceId,
+            Type = CommandType.InstallVnc,
+            CreatedAtUtc = DateTime.UtcNow
+        });
+
+        return Ok(new { message = "VNC install command queued" });
+    }
+
+    /// <summary>
+    /// Trigger VNC installation on all online devices that don't have VNC installed.
+    /// </summary>
+    [HttpPost("vnc-install-all")]
+    public async Task<IActionResult> TriggerVncInstallAll()
+    {
+        var devices = await _dbContext.Devices
+            .Where(d => d.Online && !d.VncInstalled)
+            .Select(d => d.Id)
+            .ToListAsync();
+
+        foreach (var deviceId in devices)
+        {
+            _queue.Enqueue(new CommandDto
+            {
+                Id = Guid.NewGuid(),
+                DeviceId = deviceId,
+                Type = CommandType.InstallVnc,
+                CreatedAtUtc = DateTime.UtcNow
+            });
+        }
+
+        return Ok(new { message = $"VNC install queued for {devices.Count} devices" });
+    }
+
+    #endregion
+
     #region File Manager Endpoints
 
     /// <summary>
     /// List directory contents
     /// </summary>
-    [AllowAnonymous] // Frontend File Manager access
     [HttpPost("files/list")]
     public IActionResult FileList([FromQuery] string deviceId, [FromQuery] string path)
     {
@@ -138,7 +207,6 @@ public class AgentController : ControllerBase
     /// <summary>
     /// Create a new folder
     /// </summary>
-    [AllowAnonymous] // Frontend File Manager access
     [HttpPost("files/mkdir")]
     public IActionResult FolderCreate([FromQuery] string deviceId, [FromQuery] string path)
     {
@@ -161,7 +229,6 @@ public class AgentController : ControllerBase
     /// <summary>
     /// Delete file or folder
     /// </summary>
-    [AllowAnonymous] // Frontend File Manager access
     [HttpDelete("files")]
     public IActionResult FileDelete([FromQuery] string deviceId, [FromQuery] string path)
     {
@@ -184,7 +251,6 @@ public class AgentController : ControllerBase
     /// <summary>
     /// Upload file (content as base64)
     /// </summary>
-    [AllowAnonymous] // Frontend File Manager access
     [HttpPost("files/upload")]
     public IActionResult FileUpload([FromQuery] string deviceId, [FromBody] FileUploadRequest request)
     {
@@ -209,7 +275,6 @@ public class AgentController : ControllerBase
     /// <summary>
     /// Download file (returns base64 content via command result)
     /// </summary>
-    [AllowAnonymous] // Frontend File Manager access
     [HttpPost("files/download")]
     public IActionResult FileDownload([FromQuery] string deviceId, [FromQuery] string path)
     {
@@ -232,7 +297,6 @@ public class AgentController : ControllerBase
     /// <summary>
     /// Tüm komut geçmişini döndürür (İşlem Geçmişi sayfası için)
     /// </summary>
-    [AllowAnonymous]
     [HttpGet("command-history")]
     public async Task<IActionResult> GetCommandHistory([FromQuery] int limit = 200)
     {
@@ -252,10 +316,12 @@ public class AgentController : ControllerBase
                     typeName       = r.CommandType == CommandType.Reboot        ? "Yeniden Başlat"
                                   : r.CommandType == CommandType.Shutdown       ? "Kapat"
                                   : r.CommandType == CommandType.ExecuteScript  ? "Script Çalıştır"
+                                  : r.CommandType == CommandType.ListServices   ? "Servisleri Listele"
                                   : r.CommandType == CommandType.FolderCleanup  ? "Klasör Temizle"
                                   : r.CommandType == CommandType.UpdateAgent    ? "Agent Güncelle"
                                   : r.CommandType == CommandType.FileWrite      ? "Dosya Yükle"
                                   : r.CommandType == CommandType.FileDelete     ? "Dosya Sil"
+                                  : r.CommandType == CommandType.InstallVnc    ? "VNC Kur"
                                   : "Diğer",
                     success        = r.Success,
                     completedAtUtc = r.CompletedAtUtc,
@@ -270,7 +336,6 @@ public class AgentController : ControllerBase
     /// <summary>
     /// Get command result by ID (for file operations)
     /// </summary>
-    [AllowAnonymous] // Frontend access for polling command results
     [HttpGet("command-results/{commandId}")]
     public async Task<ActionResult<CommandResultRecord>> GetCommandResult(Guid commandId)
     {
@@ -290,4 +355,12 @@ public class FileUploadRequest
 {
     public string? Path { get; set; }
     public string? Content { get; set; } // Base64 encoded
+}
+
+public class VncStatusReport
+{
+    public string? DeviceId { get; set; }
+    public bool Installed { get; set; }
+    public string? Password { get; set; }
+    public int Port { get; set; } = 5900;
 }

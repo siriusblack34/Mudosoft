@@ -459,8 +459,16 @@ namespace MudoSoft.Backend.Controllers
         [HttpPost("clean-all")]
         public async Task<IActionResult> CleanAll([FromServices] IInboxCleanupService cleanupService)
         {
-            var (successCount, totalCount, results) = await cleanupService.CleanAllAsync();
-            return Ok(new { results, successCount, totalCount });
+            try
+            {
+                var (successCount, totalCount, results) = await cleanupService.CleanAllAsync();
+                return Ok(new { results, successCount, totalCount });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Clean-all islemi sirasinda hata olustu");
+                return StatusCode(500, new { error = "Toplu temizlik sirasinda hata olustu.", detail = ex.Message });
+            }
         }
 
         private async Task<(int deleted, string? error)> DeleteFilesAsync(string uncPath, string[] patterns, int timeoutSec = 30)

@@ -105,11 +105,27 @@ namespace MudoSoft.Backend.Controllers
                     await sem.WaitAsync();
                     try
                     {
-                        d.IsOnline = await _fastCheck.IsSqlReachableAsync(
-                            d.CalculatedIpAddress,
-                            1433,
-                            timeoutMs
-                        );
+                        // Geçici cihazlar SQL Server olmayabilir — ping ile kontrol et
+                        var isGecici = d.DeviceType.Equals("gecici", StringComparison.OrdinalIgnoreCase)
+                                    || d.DeviceType.Equals("GEÇİCİ", StringComparison.OrdinalIgnoreCase);
+                        if (isGecici)
+                        {
+                            try
+                            {
+                                using var ping = new System.Net.NetworkInformation.Ping();
+                                var reply = await ping.SendPingAsync(d.CalculatedIpAddress, timeoutMs);
+                                d.IsOnline = reply.Status == System.Net.NetworkInformation.IPStatus.Success;
+                            }
+                            catch { d.IsOnline = false; }
+                        }
+                        else
+                        {
+                            d.IsOnline = await _fastCheck.IsSqlReachableAsync(
+                                d.CalculatedIpAddress,
+                                1433,
+                                timeoutMs
+                            );
+                        }
                     }
                     finally
                     {
@@ -456,8 +472,8 @@ namespace MudoSoft.Backend.Controllers
             catch (Exception ex)
             {
                 _logger.LogError(ex, "SQL error for device {DeviceId}", request.DeviceId);
-                // Artık hatayı gizlemiyoruz ki frontend detay görebilsin
-                return BadRequest(new { error = $"Query execution failed: {ex.Message}" });
+                // Log the full error server-side but return a generic message to avoid leaking DB details
+                return BadRequest(new { error = "Query execution failed. Check server logs for details." });
             }
         }
     }

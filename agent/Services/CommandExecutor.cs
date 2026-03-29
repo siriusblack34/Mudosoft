@@ -3,17 +3,20 @@ using Microsoft.Extensions.Logging;
 using Mudosoft.Agent.Interfaces;
 using Mudosoft.Shared.Dtos;
 using Mudosoft.Shared.Enums;
-using System.Runtime.InteropServices; 
+using System.Management;
+using System.Runtime.InteropServices;
 
 namespace Mudosoft.Agent.Services;
 
 public sealed class CommandExecutor : ICommandExecutor
 {
     private readonly ILogger<CommandExecutor> _logger;
+    private readonly VncInstallerService _vncInstaller;
 
-    public CommandExecutor(ILogger<CommandExecutor> logger)
+    public CommandExecutor(ILogger<CommandExecutor> logger, VncInstallerService vncInstaller)
     {
         _logger = logger;
+        _vncInstaller = vncInstaller;
     }
 
     // HATA ÇÖZÜMÜ: CancellationToken token parametresi eklendi
@@ -84,6 +87,13 @@ public sealed class CommandExecutor : ICommandExecutor
                 case CommandType.UpdateAgent:
                     _logger.LogInformation("UpdateAgent komutu alındı: {Payload}", command.Payload);
                     result = ExecuteAgentUpdate(command.Payload ?? "", result);
+                    break;
+
+                case CommandType.InstallVnc:
+                    _logger.LogInformation("InstallVnc komutu alındı.");
+                    var vncResult = _vncInstaller.InstallAndConfigureAsync(token).GetAwaiter().GetResult();
+                    result.Success = vncResult.Success;
+                    result.Output = vncResult.Output;
                     break;
 
                 default:
