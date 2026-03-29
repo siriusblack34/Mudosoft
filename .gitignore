@@ -51,6 +51,25 @@ msbuild.log
 Thumbs.db
 .DS_Store
 
+# Temp directories
+_temp_build/
+_temp_zip_check/
+
+# Agent deploy runtime artifacts (DLLs, EXE, PDB, runtime files)
+agent/deploy/*.dll
+agent/deploy/*.pdb
+agent/deploy/*.exe
+agent/deploy/MudoSoft.Agent.deps.json
+agent/deploy/MudoSoft.Agent.runtimeconfig.json
+
+# Agent tools (large binary installers)
+agent/tools/
+agent/deploy/tools/
+agent/deploy/deploy/
+
+# RSA keys
+rsa_private.xml
+
 # 🔒 Security - NEVER commit these!
 .env
 *.env
