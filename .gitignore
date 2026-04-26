@@ -54,6 +54,18 @@ Thumbs.db
 # Temp directories
 _temp_build/
 _temp_zip_check/
+_temp_verify_backend/
+_temp_verify_backend_device_details/
+
+# Root-level scaffolding (yanlislikla "dotnet new console" calistirilmis)
+/Program.cs
+/Mudosoft.csproj
+
+# Onizleme/debug HTML
+dashboard-preview.html
+
+# Claude Code runtime lock dosyalari
+.claude/scheduled_tasks.lock
 
 # Agent deploy runtime artifacts (DLLs, EXE, PDB, runtime files)
 agent/deploy/*.dll
