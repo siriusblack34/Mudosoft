@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
 using MudoSoft.Backend.Data;
 using MudoSoft.Backend.Services;
+using System.Collections.Concurrent;
 using System.Data;
 using System.Text.Json;
 
@@ -17,6 +18,8 @@ namespace MudoSoft.Backend.Controllers
         private readonly IRemoteSqlService _remoteSqlService;
         private readonly ILogger<StockCleanupController> _logger;
         private readonly FastSqlReachabilityService _fastCheck;
+
+        private static readonly ConcurrentDictionary<string, CleanAllJob> _cleanAllJobs = new();
 
         public StockCleanupController(
             MudoSoftDbContext db,
@@ -196,52 +199,143 @@ namespace MudoSoft.Backend.Controllers
         }
 
         // ===========================================================
-        // 3) TÜM PC'LERİ TEMİZLE (TRUNCATE ALL)
+        // 3) TÜM PC'LERİ TEMİZLE (TRUNCATE ALL) — JOB-BASED
         // ===========================================================
         [HttpPost("clean-all")]
-        public async Task<IActionResult> CleanAll()
+        public async Task<IActionResult> CleanAll([FromServices] IServiceScopeFactory scopeFactory)
         {
-            var pcDevices = await _db.StoreDevices
+            var pcCount = await _db.StoreDevices
                 .AsNoTracking()
-                .Where(d => d.DeviceType == "PC" || d.DeviceType.ToLower() == "gecici")
-                .ToListAsync();
+                .CountAsync(d => d.DeviceType == "PC" || d.DeviceType.ToLower() == "gecici");
 
-            var results = new List<object>();
-            using var sem = new SemaphoreSlim(20); 
-
-            var tasks = pcDevices.Select(async device =>
+            var jobId = Guid.NewGuid().ToString("N")[..8];
+            var job = new CleanAllJob
             {
-                await sem.WaitAsync();
-                try
-                {
-                    // Online kontrolü (Hızlı Check)
-                    var isOnline = await _fastCheck.IsSqlReachableAsync(device.CalculatedIpAddress, 1433, 1000);
-                    
-                    if (isOnline)
-                    {
-                        string query = "TRUNCATE TABLE POS_STOCK_TRANSFER";
-                        await _remoteSqlService.ExecuteQueryAsync(device.DbConnectionString, query);
-                        
-                        lock (results) results.Add(new { deviceId = device.DeviceId, status = "cleaned", message = "Temizlendi" });
-                    }
-                    else
-                    {
-                        lock (results) results.Add(new { deviceId = device.DeviceId, status = "offline", message = "Cihaz offline" });
-                    }
-                }
-                catch (Exception ex)
-                {
-                    lock (results) results.Add(new { deviceId = device.DeviceId, status = "error", message = ex.Message });
-                }
-                finally
-                {
-                    sem.Release();
-                }
-            });
+                JobId = jobId,
+                TotalCount = pcCount,
+                StartedAtUtc = DateTime.UtcNow
+            };
+            _cleanAllJobs[jobId] = job;
 
-            await Task.WhenAll(tasks);
+            _ = Task.Run(() => ProcessCleanAllJobAsync(jobId, scopeFactory));
 
-            return Ok(new { success = true, total = pcDevices.Count, details = results });
+            _logger.LogInformation("Stock clean-all job queued: JobId={JobId} TargetCount={Count}", jobId, pcCount);
+            return Accepted(new { jobId, totalCount = pcCount });
+        }
+
+        // ===========================================================
+        // 4) TOPLU TEMİZLİK JOB DURUMU
+        // ===========================================================
+        [HttpGet("clean-all/{jobId}")]
+        public IActionResult GetCleanAllStatus(string jobId)
+        {
+            if (!_cleanAllJobs.TryGetValue(jobId, out var job))
+                return NotFound(new { error = "Job bulunamadi" });
+
+            lock (job.Lock)
+            {
+                return Ok(new
+                {
+                    jobId = job.JobId,
+                    totalCount = job.TotalCount,
+                    completedCount = job.CompletedCount,
+                    successCount = job.SuccessCount,
+                    offlineCount = job.OfflineCount,
+                    errorCount = job.ErrorCount,
+                    lastDeviceName = job.LastDeviceName,
+                    startedAtUtc = job.StartedAtUtc.ToString("o"),
+                    completedAtUtc = job.CompletedAtUtc?.ToString("o"),
+                    isCompleted = job.CompletedAtUtc.HasValue,
+                    error = job.Error
+                });
+            }
+        }
+
+        private async Task ProcessCleanAllJobAsync(string jobId, IServiceScopeFactory scopeFactory)
+        {
+            if (!_cleanAllJobs.TryGetValue(jobId, out var job)) return;
+
+            try
+            {
+                using var scope = scopeFactory.CreateScope();
+                var db = scope.ServiceProvider.GetRequiredService<MudoSoftDbContext>();
+                var remoteSql = scope.ServiceProvider.GetRequiredService<IRemoteSqlService>();
+                var fastCheck = scope.ServiceProvider.GetRequiredService<FastSqlReachabilityService>();
+
+                var pcDevices = await db.StoreDevices
+                    .AsNoTracking()
+                    .Where(d => d.DeviceType == "PC" || d.DeviceType.ToLower() == "gecici")
+                    .ToListAsync();
+
+                using var sem = new SemaphoreSlim(20);
+
+                var tasks = pcDevices.Select(async device =>
+                {
+                    await sem.WaitAsync();
+                    string status;
+                    try
+                    {
+                        var isOnline = await fastCheck.IsSqlReachableAsync(device.CalculatedIpAddress, 1433, 1000);
+                        if (!isOnline)
+                        {
+                            status = "offline";
+                        }
+                        else
+                        {
+                            await remoteSql.ExecuteQueryAsync(device.DbConnectionString, "TRUNCATE TABLE POS_STOCK_TRANSFER");
+                            status = "cleaned";
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        status = "error";
+                        _logger.LogWarning(ex, "Stock clean-all device error: {DeviceId}", device.DeviceId);
+                    }
+                    finally
+                    {
+                        sem.Release();
+                    }
+
+                    lock (job.Lock)
+                    {
+                        job.CompletedCount++;
+                        if (status == "cleaned") job.SuccessCount++;
+                        else if (status == "offline") job.OfflineCount++;
+                        else job.ErrorCount++;
+                        job.LastDeviceName = device.StoreName;
+                    }
+                });
+
+                await Task.WhenAll(tasks);
+
+                lock (job.Lock) job.CompletedAtUtc = DateTime.UtcNow;
+                _logger.LogInformation("Stock clean-all job {JobId} done: success={S} offline={O} error={E}",
+                    jobId, job.SuccessCount, job.OfflineCount, job.ErrorCount);
+            }
+            catch (Exception ex)
+            {
+                lock (job.Lock)
+                {
+                    job.Error = ex.Message;
+                    job.CompletedAtUtc = DateTime.UtcNow;
+                }
+                _logger.LogError(ex, "Stock clean-all job {JobId} failed", jobId);
+            }
+        }
+
+        private sealed class CleanAllJob
+        {
+            public string JobId { get; init; } = "";
+            public int TotalCount { get; set; }
+            public int CompletedCount { get; set; }
+            public int SuccessCount { get; set; }
+            public int OfflineCount { get; set; }
+            public int ErrorCount { get; set; }
+            public string? LastDeviceName { get; set; }
+            public DateTime StartedAtUtc { get; set; }
+            public DateTime? CompletedAtUtc { get; set; }
+            public string? Error { get; set; }
+            public object Lock { get; } = new();
         }
     }
 }

@@ -10,12 +10,12 @@ namespace MudoSoft.Backend.Migrations
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.AddColumn<bool>(
-                name: "ExcludeFromOfflineList",
-                table: "Devices",
-                type: "boolean",
-                nullable: false,
-                defaultValue: false);
+            migrationBuilder.Sql(@"
+                DO $$ BEGIN
+                    ALTER TABLE ""Devices"" ADD COLUMN ""ExcludeFromOfflineList"" boolean NOT NULL DEFAULT FALSE;
+                EXCEPTION WHEN duplicate_column THEN NULL;
+                END $$;
+            ");
         }
 
         /// <inheritdoc />

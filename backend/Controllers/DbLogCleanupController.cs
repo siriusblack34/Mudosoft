@@ -118,17 +118,14 @@ namespace MudoSoft.Backend.Controllers
                             StoreCode = device.StoreCode,
                             StoreName = device.StoreName,
                             IpAddress = device.CalculatedIpAddress,
-                            IsOnline = true, 
+                            IsOnline = true,
                             Status = "error",
                             ErrorMessage = ex.Message
                         };
                         results.Add(dto);
 
-                        // DEBUG LOG
-                        try {
-                            System.IO.File.AppendAllText("C:\\Projects\\mudosoft\\backend\\debug_error.txt", 
-                                $"[{DateTime.Now}] Device: {device.StoreName} ({device.CalculatedIpAddress})\nError: {ex.Message}\nStack: {ex.StackTrace}\n--------------------------------------------------\n");
-                        } catch { /* ignore file log errors */ }
+                        _logger.LogError(ex, "DbLogCleanup error — Device: {StoreName} ({IpAddress})",
+                            device.StoreName, device.CalculatedIpAddress);
                     }
                 }
                 finally

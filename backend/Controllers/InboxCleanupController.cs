@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
 using MudoSoft.Backend.Data;
 using MudoSoft.Backend.Services;
+using System.Collections.Concurrent;
 using System.Net.Sockets;
 
 namespace MudoSoft.Backend.Controllers
@@ -14,6 +15,8 @@ namespace MudoSoft.Backend.Controllers
     {
         private readonly MudoSoftDbContext _db;
         private readonly ILogger<InboxCleanupController> _logger;
+
+        private static readonly ConcurrentDictionary<string, CleanAllJob> _cleanAllJobs = new();
 
         private const string READY_FOLDER = @"GeniusOpen\Inbox\000\Ready";
         private const string KASA_FOLDER = @"GeniusOpen\Kasa";
@@ -71,179 +74,76 @@ namespace MudoSoft.Backend.Controllers
 
         /// <summary>
         /// Cihazın online olup olmadığını kontrol et: SQL(1433) -> SMB(445) -> Ping
+        /// CancellationToken ile timeout olduğunda bağlantı temiz şekilde iptal edilir.
         /// </summary>
-        private async Task<bool> IsDeviceOnlineAsync(string ip, int timeoutMs = 2000)
+        private async Task<bool> IsDeviceOnlineAsync(string ip, int timeoutMs = 2000, CancellationToken ct = default)
         {
-            // 1. SQL Port (1433) Kontrolü (En güvenilir)
-            try
-            {
-                using var client = new TcpClient();
-                var connectTask = client.ConnectAsync(ip, 1433);
-                if (await Task.WhenAny(connectTask, Task.Delay(timeoutMs)) == connectTask && client.Connected)
-                {
-                    return true;
-                }
-            }
-            catch { /* ignore */ }
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            cts.CancelAfter(timeoutMs);
+            var token = cts.Token;
 
-            // 2. SMB Port (445) Kontrolü
-            try
-            {
-                using var client = new TcpClient();
-                var connectTask = client.ConnectAsync(ip, 445);
-                if (await Task.WhenAny(connectTask, Task.Delay(timeoutMs)) == connectTask && client.Connected)
-                {
-                    return true;
-                }
-            }
-            catch { /* ignore */ }
+            // 1. SQL Port (1433)
+            if (await TryTcpConnectAsync(ip, 1433, token))
+                return true;
 
-            // 3. Ping Kontrolü (Yedek)
+            // 2. SMB Port (445)
+            if (await TryTcpConnectAsync(ip, 445, token))
+                return true;
+
+            // 3. Ping
             try
             {
                 using var ping = new System.Net.NetworkInformation.Ping();
-                var reply = await ping.SendPingAsync(ip, timeoutMs);
-                if (reply.Status == System.Net.NetworkInformation.IPStatus.Success)
-                {
-                    return true;
-                }
+                var reply = await ping.SendPingAsync(ip, Math.Max(500, timeoutMs / 3));
+                return reply.Status == System.Net.NetworkInformation.IPStatus.Success;
             }
-            catch { /* ignore */ }
+            catch { }
 
             return false;
         }
 
-        /// <summary>
-        /// Inbox (Ready) klasöründeki dosyaları say (.rdy, .txt, .tmp)
-        /// </summary>
-        private async Task<(int rdy, int txt, int tmp, string? error)> GetInboxCountsAsync(string uncPath, int timeoutSec = 20)
+        private static async Task<bool> TryTcpConnectAsync(string ip, int port, CancellationToken ct)
         {
             try
             {
-                var task = Task.Run(() =>
-                {
-                    if (!Directory.Exists(uncPath))
-                        return (0, 0, 0, (string?)"Klasör bulunamadı");
-
-                    var rdyFiles = Directory.GetFiles(uncPath, "*.rdy");
-                    var txtFiles = Directory.GetFiles(uncPath, "*.txt");
-                    var tmpFiles = Directory.GetFiles(uncPath, "*.tmp");
-                    return (rdyFiles.Length, txtFiles.Length, tmpFiles.Length, (string?)null);
-                });
-
-                if (await Task.WhenAny(task, Task.Delay(TimeSpan.FromSeconds(timeoutSec))) == task)
-                    return await task;
-
-                return (0, 0, 0, "Zaman aşımı");
+                using var client = new TcpClient();
+                await client.ConnectAsync(ip, port, ct);
+                return client.Connected;
             }
-            catch (Exception ex)
-            {
-                return (0, 0, 0, ex.Message.Length > 120 ? ex.Message[..120] : ex.Message);
-            }
+            catch { return false; }
         }
 
         /// <summary>
-        /// Kasa klasöründeki dosyaları say (.tmp)
+        /// UNC path üzerinde dosya sayımı. CancellationToken ile iptal edilebilir.
         /// </summary>
-        private async Task<(int count, string? error)> GetKasaCountsAsync(string uncPath, int timeoutSec = 20)
+        private async Task<(int rdy, int txt, int tmp, int dis, string? error)> GetFileCountsAsync(
+            string uncPath, int timeoutSec, CancellationToken ct)
         {
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            cts.CancelAfter(TimeSpan.FromSeconds(timeoutSec));
+
             try
             {
-                var task = Task.Run(() =>
+                return await Task.Run(() =>
                 {
-                    if (!Directory.Exists(uncPath))
-                        return (0, (string?)"Klasör bulunamadı");
-
-                    var tmpFiles = Directory.GetFiles(uncPath, "*.tmp");
-                    return (tmpFiles.Length, (string?)null);
-                });
-
-                if (await Task.WhenAny(task, Task.Delay(TimeSpan.FromSeconds(timeoutSec))) == task)
-                    return await task;
-
-                return (0, "Zaman aşımı");
-            }
-            catch (Exception ex)
-            {
-                return (0, ex.Message.Length > 120 ? ex.Message[..120] : ex.Message);
-            }
-        }
-
-        private async Task<(int count, string? error)> GetProcessedCountsAsync(string uncPath, int timeoutSec = 20)
-        {
-            try
-            {
-                var task = Task.Run(() =>
-                {
-                    if (!Directory.Exists(uncPath))
-                        return (0, (string?)"Klasör bulunamadı");
-
-                    var rdyFiles = Directory.GetFiles(uncPath, "*.rdy");
-                    var txtFiles = Directory.GetFiles(uncPath, "*.txt");
-                    return (rdyFiles.Length + txtFiles.Length, (string?)null);
-                });
-
-                if (await Task.WhenAny(task, Task.Delay(TimeSpan.FromSeconds(timeoutSec))) == task)
-                    return await task;
-
-                return (0, "Zaman aşımı");
-            }
-            catch (Exception ex)
-            {
-                // Klasör yoksa hata dönme, 0 dön (processed klasörü olmayabilir)
-                if (ex is DirectoryNotFoundException) return (0, null);
-                return (0, ex.Message.Length > 120 ? ex.Message[..120] : ex.Message);
-            }
-        }
-
-        private async Task<(int count, string? error)> GetSeqCountsAsync(string uncPath, int timeoutSec = 20)
-        {
-            try
-            {
-                var task = Task.Run(() =>
-                {
-                    if (!Directory.Exists(uncPath))
-                        return (0, (string?)"Klasör bulunamadı");
-
-                    var rdyFiles = Directory.GetFiles(uncPath, "*.rdy");
-                    var txtFiles = Directory.GetFiles(uncPath, "*.txt");
-                    var tmpFiles = Directory.GetFiles(uncPath, "*.tmp");
-                    return (rdyFiles.Length + txtFiles.Length + tmpFiles.Length, (string?)null);
-                });
-
-                if (await Task.WhenAny(task, Task.Delay(TimeSpan.FromSeconds(timeoutSec))) == task)
-                    return await task;
-
-                return (0, "Zaman aşımı");
-            }
-            catch (Exception ex)
-            {
-                // Klasör yoksa hata dönme, 0 dön (seq klasörü olmayabilir)
-                if (ex is DirectoryNotFoundException) return (0, null);
-                return (0, ex.Message.Length > 120 ? ex.Message[..120] : ex.Message);
-            }
-        }
-
-        private async Task<(int rdy, int txt, int tmp, int dis, string? error)> GetFileCountsAsync(string uncPath, int timeoutSec = 20)
-        {
-            try
-            {
-                var task = Task.Run(() =>
-                {
+                    cts.Token.ThrowIfCancellationRequested();
                     if (!Directory.Exists(uncPath))
                         return (0, 0, 0, 0, (string?)"Klasör bulunamadı");
 
+                    cts.Token.ThrowIfCancellationRequested();
                     var rdyFiles = Directory.GetFiles(uncPath, "*.rdy");
+                    cts.Token.ThrowIfCancellationRequested();
                     var txtFiles = Directory.GetFiles(uncPath, "*.txt");
+                    cts.Token.ThrowIfCancellationRequested();
                     var tmpFiles = Directory.GetFiles(uncPath, "*.tmp");
+                    cts.Token.ThrowIfCancellationRequested();
                     var disFiles = Directory.GetFiles(uncPath, "*.dis");
                     return (rdyFiles.Length, txtFiles.Length, tmpFiles.Length, disFiles.Length, (string?)null);
-                });
-
-                if (await Task.WhenAny(task, Task.Delay(TimeSpan.FromSeconds(timeoutSec))) == task)
-                    return await task;
-
-                return (0, 0, 0, 0, "Zaman aşımı");
+                }, cts.Token);
+            }
+            catch (OperationCanceledException)
+            {
+                return (0, 0, 0, 0, ct.IsCancellationRequested ? "İptal edildi" : "Zaman aşımı");
             }
             catch (Exception ex)
             {
@@ -251,83 +151,127 @@ namespace MudoSoft.Backend.Controllers
             }
         }
 
+        /// <summary>
+        /// Kasa klasöründeki .tmp dosyalarını say
+        /// </summary>
+        private async Task<(int count, string? error)> GetKasaCountsAsync(
+            string uncPath, int timeoutSec, CancellationToken ct)
+        {
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            cts.CancelAfter(TimeSpan.FromSeconds(timeoutSec));
 
+            try
+            {
+                return await Task.Run(() =>
+                {
+                    cts.Token.ThrowIfCancellationRequested();
+                    if (!Directory.Exists(uncPath))
+                        return (0, (string?)"Klasör bulunamadı");
+
+                    cts.Token.ThrowIfCancellationRequested();
+                    var tmpFiles = Directory.GetFiles(uncPath, "*.tmp");
+                    return (tmpFiles.Length, (string?)null);
+                }, cts.Token);
+            }
+            catch (OperationCanceledException)
+            {
+                return (0, ct.IsCancellationRequested ? "İptal edildi" : "Zaman aşımı");
+            }
+            catch (Exception ex)
+            {
+                return (0, ex.Message.Length > 120 ? ex.Message[..120] : ex.Message);
+            }
+        }
+
+        private async Task<(int count, string? error)> GetProcessedCountsAsync(
+            string uncPath, int timeoutSec, CancellationToken ct)
+        {
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            cts.CancelAfter(TimeSpan.FromSeconds(timeoutSec));
+
+            try
+            {
+                return await Task.Run(() =>
+                {
+                    cts.Token.ThrowIfCancellationRequested();
+                    if (!Directory.Exists(uncPath))
+                        return (0, (string?)"Klasör bulunamadı");
+
+                    cts.Token.ThrowIfCancellationRequested();
+                    var rdyFiles = Directory.GetFiles(uncPath, "*.rdy");
+                    cts.Token.ThrowIfCancellationRequested();
+                    var txtFiles = Directory.GetFiles(uncPath, "*.txt");
+                    return (rdyFiles.Length + txtFiles.Length, (string?)null);
+                }, cts.Token);
+            }
+            catch (OperationCanceledException)
+            {
+                return (0, ct.IsCancellationRequested ? "İptal edildi" : "Zaman aşımı");
+            }
+            catch (Exception ex)
+            {
+                if (ex is DirectoryNotFoundException) return (0, null);
+                return (0, ex.Message.Length > 120 ? ex.Message[..120] : ex.Message);
+            }
+        }
+
+        private async Task<(int count, string? error)> GetSeqCountsAsync(
+            string uncPath, int timeoutSec, CancellationToken ct)
+        {
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            cts.CancelAfter(TimeSpan.FromSeconds(timeoutSec));
+
+            try
+            {
+                return await Task.Run(() =>
+                {
+                    cts.Token.ThrowIfCancellationRequested();
+                    if (!Directory.Exists(uncPath))
+                        return (0, (string?)"Klasör bulunamadı");
+
+                    cts.Token.ThrowIfCancellationRequested();
+                    var rdyFiles = Directory.GetFiles(uncPath, "*.rdy");
+                    cts.Token.ThrowIfCancellationRequested();
+                    var txtFiles = Directory.GetFiles(uncPath, "*.txt");
+                    cts.Token.ThrowIfCancellationRequested();
+                    var tmpFiles = Directory.GetFiles(uncPath, "*.tmp");
+                    return (rdyFiles.Length + txtFiles.Length + tmpFiles.Length, (string?)null);
+                }, cts.Token);
+            }
+            catch (OperationCanceledException)
+            {
+                return (0, ct.IsCancellationRequested ? "İptal edildi" : "Zaman aşımı");
+            }
+            catch (Exception ex)
+            {
+                if (ex is DirectoryNotFoundException) return (0, null);
+                return (0, ex.Message.Length > 120 ? ex.Message[..120] : ex.Message);
+            }
+        }
 
         // ===========================================================
         // 1) TÜM PC'LERİ KONTROL ET
         // ===========================================================
         [HttpPost("check-all")]
-        public async Task<IActionResult> CheckAll()
+        public async Task<IActionResult> CheckAll(CancellationToken ct)
         {
             var pcDevices = await _db.StoreDevices
                 .AsNoTracking()
                 .Where(d => d.DeviceType == "PC" || d.DeviceType.ToLower() == "gecici")
-                .ToListAsync();
+                .ToListAsync(ct);
 
             _logger.LogInformation("Inbox check-all starting for {Count} devices (PC+Gecici)", pcDevices.Count);
 
             var results = new List<InboxStatusDto>();
-            using var sem = new SemaphoreSlim(20); // network contention azaltmak için
+            // 10 eşzamanlı cihaz — her biri 4 UNC scan yapıyor, toplam ~40 bloklayan I/O
+            using var sem = new SemaphoreSlim(10);
 
             var tasks = pcDevices.Select(async device =>
             {
-                await sem.WaitAsync();
+                await sem.WaitAsync(ct);
                 try
                 {
-                    var dto = new InboxStatusDto
-                    {
-                        DeviceId = device.DeviceId,
-                        StoreCode = device.StoreCode,
-                        StoreName = device.StoreName,
-                        IpAddress = device.CalculatedIpAddress,
-                        DeviceType = device.DeviceType
-                    };
-
-                    // Online kontrolü (SQL -> SMB -> Ping)
-                    var isOnline = await IsDeviceOnlineAsync(device.CalculatedIpAddress, 2000);
-                    dto.IsOnline = isOnline;
-
-                    if (!isOnline)
-                    {
-                        dto.Status = "offline";
-                        lock (results) results.Add(dto);
-                        return;
-                    }
-
-                    // 1. Inbox (Ready) sayımı (rdy, txt, tmp2, dis)
-                    var uncPathInbox = GetUncPath(device.CalculatedIpAddress);
-                    var (rdy, txt, tmp2, dis, errorInbox) = await GetFileCountsAsync(uncPathInbox, 30);
-
-                    // 2. Kasa sayımı (tmp1)
-                    var uncPathKasa = GetKasaPath(device.CalculatedIpAddress);
-                    var (tmp1, errorKasa) = await GetKasaCountsAsync(uncPathKasa, 30);
-
-                    // 3. Processed sayımı (pro)
-                    var uncPathProcessed = GetProcessedPath(device.CalculatedIpAddress);
-                    var (pro, errorProcessed) = await GetProcessedCountsAsync(uncPathProcessed, 60);
-
-                    // 4. Seq sayımı (seq)
-                    var uncPathSeq = GetSeqPath(device.CalculatedIpAddress);
-                    var (seq, errorSeq) = await GetSeqCountsAsync(uncPathSeq, 60);
-
-                    if (errorInbox != null || errorKasa != null || errorProcessed != null || errorSeq != null)
-                    {
-                        dto.Status = "error";
-                        dto.ErrorMessage = $"{errorInbox ?? ""} | {errorKasa ?? ""} | {errorProcessed ?? ""} | {errorSeq ?? ""}".Trim(' ', '|');
-                    }
-                    else
-                    {
-                        dto.RdyCount = rdy;
-                        dto.TxtCount = txt;
-                        dto.Tmp1Count = tmp1; // Kasa
-                        dto.Tmp2Count = tmp2; // Inbox
-                        dto.DisCount = dis; // Inbox
-                        dto.ProCount = pro; // Processed
-                        dto.SeqCount = seq; // Seq
-                        dto.TotalCount = rdy + txt + tmp1 + tmp2 + dis + pro + seq;
-                        dto.Status = dto.TotalCount > 0 ? "dirty" : "clean";
-                    }
-
+                    var dto = await CheckDeviceAsync(device, ct);
                     lock (results) results.Add(dto);
                 }
                 finally
@@ -348,19 +292,12 @@ namespace MudoSoft.Backend.Controllers
             return Ok(ordered);
         }
 
-        // ===========================================================
-        // 2) TEK PC KONTROL
-        // ===========================================================
-        [HttpGet("check/{deviceId}")]
-        public async Task<IActionResult> CheckSingle(string deviceId)
+        /// <summary>
+        /// Tek cihazın inbox durumunu kontrol et (check-all ve check-single ortak kullanır)
+        /// </summary>
+        private async Task<InboxStatusDto> CheckDeviceAsync(
+            MudoSoft.Backend.Models.StoreDevice device, CancellationToken ct)
         {
-            var device = await _db.StoreDevices
-                .AsNoTracking()
-                .FirstOrDefaultAsync(d => d.DeviceId == deviceId);
-
-            if (device == null)
-                return NotFound(new { error = "Device not found" });
-
             var dto = new InboxStatusDto
             {
                 DeviceId = device.DeviceId,
@@ -370,31 +307,34 @@ namespace MudoSoft.Backend.Controllers
                 DeviceType = device.DeviceType
             };
 
-            var isOnline = await IsDeviceOnlineAsync(device.CalculatedIpAddress, 2000);
+            var isOnline = await IsDeviceOnlineAsync(device.CalculatedIpAddress, 2000, ct);
             dto.IsOnline = isOnline;
 
             if (!isOnline)
             {
                 dto.Status = "offline";
-                return Ok(dto);
+                return dto;
             }
 
-            var uncPath = GetUncPath(device.CalculatedIpAddress);
-            var (rdy, txt, tmp2, dis, error) = await GetFileCountsAsync(uncPath, 10);
+            var ip = device.CalculatedIpAddress;
 
-            var kasaPath = GetKasaPath(device.CalculatedIpAddress);
-            var (tmp1, errorKasa) = await GetKasaCountsAsync(kasaPath, 10);
+            // 4 klasörü paralel tara (aynı cihaz içinde paralel — hepsi aynı IP)
+            var inboxTask = GetFileCountsAsync(GetUncPath(ip), 15, ct);
+            var kasaTask = GetKasaCountsAsync(GetKasaPath(ip), 15, ct);
+            var proTask = GetProcessedCountsAsync(GetProcessedPath(ip), 30, ct);
+            var seqTask = GetSeqCountsAsync(GetSeqPath(ip), 30, ct);
 
-            var proPath = GetProcessedPath(device.CalculatedIpAddress);
-            var (pro, errorPro) = await GetProcessedCountsAsync(proPath, 10);
+            await Task.WhenAll(inboxTask, kasaTask, proTask, seqTask);
 
-            var seqPath = GetSeqPath(device.CalculatedIpAddress);
-            var (seq, errorSeq) = await GetSeqCountsAsync(seqPath, 10);
+            var (rdy, txt, tmp2, dis, errorInbox) = await inboxTask;
+            var (tmp1, errorKasa) = await kasaTask;
+            var (pro, errorProcessed) = await proTask;
+            var (seq, errorSeq) = await seqTask;
 
-            if (error != null || errorKasa != null || errorPro != null || errorSeq != null)
+            if (errorInbox != null || errorKasa != null || errorProcessed != null || errorSeq != null)
             {
                 dto.Status = "error";
-                dto.ErrorMessage = $"{error ?? ""} | {errorKasa ?? ""} | {errorPro ?? ""} | {errorSeq ?? ""}".Trim(' ', '|');
+                dto.ErrorMessage = $"{errorInbox ?? ""} | {errorKasa ?? ""} | {errorProcessed ?? ""} | {errorSeq ?? ""}".Trim(' ', '|');
             }
             else
             {
@@ -409,6 +349,23 @@ namespace MudoSoft.Backend.Controllers
                 dto.Status = dto.TotalCount > 0 ? "dirty" : "clean";
             }
 
+            return dto;
+        }
+
+        // ===========================================================
+        // 2) TEK PC KONTROL
+        // ===========================================================
+        [HttpGet("check/{deviceId}")]
+        public async Task<IActionResult> CheckSingle(string deviceId, CancellationToken ct)
+        {
+            var device = await _db.StoreDevices
+                .AsNoTracking()
+                .FirstOrDefaultAsync(d => d.DeviceId == deviceId, ct);
+
+            if (device == null)
+                return NotFound(new { error = "Device not found" });
+
+            var dto = await CheckDeviceAsync(device, ct);
             return Ok(dto);
         }
 
@@ -416,89 +373,183 @@ namespace MudoSoft.Backend.Controllers
         // 3) TEK PC TEMİZLE
         // ===========================================================
         [HttpPost("clean/{deviceId}")]
-        public async Task<IActionResult> CleanSingle(string deviceId)
+        public async Task<IActionResult> CleanSingle(string deviceId, CancellationToken ct)
         {
             var device = await _db.StoreDevices
                 .AsNoTracking()
-                .FirstOrDefaultAsync(d => d.DeviceId == deviceId);
+                .FirstOrDefaultAsync(d => d.DeviceId == deviceId, ct);
 
             if (device == null)
                 return NotFound(new { error = "Device not found" });
 
-            var isOnline = await IsDeviceOnlineAsync(device.CalculatedIpAddress, 2000);
+            var isOnline = await IsDeviceOnlineAsync(device.CalculatedIpAddress, 2000, ct);
             if (!isOnline)
                 return BadRequest(new { error = "Device is offline" });
 
-            // 1) Ready Folder (.rdy, .txt, .tmp, .dis)
-            var uncPath = GetUncPath(device.CalculatedIpAddress);
-            var (del1, err1) = await DeleteFilesAsync(uncPath, new[] { "*.rdy", "*.txt", "*.tmp", "*.dis" }, 10);
+            var ip = device.CalculatedIpAddress;
 
-            // 2) Kasa Folder (.tmp)
-            var kasaPath = GetKasaPath(device.CalculatedIpAddress);
-            var (del2, err2) = await DeleteFilesAsync(kasaPath, new[] { "*.tmp" }, 10);
+            // 4 klasörü paralel temizle
+            var t1 = DeleteFilesAsync(GetUncPath(ip), new[] { "*.rdy", "*.txt", "*.tmp", "*.dis" }, 10, ct);
+            var t2 = DeleteFilesAsync(GetKasaPath(ip), new[] { "*.tmp" }, 10, ct);
+            var t3 = DeleteFilesAsync(GetProcessedPath(ip), new[] { "*.rdy", "*.txt" }, 60, ct);
+            var t4 = DeleteFilesAsync(GetSeqPath(ip), new[] { "*.rdy", "*.txt", "*.tmp" }, 60, ct);
 
-            // 3) Processed Folder (.rdy, .txt)
-            var proPath = GetProcessedPath(device.CalculatedIpAddress);
-            var (del3, err3) = await DeleteFilesAsync(proPath, new[] { "*.rdy", "*.txt" }, 60);
+            await Task.WhenAll(t1, t2, t3, t4);
 
-            // 4) Seq Folder (.rdy, .txt, .tmp)
-            var seqPath = GetSeqPath(device.CalculatedIpAddress);
-            var (del4, err4) = await DeleteFilesAsync(seqPath, new[] { "*.rdy", "*.txt", "*.tmp" }, 60);
+            var (del1, err1) = await t1;
+            var (del2, err2) = await t2;
+            var (del3, err3) = await t3;
+            var (del4, err4) = await t4;
 
             if (err1 != null && err2 != null && err3 != null && err4 != null)
                 return BadRequest(new { error = $"{err1} | {err2} | {err3} | {err4}" });
 
             var totalDeleted = del1 + del2 + del3 + del4;
-            _logger.LogInformation("Inbox cleaned: {DeviceId} ({Ip}) - {Count} files", device.DeviceId, device.CalculatedIpAddress, totalDeleted);
+            _logger.LogInformation("Inbox cleaned: {DeviceId} ({Ip}) - {Count} files", device.DeviceId, ip, totalDeleted);
             return Ok(new { success = true, deleted = totalDeleted, message = $"{device.StoreName} temizlendi ({totalDeleted} dosya)" });
         }
 
         // ===========================================================
-        // 4) TÜM ONLINE PC'LERİ TEMİZLE
+        // 4) TÜM ONLINE PC'LERİ TEMİZLE — JOB-BASED (async)
         // ===========================================================
         [HttpPost("clean-all")]
-        public async Task<IActionResult> CleanAll([FromServices] IInboxCleanupService cleanupService)
+        public async Task<IActionResult> CleanAll(
+            [FromServices] IInboxCleanupService cleanupService,
+            [FromServices] IServiceScopeFactory scopeFactory)
         {
-            try
+            var pcCount = await _db.StoreDevices
+                .AsNoTracking()
+                .CountAsync(d => d.DeviceType == "PC" || d.DeviceType.ToLower() == "gecici");
+
+            var jobId = Guid.NewGuid().ToString("N")[..8];
+            var job = new CleanAllJob
             {
-                var (successCount, totalCount, results) = await cleanupService.CleanAllAsync();
-                return Ok(new { results, successCount, totalCount });
-            }
-            catch (Exception ex)
+                JobId = jobId,
+                TotalCount = pcCount,
+                StartedAtUtc = DateTime.UtcNow
+            };
+            _cleanAllJobs[jobId] = job;
+
+            _ = Task.Run(async () =>
             {
-                _logger.LogError(ex, "Clean-all islemi sirasinda hata olustu");
-                return StatusCode(500, new { error = "Toplu temizlik sirasinda hata olustu.", detail = ex.Message });
+                try
+                {
+                    using var scope = scopeFactory.CreateScope();
+                    var svc = scope.ServiceProvider.GetRequiredService<IInboxCleanupService>();
+                    var progress = new Progress<CleanResultItem>(item =>
+                    {
+                        lock (job.Lock)
+                        {
+                            job.Results.Add(item);
+                            job.CompletedCount = job.Results.Count;
+                            if (item.Success) job.SuccessCount++;
+                            else if (item.Reason == "offline") job.OfflineCount++;
+                            else job.ErrorCount++;
+                            job.LastDeviceName = item.StoreName;
+                        }
+                    });
+
+                    var (success, total, _) = await svc.CleanAllAsync(progress, CancellationToken.None);
+                    lock (job.Lock)
+                    {
+                        job.SuccessCount = success;
+                        job.TotalCount = total;
+                        job.CompletedAtUtc = DateTime.UtcNow;
+                    }
+                    _logger.LogInformation("Clean-all job {JobId} tamamlandi: {Success}/{Total}", jobId, success, total);
+                }
+                catch (Exception ex)
+                {
+                    lock (job.Lock)
+                    {
+                        job.Error = ex.Message;
+                        job.CompletedAtUtc = DateTime.UtcNow;
+                    }
+                    _logger.LogError(ex, "Clean-all job {JobId} hata", jobId);
+                }
+            });
+
+            return Accepted(new { jobId, totalCount = pcCount });
+        }
+
+        // ===========================================================
+        // 5) TOPLU TEMİZLİK JOB DURUMU
+        // ===========================================================
+        [HttpGet("clean-all/{jobId}")]
+        public IActionResult GetCleanAllStatus(string jobId)
+        {
+            if (!_cleanAllJobs.TryGetValue(jobId, out var job))
+                return NotFound(new { error = "Job bulunamadi" });
+
+            lock (job.Lock)
+            {
+                return Ok(new
+                {
+                    jobId = job.JobId,
+                    totalCount = job.TotalCount,
+                    completedCount = job.CompletedCount,
+                    successCount = job.SuccessCount,
+                    offlineCount = job.OfflineCount,
+                    errorCount = job.ErrorCount,
+                    lastDeviceName = job.LastDeviceName,
+                    startedAtUtc = job.StartedAtUtc.ToString("o"),
+                    completedAtUtc = job.CompletedAtUtc?.ToString("o"),
+                    isCompleted = job.CompletedAtUtc.HasValue,
+                    error = job.Error,
+                    results = job.CompletedAtUtc.HasValue ? job.Results : null
+                });
             }
         }
 
-        private async Task<(int deleted, string? error)> DeleteFilesAsync(string uncPath, string[] patterns, int timeoutSec = 30)
+        private sealed class CleanAllJob
         {
+            public string JobId { get; init; } = "";
+            public int TotalCount { get; set; }
+            public int CompletedCount { get; set; }
+            public int SuccessCount { get; set; }
+            public int OfflineCount { get; set; }
+            public int ErrorCount { get; set; }
+            public string? LastDeviceName { get; set; }
+            public DateTime StartedAtUtc { get; set; }
+            public DateTime? CompletedAtUtc { get; set; }
+            public string? Error { get; set; }
+            public List<CleanResultItem> Results { get; } = new();
+            public object Lock { get; } = new();
+        }
+
+        private async Task<(int deleted, string? error)> DeleteFilesAsync(
+            string uncPath, string[] patterns, int timeoutSec, CancellationToken ct)
+        {
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            cts.CancelAfter(TimeSpan.FromSeconds(timeoutSec));
+
             try
             {
-                var task = Task.Run(() =>
+                return await Task.Run(() =>
                 {
+                    cts.Token.ThrowIfCancellationRequested();
                     if (!Directory.Exists(uncPath))
                         return (0, (string?)"Klasör bulunamadı");
 
                     int count = 0;
                     foreach (var pattern in patterns)
                     {
+                        cts.Token.ThrowIfCancellationRequested();
                         foreach (var f in Directory.GetFiles(uncPath, pattern))
                         {
+                            cts.Token.ThrowIfCancellationRequested();
                             try { System.IO.File.Delete(f); count++; } catch { }
                         }
                     }
                     return (count, (string?)null);
-                });
-
-                if (await Task.WhenAny(task, Task.Delay(TimeSpan.FromSeconds(timeoutSec))) == task)
-                    return await task;
-
-                return (0, "Zaman aşımı");
+                }, cts.Token);
+            }
+            catch (OperationCanceledException)
+            {
+                return (0, ct.IsCancellationRequested ? "İptal edildi" : "Zaman aşımı");
             }
             catch (Exception ex)
             {
-                // Klasör yoksa hata dönme (processed olmayabilir)
                 if (ex is DirectoryNotFoundException) return (0, null);
                 return (0, ex.Message.Length > 150 ? ex.Message[..150] : ex.Message);
             }

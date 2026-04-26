@@ -6,8 +6,11 @@ namespace Mudosoft.Shared.Dtos;
 public class EncryptedPayloadDto
 {
     // RSA Public Key ile şifrelenmiş AES Key (Asimetrik)
-    public string EncryptedAesKey { get; set; } = default!; 
+    public string EncryptedAesKey { get; set; } = default!;
 
     // AES Key ile şifrelenmiş asıl veri (JSON payload) (Simetrik)
     public string EncryptedPayload { get; set; } = default!;
+
+    // HMAC-SHA256 of EncryptedPayload using AES key (integrity verification)
+    public string? Hmac { get; set; }
 }

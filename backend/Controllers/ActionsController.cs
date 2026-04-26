@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Mudosoft.Shared.Dtos;
@@ -9,6 +10,7 @@ using System.Text;
 namespace MudoSoft.Backend.Controllers;
 
 [ApiController]
+[Authorize]
 [Route("api/[controller]")]
 public class ActionsController : ControllerBase
 {
@@ -167,7 +169,7 @@ catch {
     /// Amaç: RDP/Dameware açmadan agent üzerinden toplu işlem çalıştırmak.
     /// </summary>
     [HttpPost("run-batch-template")]
-    public async Task<IActionResult> RunBatchTemplate([FromBody] BatchTemplateRunRequest request)
+    public async Task<IActionResult> RunBatchTemplate([FromBody] BatchTemplateRunRequest request, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(request.Template))
             return BadRequest("Template boş olamaz.");
@@ -216,7 +218,7 @@ catch {
         var devices = await devicesQuery
             .OrderBy(d => d.StoreCode)
             .ThenBy(d => d.Hostname)
-            .ToListAsync();
+            .ToListAsync(ct);
 
         if (devices.Count == 0)
         {
@@ -228,7 +230,7 @@ catch {
             });
         }
 
-        var batchContent = await System.IO.File.ReadAllTextAsync(batchPath, Encoding.ASCII);
+        var batchContent = await System.IO.File.ReadAllTextAsync(batchPath, Encoding.ASCII, ct);
         var wrappedScript = BuildBatchExecutionScript(batchContent, Path.GetFileName(batchPath));
 
         var queued = new List<object>();

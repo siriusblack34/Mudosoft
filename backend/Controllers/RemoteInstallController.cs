@@ -702,34 +702,47 @@ public class RemoteInstallController : ControllerBase
             }
             AddStep("Dosya kopyalama", "done", "Agent dosyaları kopyalandı");
 
-            // Step 4: Install & start service via sc.exe
-            AddStep("Servis kurulumu", "running");
-            var (svcOk, svcDetail) = await InstallAndStartService(ip);
-            if (!svcOk)
+            // Step 4: .NET 8 Runtime kontrolü — yoksa servis kurulur ama baslatilamaz
+            AddStep(".NET 8 Runtime kontrolü", "running");
+            var (netOk, netDetail) = await CheckDotNetRuntime(ip);
+            if (!netOk)
             {
-                AddStep("Servis kurulumu", "error", svcDetail);
+                AddStep(".NET 8 Runtime kontrolü", "error", netDetail);
+                status.Phase = "error"; status.Error = netDetail;
+                return;
+            }
+            AddStep(".NET 8 Runtime kontrolü", "done", netDetail);
+
+            // Step 5: Install & start service via sc.exe
+            AddStep("Servis kurulumu", "running");
+            var (svcState, svcDetail) = await InstallAndStartService(ip);
+            AddStep("Servis kurulumu", svcState, svcDetail);
+            if (svcState == "error")
+            {
                 status.Phase = "error"; status.Error = svcDetail;
                 return;
             }
-            AddStep("Servis kurulumu", "done", svcDetail);
+            var hasWarnings = svcState == "warn";
 
-            // Step 5: VNC kurulumu
+            // Step 6: VNC kurulumu
             AddStep("VNC kurulumu", "running");
-            var (vncOk, vncDetail) = await InstallVnc(ip);
-            if (!vncOk)
+            var (vncState, vncDetail) = await InstallVnc(ip);
+            AddStep("VNC kurulumu", vncState, vncDetail);
+            if (vncState == "warn" || vncState == "error")
             {
-                // VNC hatası agent kurulumunu durdurmaz, uyarı olarak göster
-                AddStep("VNC kurulumu", "warn", vncDetail);
-                _logger.LogWarning("[RemoteInstall] VNC kurulumu başarısız ({Ip}): {Detail}", ip, vncDetail);
-            }
-            else
-            {
-                AddStep("VNC kurulumu", "done", vncDetail);
+                hasWarnings = true;
+                _logger.LogWarning("[RemoteInstall] VNC kurulumu {State} ({Ip}): {Detail}", vncState, ip, vncDetail);
             }
 
-            status.Phase = "done";
+            // Step 7: Agent heartbeat dogrulama — DB'ye kayit atip atmadigini kontrol et
+            AddStep("Agent heartbeat kontrolü", "running");
+            var (hbState, hbDetail) = await VerifyAgentHeartbeat(ip, status.StartedAt);
+            AddStep("Agent heartbeat kontrolü", hbState, hbDetail);
+            if (hbState == "warn" || hbState == "error") hasWarnings = true;
+
+            status.Phase = hasWarnings ? "warn" : "done";
             status.CompletedAt = DateTime.UtcNow;
-            _logger.LogInformation("[RemoteInstall] Başarılı: {Ip} (Mağaza: {Store})", ip, storeCode);
+            _logger.LogInformation("[RemoteInstall] Tamamlandı: {Ip} (Mağaza: {Store}) — phase={Phase}", ip, storeCode, status.Phase);
         }
         catch (Exception ex)
         {
@@ -851,7 +864,7 @@ try {
         }
     }
 
-    private async Task<(bool Ok, string Detail)> InstallAndStartService(string ip)
+    private async Task<(string State, string Detail)> InstallAndStartService(string ip)
     {
         // Dosyalar zaten SMB ile kopyalandı.
         // schtasks kullanmadan doğrudan sc.exe remote komutlarıyla servis kuruluyor.
@@ -867,38 +880,59 @@ try {
     # Registry: servis baslangic timeout'unu 120sn yap (yavas makineler icin)
     reg.exe add ""\\$ip\HKLM\SYSTEM\CurrentControlSet\Control"" /v ServicesPipeTimeout /t REG_DWORD /d 120000 /f 2>&1 | Out-Null
 
-    # Mevcut servisi durdur ve temizle
+    # Mevcut servisi durdur ve temizle (process yoksa hata yutulur)
+    $ErrorActionPreference = 'SilentlyContinue'
     sc.exe ""\\$ip"" stop $svcName 2>&1 | Out-Null
     Start-Sleep -Seconds 2
     cmd /c ""taskkill /s $ip /f /im MudoSoft.Agent.exe /t"" 2>&1 | Out-Null
+    $ErrorActionPreference = 'Stop'
 
     # Servis var mi kontrol et — yoksa olustur, varsa config guncelle
     $queryResult = sc.exe ""\\$ip"" query $svcName 2>&1
-    if ($LASTEXITCODE -ne 0) {
-        sc.exe ""\\$ip"" create $svcName binPath= $binPath start= delayed-auto obj= LocalSystem DisplayName= ""MudoSoft Agent Service"" 2>&1 | Out-Null
+    $queryExit = $LASTEXITCODE
+    if ($queryExit -ne 0) {
+        $createOutput = sc.exe ""\\$ip"" create $svcName binPath= $binPath start= delayed-auto obj= LocalSystem DisplayName= ""MudoSoft Agent Service"" 2>&1
+        $createExit = $LASTEXITCODE
+        if ($createExit -ne 0) {
+            Write-Output ""SVC_FAIL: sc create basarisiz (exit=$createExit): $createOutput""
+            return
+        }
     } else {
-        sc.exe ""\\$ip"" config $svcName binPath= $binPath start= delayed-auto 2>&1 | Out-Null
+        $configOutput = sc.exe ""\\$ip"" config $svcName binPath= $binPath start= delayed-auto 2>&1
+        $configExit = $LASTEXITCODE
+        if ($configExit -ne 0) {
+            Write-Output ""SVC_FAIL: sc config basarisiz (exit=$configExit): $configOutput""
+            return
+        }
     }
 
-    # DelayedAutoStart, description, failure policy
+    # DelayedAutoStart, description, failure policy (kritik degil, sessiz gec)
     reg.exe add ""\\$ip\HKLM\SYSTEM\CurrentControlSet\Services\$svcName"" /v DelayedAutoStart /t REG_DWORD /d 1 /f 2>&1 | Out-Null
     sc.exe ""\\$ip"" description $svcName ""MudoSoft RMM Agent"" 2>&1 | Out-Null
     sc.exe ""\\$ip"" failure $svcName reset= 86400 actions= restart/5000/restart/10000/restart/30000 2>&1 | Out-Null
 
     # Servisi baslat
-    sc.exe ""\\$ip"" start $svcName 2>&1 | Out-Null
+    $startOutput = sc.exe ""\\$ip"" start $svcName 2>&1
+    $startExit = $LASTEXITCODE
+    # exit 1056 = ""An instance of the service is already running"" — tamam
+    if ($startExit -ne 0 -and $startExit -ne 1056) {
+        Write-Output ""SVC_FAIL: sc start basarisiz (exit=$startExit): $startOutput""
+        return
+    }
 
-    # Servis durumunu kontrol et
+    # Servis durumunu 30sn bekle — RUNNING olmali (START_PENDING kabul etmiyoruz, cogu zaman runtime eksik)
     for ($i = 0; $i -lt 6; $i++) {
         Start-Sleep -Seconds 5
         $svc = sc.exe ""\\$ip"" query $svcName 2>&1
-        if ($svc -match 'RUNNING|START_PENDING') {
+        if ($svc -match 'RUNNING') {
             Write-Output 'SVC_OK: Servis kuruldu ve calisiyor'
             return
         }
     }
 
-    Write-Output 'SVC_WARN: Komut gonderildi ama servis durumu dogrulanamadi'
+    # Final state bilgisini de cikti olarak ver
+    $finalState = (sc.exe ""\\$ip"" query $svcName 2>&1) -join ' '
+    Write-Output ""SVC_WARN: Servis olusturuldu ama 30sn icinde RUNNING durumuna gelmedi. Son durum: $finalState""
 } catch {
     Write-Output ""SVC_FAIL: $($_.Exception.Message)""
 }
@@ -909,15 +943,22 @@ try {
             var (_, output) = await RunPsFile(scriptPath);
             _logger.LogInformation("[RemoteInstall] Service {Ip}: {Output}", ip, output);
             if (output.Contains("SVC_OK"))
-                return (true, output.Replace("SVC_OK: ", ""));
+                return ("done", ExtractMarker(output, "SVC_OK: "));
             if (output.Contains("SVC_WARN"))
-                return (true, output.Replace("SVC_WARN: ", ""));
-            return (false, output.Replace("SVC_FAIL: ", ""));
+                return ("warn", ExtractMarker(output, "SVC_WARN: "));
+            return ("error", ExtractMarker(output, "SVC_FAIL: "));
         }
         finally
         {
             System.IO.File.Delete(scriptPath);
         }
+    }
+
+    private static string ExtractMarker(string output, string marker)
+    {
+        var idx = output.IndexOf(marker, StringComparison.Ordinal);
+        if (idx < 0) return output.Trim();
+        return output.Substring(idx + marker.Length).Trim();
     }
 
     /// <summary>
@@ -954,7 +995,76 @@ try {
         return new string(bytes.Select(b => chars[b % chars.Length]).ToArray());
     }
 
-    private async Task<(bool Ok, string Detail)> InstallVnc(string ip)
+    private async Task<(bool Ok, string Detail)> CheckDotNetRuntime(string ip)
+    {
+        // Remote makinede C:\Program Files\dotnet\shared\Microsoft.NETCore.App altinda 8.x klasoru var mi?
+        // Agent self-contained publish edilmiyor → runtime mutlaka yüklü olmalı.
+        var scriptPath = Path.Combine(Path.GetTempPath(), $"mudonet_{ip.Replace('.', '_')}.ps1");
+        var script = @"
+$ErrorActionPreference = 'Stop'
+$ip = '" + ip + @"'
+try {
+    $sharedPath = ""\\$ip\C$\Program Files\dotnet\shared\Microsoft.NETCore.App""
+    if (!(Test-Path $sharedPath)) {
+        Write-Output 'NET_FAIL: .NET Runtime yuklu degil (Microsoft.NETCore.App dizini bulunamadi)'
+        return
+    }
+    $versions = @(Get-ChildItem $sharedPath -Directory -ErrorAction Stop | Select-Object -ExpandProperty Name)
+    $net8 = @($versions | Where-Object { $_ -like '8.*' })
+    if ($net8.Count -eq 0) {
+        Write-Output ""NET_FAIL: .NET 8 Runtime yuklu degil. Mevcut surumler: $($versions -join ', ')""
+        return
+    }
+    Write-Output ""NET_OK: $($net8 -join ', ')""
+} catch {
+    Write-Output ""NET_FAIL: $($_.Exception.Message)""
+}
+";
+        await System.IO.File.WriteAllTextAsync(scriptPath, script);
+        try
+        {
+            var (_, output) = await RunPsFile(scriptPath);
+            _logger.LogInformation("[RemoteInstall] .NET check {Ip}: {Output}", ip, output);
+            if (output.Contains("NET_OK"))
+                return (true, ".NET 8 Runtime mevcut: " + ExtractMarker(output, "NET_OK: "));
+            return (false, ExtractMarker(output, "NET_FAIL: "));
+        }
+        finally
+        {
+            try { System.IO.File.Delete(scriptPath); } catch { }
+        }
+    }
+
+    private async Task<(string State, string Detail)> VerifyAgentHeartbeat(string ip, DateTime installStartedAt)
+    {
+        // Agent servis baslatildiktan sonra backend'e heartbeat atmali.
+        // 120sn icinde Devices tablosunda LastSeen > installStartedAt olan bir kayit bekliyoruz.
+        const int maxSeconds = 120;
+        for (int i = 0; i < maxSeconds / 5; i++)
+        {
+            await Task.Delay(5000);
+            try
+            {
+                using var scope = _scopeFactory.CreateScope();
+                var scopedDb = scope.ServiceProvider.GetRequiredService<MudoSoftDbContext>();
+                var device = await scopedDb.Devices
+                    .AsNoTracking()
+                    .FirstOrDefaultAsync(d => d.IpAddress == ip);
+                if (device != null && device.LastSeen > installStartedAt)
+                {
+                    var secs = (int)(DateTime.UtcNow - installStartedAt).TotalSeconds;
+                    return ("done", $"Agent backend'e bağlandı ({secs}sn sonra, v{device.AgentVersion ?? "?"})");
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "[RemoteInstall] Heartbeat check DB hatası {Ip}", ip);
+            }
+        }
+        return ("warn", $"Agent {maxSeconds}sn içinde backend'e heartbeat atmadı. Servis kuruldu ama çalışmıyor olabilir — manuel kontrol gerekli.");
+    }
+
+    private async Task<(string State, string Detail)> InstallVnc(string ip)
     {
         var vncPassword = GenerateVncPassword();
 
@@ -1000,7 +1110,7 @@ if (Test-Path ""\\$ip\C$\Program Files\MudoSoft\Agent\tools\tightvnc.msi"") {{ W
 
             if (!msiExists)
             {
-                return (false, "TightVNC MSI bulunamadı (agent/tools/tightvnc.msi)");
+                return ("error", "TightVNC MSI bulunamadı (agent/tools/tightvnc.msi)");
             }
 
             batContent = "@echo off\r\n"
@@ -1077,9 +1187,9 @@ try {
             var (_, output) = await RunPsFile(scriptPath);
             _logger.LogInformation("[RemoteInstall] VNC setup {Ip}: {Output}", ip, output);
 
-            if (output.Contains("VNC_OK") || output.Contains("VNC_TIMEOUT"))
+            if (output.Contains("VNC_OK"))
             {
-                // Yeni scope ile DB'ye yaz (background task'ta _db disposed olabilir)
+                // DB'yi yalnizca gercek basarida guncelle
                 try
                 {
                     using var scope = _scopeFactory.CreateScope();
@@ -1112,11 +1222,13 @@ try {
                     _logger.LogWarning(ex, "[RemoteInstall] VNC DB update failed for {Ip}", ip);
                 }
 
-                if (output.Contains("VNC_OK"))
-                    return (true, alreadyInstalled ? "VNC sifresi yapilandirildi" : "TightVNC kuruldu ve yapilandirildi");
-                return (true, "VNC komutu gonderildi (dogrulama zaman asimi)");
+                return ("done", alreadyInstalled ? "VNC şifresi yapılandırıldı" : "TightVNC kuruldu ve yapılandırıldı");
             }
-            return (false, output.Replace("VNC_FAIL: ", ""));
+            if (output.Contains("VNC_TIMEOUT"))
+            {
+                return ("warn", "VNC kurulum komutu gönderildi ama 45sn içinde tamamlandı sinyali alınmadı. MSI sessizce başarısız olmuş olabilir.");
+            }
+            return ("error", ExtractMarker(output, "VNC_FAIL: "));
         }
         finally
         {

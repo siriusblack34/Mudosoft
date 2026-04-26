@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.Http;
@@ -80,6 +81,23 @@ public class EncryptedPayloadMiddleware
 
             var aesKeyBytes = Convert.FromBase64String(keyBundle.Key);
             var aesIVBytes = Convert.FromBase64String(keyBundle.IV);
+
+            // 1.5️⃣ HMAC integrity check (if provided)
+            if (!string.IsNullOrEmpty(payload.Hmac))
+            {
+                using var hmac = new HMACSHA256(aesKeyBytes);
+                var payloadBytes = Convert.FromBase64String(payload.EncryptedPayload);
+                var computedHmac = Convert.ToBase64String(hmac.ComputeHash(payloadBytes));
+                if (!CryptographicOperations.FixedTimeEquals(
+                    Encoding.UTF8.GetBytes(computedHmac),
+                    Encoding.UTF8.GetBytes(payload.Hmac)))
+                {
+                    _logger.LogWarning("Middleware: HMAC verification failed — payload may have been tampered.");
+                    ctx.Response.StatusCode = StatusCodes.Status400BadRequest;
+                    await ctx.Response.WriteAsync("Integrity check failed");
+                    return;
+                }
+            }
 
             // 2️⃣ AES → JSON
             var decryptedJson =

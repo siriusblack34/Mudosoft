@@ -92,17 +92,13 @@ public class CollectorController : ControllerBase
     [Authorize]
     public async Task<IActionResult> GetLatestPerCollector(string deviceId)
     {
-        // EF Core + PostgreSQL GroupBy sınırlaması nedeniyle
-        // son 200 kaydı çekip client-side gruplama yapıyoruz
-        var recent = await _db.CollectorReports
-            .Where(r => r.DeviceId == deviceId)
-            .OrderByDescending(r => r.TimestampUtc)
-            .Take(200)
-            .ToListAsync();
-
-        var results = recent
-            .GroupBy(r => r.CollectorName)
-            .Select(g => g.First())
+        // Raw SQL ile PostgreSQL DISTINCT ON kullanarak her collector için son kaydı çek
+        var results = await _db.CollectorReports
+            .FromSqlInterpolated($@"
+                SELECT DISTINCT ON (""CollectorName"") *
+                FROM ""CollectorReports""
+                WHERE ""DeviceId"" = {deviceId}
+                ORDER BY ""CollectorName"", ""TimestampUtc"" DESC")
             .Select(r => new
             {
                 r.CollectorName,
@@ -112,7 +108,7 @@ public class CollectorController : ControllerBase
                 r.Success,
                 r.ErrorMessage
             })
-            .ToList();
+            .ToListAsync();
 
         return Ok(results);
     }

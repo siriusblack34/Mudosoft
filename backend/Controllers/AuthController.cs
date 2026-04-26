@@ -17,6 +17,11 @@ public class AuthController : ControllerBase
     private readonly ILogger<AuthController> _logger;
     private readonly MudoSoftDbContext _db;
 
+    // Account lockout: IP bazlı başarısız giriş takibi
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, (int count, DateTime lastAttempt)> _failedAttempts = new();
+    private const int MaxFailedAttempts = 5;
+    private static readonly TimeSpan LockoutDuration = TimeSpan.FromMinutes(15);
+
     public AuthController(IConfiguration configuration, ILogger<AuthController> logger, MudoSoftDbContext db)
     {
         _configuration = configuration;
@@ -30,15 +35,27 @@ public class AuthController : ControllerBase
         if (request == null || string.IsNullOrWhiteSpace(request.Username) || string.IsNullOrWhiteSpace(request.Password))
             return BadRequest(new { error = "Username and password are required" });
 
-        var ip = HttpContext.Connection.RemoteIpAddress?.ToString();
+        var ip = HttpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
         var username = request.Username.Trim().ToLower();
+
+        // Account lockout kontrolü
+        var lockoutKey = $"{ip}:{username}";
+        if (_failedAttempts.TryGetValue(lockoutKey, out var attempt) &&
+            attempt.count >= MaxFailedAttempts &&
+            DateTime.UtcNow - attempt.lastAttempt < LockoutDuration)
+        {
+            var remaining = (int)(LockoutDuration - (DateTime.UtcNow - attempt.lastAttempt)).TotalMinutes;
+            _logger.LogWarning("Account locked: {Username} from {IP} ({Remaining}m remaining)", username, ip, remaining);
+            return StatusCode(429, new { error = $"Çok fazla başarısız deneme. {remaining} dakika sonra tekrar deneyin." });
+        }
 
         // DB'den kullanıcı ara
         var user = await _db.Users.FirstOrDefaultAsync(u => u.Username == username && u.IsActive);
 
         if (user != null && BCrypt.Net.BCrypt.Verify(request.Password, user.PasswordHash))
         {
-            // Başarılı giriş
+            // Başarılı giriş — lockout sayacını sıfırla
+            _failedAttempts.TryRemove(lockoutKey, out _);
             user.LastLoginAt = DateTime.UtcNow;
             _db.LoginHistories.Add(new LoginHistory
             {
@@ -69,6 +86,7 @@ public class AuthController : ControllerBase
             !string.IsNullOrEmpty(envPass) && !envPass.StartsWith("${") &&
             request.Username == envUser && request.Password == envPass)
         {
+            _failedAttempts.TryRemove(lockoutKey, out _);
             _db.LoginHistories.Add(new LoginHistory
             {
                 Username = request.Username, IpAddress = ip, Success = true
@@ -88,14 +106,24 @@ public class AuthController : ControllerBase
             });
         }
 
-        // Başarısız giriş
+        // Başarısız giriş — lockout sayacını artır
+        _failedAttempts.AddOrUpdate(lockoutKey,
+            _ => (1, DateTime.UtcNow),
+            (_, existing) => (existing.count + 1, DateTime.UtcNow));
+
         _db.LoginHistories.Add(new LoginHistory
         {
             Username = request.Username, IpAddress = ip, Success = false
         });
         await _db.SaveChangesAsync();
 
-        _logger.LogWarning("Failed login: {Username} from {IP}", request.Username, ip);
+        _failedAttempts.TryGetValue(lockoutKey, out var currentAttempt);
+        var attemptsLeft = MaxFailedAttempts - currentAttempt.count;
+        _logger.LogWarning("Failed login: {Username} from {IP} (attempts left: {Left})", request.Username, ip, Math.Max(0, attemptsLeft));
+
+        if (attemptsLeft <= 0)
+            return StatusCode(429, new { error = $"Çok fazla başarısız deneme. {LockoutDuration.TotalMinutes} dakika sonra tekrar deneyin." });
+
         return Unauthorized(new { error = "Geçersiz kullanıcı adı veya şifre" });
     }
 
@@ -134,8 +162,8 @@ public class AuthController : ControllerBase
     {
         if (string.IsNullOrWhiteSpace(req.CurrentPassword) || string.IsNullOrWhiteSpace(req.NewPassword))
             return BadRequest(new { error = "Mevcut şifre ve yeni şifre gerekli" });
-        if (req.NewPassword.Length < 4)
-            return BadRequest(new { error = "Yeni şifre en az 4 karakter olmalı" });
+        if (req.NewPassword.Length < 8)
+            return BadRequest(new { error = "Yeni şifre en az 8 karakter olmalı" });
 
         var username = User.Identity?.Name;
         if (string.IsNullOrEmpty(username))

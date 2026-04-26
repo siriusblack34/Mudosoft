@@ -76,6 +76,13 @@ builder.Services.Configure<IpRateLimitOptions>(options =>
             Period = "1m",
             Limit = 10
         },
+        // Agent auth: dakikada 10 deneme (brute-force koruması)
+        new RateLimitRule
+        {
+            Endpoint = "*:/api/auth/agent-auth",
+            Period = "1m",
+            Limit = 10
+        },
         // SQL query: dakikada 400 istek (çoklu cihaz desteği için)
         new RateLimitRule
         {
@@ -189,7 +196,11 @@ builder.Services.AddDbContext<MudoSoftDbContext>(options =>
     options.UseNpgsql(connectionString);
 });
 
-builder.Services.AddControllers();
+builder.Services.AddControllers()
+    .AddJsonOptions(options =>
+    {
+        options.JsonSerializerOptions.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter());
+    });
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
@@ -205,22 +216,37 @@ builder.Services.AddScoped<RsaKeyProvider>();
 // 2. IAgentService
 builder.Services.AddScoped<IAgentService, AgentService>(); 
 
-// 3. FastSqlReachabilityService
-builder.Services.AddScoped<FastSqlReachabilityService>();
+// 3. FastSqlReachabilityService (Singleton — stateless, worker + controller paylaşır)
+builder.Services.AddSingleton<FastSqlReachabilityService>();
 
-// 3.1. InboxCleanupService
+// 3.1. Network Diagnostics Service (ag teshis)
+builder.Services.AddScoped<NetworkDiagnosticsService>();
+
+// 3.1b. Mobile Line Detection (karasal vs 4.5G tespiti)
+builder.Services.AddScoped<MobileLineDetectionService>();
+
+// 3.2. InboxCleanupService
 builder.Services.AddScoped<IInboxCleanupService, InboxCleanupService>();
 
 // 4. CommandQueue
 builder.Services.AddSingleton<CommandQueue>();
 
+// 4.1. VNC Session Manager (RDP proxy)
+builder.Services.AddSingleton<VncSessionManager>();
+
 // 5. AES Encryption (Middleware için kritik)
 builder.Services.AddScoped<AesEncryption>();
 
 
-// 6. Worker'lar (Singleton/HostedService olarak doğru şekilde kaydedildi)
+// 6. Email Service (Alarm bildirim)
+builder.Services.AddSingleton<IEmailService, EmailService>();
+
+// 7. Worker'lar (Singleton/HostedService olarak doğru şekilde kaydedildi)
 builder.Services.AddHostedService<MudoSoft.Backend.Services.HeartbeatCheckerWorker>();
+builder.Services.AddHostedService<MudoSoft.Backend.Services.NetworkOutageAlarmWorker>();
 builder.Services.AddHostedService<MudoSoft.Backend.Services.SchedulerBackgroundService>();
+builder.Services.AddHostedService<MudoSoft.Backend.Services.DeviceStatusWorker>();
+builder.Services.AddHostedService<MudoSoft.Backend.Services.RouterLatencyPurgeWorker>();
 //builder.Services.AddHostedService<MudoSoft.Backend.Services.DiscoveryWorker>();
 
 // 7. SignalR
@@ -243,7 +269,7 @@ if (app.Environment.IsDevelopment())
 else
 {
     // 🔒 SECURITY: Force HTTPS in production
-    // app.UseHttpsRedirection();
+    app.UseHttpsRedirection();
     app.UseHsts();
 }
 
@@ -269,6 +295,11 @@ app.UseMiddleware<EncryptedPayloadMiddleware>();
 // Authentication & Authorization
 app.UseAuthentication();
 app.UseAuthorization();
+
+// WebSocket support for VNC proxy
+app.UseWebSockets();
+app.UseVncWebSocket("/ws/vnc");
+
 app.MapControllers();
 // Hub Mapping
 app.MapHub<MudoSoft.Backend.Hubs.DashboardHub>("/hubs/dashboard");
@@ -299,7 +330,7 @@ if (app.Environment.IsDevelopment())
         {
             var stores = new List<(int Code, string Name)>
             {
-                (5,"Nişantaşı Giyim"),(7,"Mersin Forum Giyim"),(8,"Bahariye Giyim"), (9,"Bağdat Giyim"),(11,"Viaport Giyim"),(16,"Ankara Cepa City"), (17,"Ereğli Ereylin Giyim"),(19,"Marmaris Netsel Marina"), (22,"Denizli Forum Giyim"),(23,"Göztepe Optimum Giyim"), (24,"Bodrum Gürece Concept"),(26,"Capitol Giyim"), (29,"Bursa Korupark Giyim"),(32,"Trabzon Forum City"), (33,"Airport Outlet"),(38,"Bodrum Milta Marina"), (39,"Ankara Ankamall Giyim"),(40,"Antalya Agora Giyim"), (43,"Marmaris Solaris City"),(51,"İzmir Agora City"), (52,"Nautilus Home"),(55,"Ankara Arcadium City"), (56,"Bodrum Turgutreis Marina"),(57,"Bodrum Yalıkavak Marina"), (58,"Maltepe Park Giyim"),(59,"Ankara Optimum Outlet"), (60,"Antalya Deepo Giyim"),(64,"Adana M1 City"), (68,"Kayseri Park City"),(74,"Nişantaşı Concept"), (76,"Susurluk Festiva Giyim"),(80,"Eskişehir Vega City"), (86,"İzmir Forum Giyim"),(88,"İzmir Selway Outlet"), (89,"İzmir Alsancak Concept"),(91,"Samsun Yeşilyurt Giyim"), (93,"Gebze Fırsat"),(97,"Alanya City"),(98,"Ankara Panora Concept"), (100,"Adana Concept"),(102,"Tekirdağ Tekira City"), (104,"Adana 01 Burda Giyim"),(107,"Cevahir Giyim"), (110,"Çeşme Marina"),(113,"Ankara Next Level Concept"), (114,"Antalya Rixos Marina"),(116,"Çorum Ahlpark Giyim"), (117,"212 Outlet"),(118,"Malatya Park Giyim"), (120,"K.maraş Piazza Giyim"),(121,"Ankara Gordion City"), (122,"Pendik Marina Kadın"),(124,"Kozzy City"), (125,"Gebze Center City"),(129,"Mersin Yat Limanı Marina"), (130,"Yalova Setur Marina"),(132,"Edirne Margi City"), (136,"İzmir Arastapark City"),(137,"Akçay Yasa Giyim"), (138,"Akbatı City"),(139,"Pendik Marina Home"), (140,"Bandırma Liman Giyim"),(141,"İzmir Optimum Giyim"), (142,"İzmir Hilltown Giyim"),(143,"Arenapark Giyim"), (146,"Maslak Concept"),(147,"Balıkesir Burda Giyim"), (148,"Capitol Home"),(151,"Aqua Florya Home"), (152,"Buyaka City"),(153,"Antalya Aspendos Concept"), (155,"İskenderun Forbes Marina"),(157,"Bodrum Midtown City"), (158,"Kuşadası Setur Marina"),(159,"Nautilus Giyim"), (161,"Ankara Kentpark Home"),(163,"Emaar City"), (164,"Pendik Marina Erkek"),(167,"Alanya Marina"), (172,"Göcek Marina Kadın"),(173,"Samsun Piazza Giyim"), (174,"Fethiye Marina Yeni"),(175,"Bodrum Avenue Giyim"), (176,"İst. İstinyePark Giyim"),(177,"Ümraniye Meydan Giyim"), (180,"Brandium Fırsat Pop Up"),(181,"Aqua Florya Giyim"), (182,"Mecidiyeköy Outlet"),(183,"Vadistanbul City"), (186,"İçerenköy City's Home"),(187,"Balat Marina"), (190,"Akmerkez Giyim"),(191,"Akmerkez Home"), (193,"Bodrum Anthaven Marina"),(195,"Akasya Giyim"), (196,"Masko Concept"),(201,"Modoko Concept"), (202,"Mall of İstanbul Concept"),(205,"Palladium Concept"), (206,"Maltepe Piazza Giyim"),(208,"İzmir MaviBahçe Concept"), (209,"İzmit Burda Home"),(210,"Tuzla Viaport Marina"), (211,"Adapazarı Agora Giyim"),(213,"Çanakkale Burda Giyim"), (214,"Çanakkale Burda Home"),(216,"Bodrum Plaza Concept"), (217,"Göcek Marina Erkek"),(218,"Fethiye Marina"), (219,"Mersin Concept"),(221,"Antalya Lara Concept"), (222,"Ayvalık Marina"),(223,"Modoko Concept 2"), (224,"İstmarin City"),(227,"Bursa Anatolium Giyim"), (235,"İzmit Burda Giyim"),(238,"Gaziantep Sanko Giyim"), (239,"Carousel Giyim"),(243,"Urla Marina"), (245,"İçerenköy City's Giyim"),(246,"Büyükada Marina"), (247,"Nişantaşı City's Giyim"),(248,"İzmir İstinyePark Giyim"), (249,"Göztepe Optimum C.Outlet"),(251,"Bursa FSM Concept"), (252,"Bursa Downtown Giyim"),(254,"Tema World Giyim"), (257,"Kaş Marina")
+                (5,"Nişantaşı Giyim"),(7,"Mersin Forum Giyim"),(8,"Bahariye Giyim"), (9,"Bağdat Giyim"),(11,"Viaport Giyim"),(16,"Ankara Cepa City"), (17,"Ereğli Ereylin Giyim"),(19,"Marmaris Netsel Marina"), (22,"Denizli Forum Giyim"),(23,"Göztepe Optimum Giyim"), (24,"Bodrum Gürece Concept"),(26,"Capitol Giyim"), (29,"Bursa Korupark Giyim"),(32,"Trabzon Forum City"), (33,"Airport Outlet"),(38,"Bodrum Milta Marina"), (39,"Ankara Ankamall Giyim"),(40,"Antalya Agora Giyim"), (43,"Marmaris Solaris City"),(51,"İzmir Agora City"), (52,"Nautilus Home"),(55,"Ankara Arcadium City"), (56,"Bodrum Turgutreis Marina"),(57,"Bodrum Yalıkavak Marina"), (58,"Maltepe Park Giyim"),(59,"Ankara Optimum Outlet"), (60,"Antalya Deepo Giyim"),(64,"Adana M1 City"), (68,"Kayseri Park City"),(74,"Nişantaşı Concept"), (76,"Susurluk Festiva Giyim"),(80,"Eskişehir Vega City"), (86,"İzmir Forum Giyim"),(88,"İzmir Selway Outlet"), (89,"İzmir Alsancak Concept"),(91,"Samsun Yeşilyurt Giyim"), (93,"Gebze Fırsat"),(97,"Alanya City"),(98,"Ankara Panora Concept"), (100,"Adana Concept"),(102,"Tekirdağ Tekira City"), (104,"Adana 01 Burda Giyim"),(107,"Cevahir Giyim"), (110,"Çeşme Marina"),(113,"Ankara Next Level Concept"), (114,"Antalya Rixos Marina"),(116,"Çorum Ahlpark Giyim"), (117,"212 Outlet"),(118,"Malatya Park Giyim"), (120,"K.maraş Piazza Giyim"),(121,"Ankara Gordion City"), (122,"Pendik Marina Kadın"),(124,"Kozzy City"), (125,"Gebze Center City"),(129,"Mersin Yat Limanı Marina"), (130,"Yalova Setur Marina"),(132,"Edirne Margi City"), (136,"İzmir Arastapark City"),(137,"Akçay Yasa Giyim"), (138,"Akbatı City"),(139,"Pendik Marina Home"), (140,"Bandırma Liman Giyim"),(141,"İzmir Optimum Giyim"), (142,"İzmir Hilltown Giyim"),(143,"Arenapark Giyim"), (146,"Maslak Concept"),(147,"Balıkesir Burda Giyim"), (148,"Capitol Home"),(151,"Aqua Florya Home"), (152,"Buyaka City"),(153,"Antalya Aspendos Concept"), (155,"İskenderun Forbes Marina"),(157,"Bodrum Midtown City"), (158,"Kuşadası Setur Marina"),(159,"Nautilus Giyim"), (161,"Ankara Kentpark Home"),(163,"Emaar City"), (164,"Pendik Marina Erkek"),(167,"Alanya Marina"), (172,"Göcek Marina Kadın"),(173,"Samsun Piazza Giyim"), (174,"Fethiye Marina Yeni"),(175,"Bodrum Avenue Giyim"), (176,"İst. İstinyePark Giyim"),(177,"Ümraniye Meydan Giyim"), (180,"Brandium Fırsat Pop Up"),(181,"Aqua Florya Giyim"), (182,"Mecidiyeköy Outlet"),(183,"Vadistanbul City"), (186,"İçerenköy City's Home"),(187,"Balat Marina"), (190,"Akmerkez Giyim"),(191,"Akmerkez Home"), (193,"Bodrum Anthaven Marina"),(195,"Akasya Giyim"), (196,"Masko Concept"),(201,"Modoko Concept"), (202,"Mall of İstanbul Concept"),(205,"Palladium Concept"), (206,"Maltepe Piazza Giyim"),(208,"İzmir MaviBahçe Concept"), (209,"İzmit Burda Home"),(210,"Tuzla Viaport Marina"), (211,"Adapazarı Agora Giyim"),(213,"Çanakkale Burda Giyim"), (214,"Çanakkale Burda Home"),(216,"Bodrum Plaza Concept"), (217,"Göcek Marina Erkek"),(218,"Fethiye Marina"), (219,"Mersin Concept"),(221,"Antalya Lara Concept"), (222,"Ayvalık Marina"),(223,"Modoko Concept 2"), (224,"İstmarin City"),(227,"Bursa Anatolium Giyim"), (235,"İzmit Burda Giyim"),(238,"Gaziantep Sanko Giyim"), (239,"Carousel Giyim"),(243,"Urla Marina"), (245,"İçerenköy City's Giyim"),(246,"Büyükada Marina"), (247,"Nişantaşı City's Giyim"),(248,"İzmir İstinyePark Giyim"), (249,"Göztepe Optimum C.Outlet"),(251,"Bursa FSM Concept"), (252,"Bursa Downtown Giyim"),(254,"Tema World Giyim"), (257,"Kaş Marina"),(258,"Datça Marina")
             };
 
             foreach (var s in stores)
@@ -320,6 +351,14 @@ if (app.Environment.IsDevelopment())
                     pcIp = "192.168.50.2";
                     k1 = "192.168.50.31";
                     k2 = "192.168.50.32";
+                }
+
+                if (s.Code == 258)
+                {
+                    pcIp = "192.168.240.2";
+                    k1 = "192.168.240.31";
+                    k2 = "192.168.240.32";
+                    k3 = "192.168.240.33";
                 }
 
                 db.StoreDevices.AddRange(
@@ -395,11 +434,18 @@ if (app.Environment.IsDevelopment())
 
         foreach (var td in temporaryDevices)
         {
-            if (!db.StoreDevices.Any(d => d.CalculatedIpAddress == td.Ip))
+            var expectedId = $"GECICI-{td.Ip}";
+            var existing = db.StoreDevices.FirstOrDefault(d => d.DeviceId == expectedId);
+            if (existing == null)
             {
+                // Aynı IP ile farklı ID'li kayıt varsa önce sil
+                var byIp = db.StoreDevices.FirstOrDefault(d => d.CalculatedIpAddress == td.Ip);
+                if (byIp != null)
+                    db.StoreDevices.Remove(byIp);
+
                 db.StoreDevices.Add(new StoreDevice
                 {
-                    DeviceId = $"GECICI-{td.Ip}",
+                    DeviceId = expectedId,
                     StoreCode = td.StoreCode,
                     StoreName = td.StoreName,
                     DeviceType = "GECICI",
@@ -407,6 +453,13 @@ if (app.Environment.IsDevelopment())
                     CalculatedIpAddress = td.Ip,
                     DbConnectionString = BuildConnectionString(td.Ip)
                 });
+            }
+            else
+            {
+                // Mevcut kaydı güncelle
+                existing.DeviceType = "GECICI";
+                existing.DeviceName = td.Name;
+                existing.DbConnectionString = BuildConnectionString(td.Ip);
             }
         }
         db.SaveChanges();
@@ -467,6 +520,27 @@ if (app.Environment.IsDevelopment())
             db.SaveChanges();
         }
         // =====================================================
+        // DATÇA MARİNA (258) EKLEMESİ — IP bloğu: 192.168.240.x
+        // =====================================================
+        if (!db.StoreDevices.Any(d => d.DeviceId == "258-PC"))
+        {
+            db.StoreDevices.AddRange(
+                new StoreDevice { DeviceId = "258-PC", StoreCode = 258, StoreName = "Datça Marina", DeviceType = "PC", DeviceName = "258-PC", CalculatedIpAddress = "192.168.240.2", DbConnectionString = BuildConnectionString("192.168.240.2") },
+                new StoreDevice { DeviceId = "258-K1", StoreCode = 258, StoreName = "Datça Marina", DeviceType = "Kasa-1", DeviceName = "258-Kasa-1", CalculatedIpAddress = "192.168.240.31", DbConnectionString = BuildConnectionString("192.168.240.31") },
+                new StoreDevice { DeviceId = "258-K2", StoreCode = 258, StoreName = "Datça Marina", DeviceType = "Kasa-2", DeviceName = "258-Kasa-2", CalculatedIpAddress = "192.168.240.32", DbConnectionString = BuildConnectionString("192.168.240.32") },
+                new StoreDevice { DeviceId = "258-K3", StoreCode = 258, StoreName = "Datça Marina", DeviceType = "Kasa-3", DeviceName = "258-Kasa-3", CalculatedIpAddress = "192.168.240.33", DbConnectionString = BuildConnectionString("192.168.240.33") }
+            );
+            db.SaveChanges();
+            Console.WriteLine("✅ Store 258 (Datça Marina) eklendi — IP: 192.168.240.x");
+        }
+        // Router kaydı (ayrı ekleme — migration'dan sonra gelen mağazalar için)
+        if (!db.StoreDevices.Any(d => d.DeviceId == "258-Router"))
+        {
+            db.StoreDevices.Add(new StoreDevice { DeviceId = "258-Router", StoreCode = 258, StoreName = "Datça Marina", DeviceType = "Router", DeviceName = "258-Router", CalculatedIpAddress = "192.168.240.1", DbConnectionString = "" });
+            db.SaveChanges();
+        }
+
+        // =====================================================
         // MAĞAZA 196 IP GÜNCELLEMESİ (192.168.196.2 -> 192.168.196.5)
         // =====================================================
         var store196Pc = db.StoreDevices.FirstOrDefault(d => d.StoreCode == 196 && d.DeviceType == "PC");
@@ -479,6 +553,54 @@ if (app.Environment.IsDevelopment())
         }
 
         db.SaveChanges();
+    }
+
+    // =====================================================
+    // STORE NETWORK INFO SEED — Turkcell karasal hat Mbps degerleri
+    // Eksik olanlar eklenir, mevcutlar kullanici manuel duzenlemis olabilir diye dokunulmaz.
+    // =====================================================
+    var mbpsData = new (int StoreCode, int Mbps)[]
+    {
+        (5, 8), (76, 8), (102, 8), (120, 8), (176, 8), (245, 8), (253, 8),
+        (205, 10), (254, 10),
+        (89, 15), (202, 15), (251, 15), (252, 15),
+        (3, 16), (7, 16), (8, 16), (11, 16), (17, 16), (19, 16), (22, 16), (23, 16),
+        (24, 16), (26, 16), (29, 16), (32, 16), (33, 16), (38, 16), (39, 16), (43, 16),
+        (52, 16), (56, 16), (57, 16), (58, 16), (59, 16), (64, 16), (68, 16), (74, 16),
+        (86, 16), (88, 16), (97, 16), (98, 16), (107, 16), (110, 16), (117, 16), (118, 16),
+        (121, 16), (124, 16), (125, 16), (129, 16), (130, 16), (132, 16), (136, 16),
+        (137, 16), (139, 16), (140, 16), (141, 16), (143, 16), (148, 16), (151, 16),
+        (157, 16), (158, 16), (159, 16), (162, 16), (167, 16), (172, 16), (175, 16),
+        (177, 16), (190, 16), (191, 16), (196, 16), (201, 16), (213, 16), (214, 16),
+        (216, 16), (217, 16), (218, 16), (221, 16), (222, 16), (227, 16), (238, 16),
+        (239, 16), (243, 16), (246, 16), (249, 16),
+        (40, 24), (60, 24), (112, 24), (114, 24), (116, 24), (146, 24), (155, 24),
+        (182, 24), (208, 24),
+        (9, 35), (16, 35), (51, 35), (55, 35), (80, 35), (91, 35), (100, 35), (104, 35),
+        (113, 35), (138, 35), (142, 35), (147, 35), (152, 35), (163, 35), (164, 35),
+        (173, 35), (174, 35), (181, 35), (183, 35), (193, 35), (195, 35), (206, 35),
+        (209, 35), (210, 35), (211, 35), (219, 35), (224, 35), (235, 35), (248, 35),
+        (122, 35), (161, 35), (187, 35), (223, 35), (257, 35)
+    };
+
+    var existingCodes = db.StoreNetworkInfos.Select(s => s.StoreCode).ToHashSet();
+    var nowUtc = DateTime.UtcNow;
+    var toAdd = new List<StoreNetworkInfo>();
+    foreach (var (code, mbps) in mbpsData)
+    {
+        if (existingCodes.Contains(code)) continue;
+        toAdd.Add(new StoreNetworkInfo
+        {
+            StoreCode = code,
+            TerrestrialMbps = mbps,
+            UpdatedAt = nowUtc
+        });
+    }
+    if (toAdd.Count > 0)
+    {
+        db.StoreNetworkInfos.AddRange(toAdd);
+        db.SaveChanges();
+        Console.WriteLine($"[SEED] StoreNetworkInfos: {toAdd.Count} magaza Mbps kaydi eklendi");
     }
 
     // Seed default admin user if no users exist

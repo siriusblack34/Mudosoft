@@ -55,9 +55,23 @@ public class AgentService : IAgentService
         device.PosVersion = dto.PosVersion;
         device.SqlVersion = dto.SqlVersion;
 
-        device.StoreCode = int.TryParse(dto.StoreCode, NumberStyles.Integer, CultureInfo.InvariantCulture, out var storeCode)
-            ? storeCode
-            : 0;
+        var storeMatch = await _dbContext.StoreDevices
+            .AsNoTracking()
+            .Where(sd => sd.CalculatedIpAddress == dto.IpAddress)
+            .Select(sd => new { sd.StoreCode, sd.StoreName })
+            .FirstOrDefaultAsync();
+
+        if (storeMatch != null)
+        {
+            device.StoreCode = storeMatch.StoreCode;
+            device.StoreName = storeMatch.StoreName;
+        }
+        else
+        {
+            device.StoreCode = int.TryParse(dto.StoreCode, NumberStyles.Integer, CultureInfo.InvariantCulture, out var storeCode)
+                ? storeCode
+                : 0;
+        }
 
         // Hardware Inventory
         device.CpuModel = dto.CpuModel;

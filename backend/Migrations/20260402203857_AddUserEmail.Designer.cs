@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using MudoSoft.Backend.Data;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace MudoSoft.Backend.Migrations
 {
     [DbContext(typeof(MudoSoftDbContext))]
-    partial class MudoSoftDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260402203857_AddUserEmail")]
+    partial class AddUserEmail
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -71,63 +74,6 @@ namespace MudoSoft.Backend.Migrations
                     b.HasKey("Key");
 
                     b.ToTable("AppSettings");
-                });
-
-            modelBuilder.Entity("MudoSoft.Backend.Models.AgendaItem", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("Category")
-                        .IsRequired()
-                        .HasMaxLength(40)
-                        .HasColumnType("character varying(40)");
-
-                    b.Property<string>("Content")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("CreatedBy")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)");
-
-                    b.Property<DateTime?>("DueDate")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("Priority")
-                        .IsRequired()
-                        .HasMaxLength(20)
-                        .HasColumnType("character varying(20)");
-
-                    b.Property<string>("Status")
-                        .IsRequired()
-                        .HasMaxLength(20)
-                        .HasColumnType("character varying(20)");
-
-                    b.Property<string>("Title")
-                        .IsRequired()
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)");
-
-                    b.Property<DateTime>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("DueDate");
-
-                    b.HasIndex("Priority");
-
-                    b.HasIndex("Status");
-
-                    b.HasIndex("UpdatedAt");
-
-                    b.ToTable("AgendaItems");
                 });
 
             modelBuilder.Entity("MudoSoft.Backend.Models.CollectorReport", b =>
@@ -754,73 +700,6 @@ namespace MudoSoft.Backend.Migrations
                     b.HasIndex("StartedAtUtc");
 
                     b.ToTable("VncSessionLogs");
-                });
-
-            modelBuilder.Entity("MudoSoft.Backend.Models.RouterLatencySample", b =>
-                {
-                    b.Property<long>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("bigint");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
-
-                    b.Property<string>("DeviceId")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)");
-
-                    b.Property<string>("Ip")
-                        .IsRequired()
-                        .HasMaxLength(15)
-                        .HasColumnType("character varying(15)");
-
-                    b.Property<int?>("RttMs")
-                        .HasColumnType("integer");
-
-                    b.Property<DateTime>("SampledAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<int>("StoreCode")
-                        .HasColumnType("integer");
-
-                    b.Property<bool>("Success")
-                        .HasColumnType("boolean");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("SampledAt");
-
-                    b.HasIndex("StoreCode");
-
-                    b.HasIndex("DeviceId", "SampledAt");
-
-                    b.HasIndex("StoreCode", "SampledAt");
-
-                    b.ToTable("RouterLatencySamples");
-                });
-
-            modelBuilder.Entity("MudoSoft.Backend.Models.StoreNetworkInfo", b =>
-                {
-                    b.Property<int>("StoreCode")
-                        .HasColumnType("integer");
-
-                    b.Property<string>("LineType")
-                        .HasMaxLength(30)
-                        .HasColumnType("character varying(30)");
-
-                    b.Property<string>("Notes")
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)");
-
-                    b.Property<int>("TerrestrialMbps")
-                        .HasColumnType("integer");
-
-                    b.Property<DateTime>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.HasKey("StoreCode");
-
-                    b.ToTable("StoreNetworkInfos");
                 });
 
             modelBuilder.Entity("MudoSoft.Backend.Models.CommandResultRecord", b =>

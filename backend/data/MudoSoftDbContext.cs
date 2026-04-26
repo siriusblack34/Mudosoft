@@ -25,6 +25,11 @@ namespace MudoSoft.Backend.Data
         public DbSet<User> Users { get; set; }
         public DbSet<LoginHistory> LoginHistories { get; set; }
         public DbSet<VncSessionLog> VncSessionLogs { get; set; }
+        public DbSet<AppSetting> AppSettings { get; set; }
+        public DbSet<DeviceStatusChange> DeviceStatusChanges { get; set; }
+        public DbSet<AgendaItem> AgendaItems { get; set; }
+        public DbSet<RouterLatencySample> RouterLatencySamples { get; set; }
+        public DbSet<StoreNetworkInfo> StoreNetworkInfos { get; set; }
 
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -130,6 +135,53 @@ namespace MudoSoft.Backend.Data
                 e.HasIndex(l => l.LoginAt);
             });
 
+            modelBuilder.Entity<Note>(e =>
+            {
+                e.Property(n => n.OwnerUsername)
+                    .HasMaxLength(50);
+
+                e.Property(n => n.Title)
+                    .HasMaxLength(200);
+
+                e.HasIndex(n => n.OwnerUsername);
+                e.HasIndex(n => n.IsShared);
+            });
+
+            modelBuilder.Entity<AgendaItem>(e =>
+            {
+                e.Property(a => a.Title)
+                    .HasMaxLength(200);
+
+                e.Property(a => a.Status)
+                    .HasMaxLength(20);
+
+                e.Property(a => a.Priority)
+                    .HasMaxLength(20);
+
+                e.Property(a => a.Category)
+                    .HasMaxLength(40);
+
+                e.Property(a => a.CreatedBy)
+                    .HasMaxLength(100);
+
+                e.HasIndex(a => a.Status);
+                e.HasIndex(a => a.Priority);
+                e.HasIndex(a => a.DueDate);
+                e.HasIndex(a => a.UpdatedAt);
+            });
+
+            //
+            // DEVICE STATUS CHANGE (ag teshis icin durum gecis logu)
+            //
+            modelBuilder.Entity<DeviceStatusChange>(e =>
+            {
+                e.HasIndex(c => c.StoreCode);
+                e.HasIndex(c => c.DeviceId);
+                e.HasIndex(c => c.ChangedAt);
+                e.HasIndex(c => new { c.StoreCode, c.ChangedAt });
+                e.HasIndex(c => new { c.DeviceId, c.ChangedAt });
+            });
+
             modelBuilder.Entity<VncSessionLog>(e =>
             {
                 e.HasKey(l => l.Id);
@@ -139,6 +191,26 @@ namespace MudoSoft.Backend.Data
                 e.HasIndex(l => l.DeviceId);
                 e.HasIndex(l => l.StartedAtUtc);
                 e.HasIndex(l => l.SessionId);
+            });
+
+            //
+            // ROUTER LATENCY SAMPLE (karasal / 4.5G tespiti icin)
+            //
+            modelBuilder.Entity<RouterLatencySample>(e =>
+            {
+                e.HasKey(s => s.Id);
+                e.HasIndex(s => s.StoreCode);
+                e.HasIndex(s => s.SampledAt);
+                e.HasIndex(s => new { s.StoreCode, s.SampledAt });
+                e.HasIndex(s => new { s.DeviceId, s.SampledAt });
+            });
+
+            //
+            // STORE NETWORK INFO (taahhut edilen karasal hat hizi)
+            //
+            modelBuilder.Entity<StoreNetworkInfo>(e =>
+            {
+                e.HasKey(s => s.StoreCode);
             });
         }
     }

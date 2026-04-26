@@ -28,7 +28,7 @@ public class UsersController : ControllerBase
             .Select(u => new
             {
                 u.Id, u.Username, u.FullName, u.Role, u.IsActive,
-                u.CreatedAt, u.LastLoginAt
+                u.CreatedAt, u.LastLoginAt, u.Email
             })
             .ToListAsync();
         return Ok(users);
@@ -49,6 +49,7 @@ public class UsersController : ControllerBase
             PasswordHash = BCrypt.Net.BCrypt.HashPassword(req.Password),
             Role = req.Role is "Admin" or "Teknisyen" ? req.Role : "Teknisyen",
             FullName = req.FullName?.Trim() ?? req.Username,
+            Email = req.Email?.Trim(),
             IsActive = true,
             CreatedAt = DateTime.UtcNow
         };
@@ -57,7 +58,7 @@ public class UsersController : ControllerBase
         await _db.SaveChangesAsync();
 
         _logger.LogInformation("User created: {Username} ({Role})", user.Username, user.Role);
-        return Ok(new { user.Id, user.Username, user.FullName, user.Role });
+        return Ok(new { user.Id, user.Username, user.FullName, user.Role, user.Email });
     }
 
     [HttpPut("{id}")]
@@ -69,10 +70,11 @@ public class UsersController : ControllerBase
         if (!string.IsNullOrWhiteSpace(req.FullName)) user.FullName = req.FullName.Trim();
         if (req.Role is "Admin" or "Teknisyen") user.Role = req.Role;
         if (req.IsActive.HasValue) user.IsActive = req.IsActive.Value;
+        if (req.Email != null) user.Email = req.Email.Trim() == "" ? null : req.Email.Trim();
 
         await _db.SaveChangesAsync();
         _logger.LogInformation("User updated: {Username}", user.Username);
-        return Ok(new { user.Id, user.Username, user.FullName, user.Role, user.IsActive });
+        return Ok(new { user.Id, user.Username, user.FullName, user.Role, user.IsActive, user.Email });
     }
 
     [HttpPost("{id}/reset-password")]
@@ -130,6 +132,7 @@ public class CreateUserRequest
     public string Password { get; set; } = "";
     public string Role { get; set; } = "Teknisyen";
     public string? FullName { get; set; }
+    public string? Email { get; set; }
 }
 
 public class UpdateUserRequest
@@ -137,6 +140,7 @@ public class UpdateUserRequest
     public string? FullName { get; set; }
     public string? Role { get; set; }
     public bool? IsActive { get; set; }
+    public string? Email { get; set; }
 }
 
 public class ResetPasswordRequest

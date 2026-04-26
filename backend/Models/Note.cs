@@ -9,10 +9,16 @@ namespace MudoSoft.Backend.Models
         public Guid Id { get; set; } = Guid.NewGuid();
 
         [Required]
+        [MaxLength(50)]
+        public string OwnerUsername { get; set; } = "";
+
+        [Required]
         [MaxLength(200)]
         public string Title { get; set; } = "";
 
         public string Content { get; set; } = "";
+
+        public bool IsShared { get; set; }
 
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 

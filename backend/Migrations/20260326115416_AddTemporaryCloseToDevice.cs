@@ -10,18 +10,18 @@ namespace MudoSoft.Backend.Migrations
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.AddColumn<bool>(
-                name: "IsTemporarilyClosed",
-                table: "Devices",
-                type: "boolean",
-                nullable: false,
-                defaultValue: false);
-
-            migrationBuilder.AddColumn<string>(
-                name: "TemporaryCloseReason",
-                table: "Devices",
-                type: "text",
-                nullable: true);
+            migrationBuilder.Sql(@"
+                DO $$ BEGIN
+                    ALTER TABLE ""Devices"" ADD COLUMN ""IsTemporarilyClosed"" boolean NOT NULL DEFAULT FALSE;
+                EXCEPTION WHEN duplicate_column THEN NULL;
+                END $$;
+            ");
+            migrationBuilder.Sql(@"
+                DO $$ BEGIN
+                    ALTER TABLE ""Devices"" ADD COLUMN ""TemporaryCloseReason"" text;
+                EXCEPTION WHEN duplicate_column THEN NULL;
+                END $$;
+            ");
         }
 
         /// <inheritdoc />

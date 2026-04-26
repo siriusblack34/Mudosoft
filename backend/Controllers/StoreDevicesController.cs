@@ -46,6 +46,88 @@ public class StoreDevicesController : ControllerBase
         return Ok(stores);
     }
 
+    /// <summary>
+    /// Yeni mağaza prosedürü — tek seferde Router + PC + N kasa oluşturur.
+    /// IP bloğu: {ipBlock}.1 (Router), {ipBlock}.2 (PC), {ipBlock}.31..3N (Kasalar)
+    /// </summary>
+    [HttpPost("provision")]
+    [Authorize(Roles = "Admin")]
+    public async Task<IActionResult> Provision([FromBody] ProvisionStoreRequest req)
+    {
+        if (req.StoreCode <= 0) return BadRequest(new { error = "Mağaza kodu gerekli" });
+        if (string.IsNullOrWhiteSpace(req.StoreName)) return BadRequest(new { error = "Mağaza adı gerekli" });
+        if (req.KasaCount < 0 || req.KasaCount > 10) return BadRequest(new { error = "Kasa sayısı 0-10 arası olmalı" });
+
+        // IP bloğu: belirtildiyse onu kullan, yoksa 192.168.{storeCode}
+        var ipBlock = string.IsNullOrWhiteSpace(req.IpBlock) ? $"192.168.{req.StoreCode}" : req.IpBlock.Trim().TrimEnd('.');
+        var name = req.StoreName.Trim();
+        var code = req.StoreCode;
+
+        // Zaten var mı kontrolü
+        if (await _db.StoreDevices.AnyAsync(d => d.StoreCode == code))
+            return BadRequest(new { error = $"Mağaza {code} zaten kayıtlı. Önce mevcut cihazları silin." });
+
+        // DB connection string builder
+        var geniusDbUser = Environment.GetEnvironmentVariable("GENIUS_DB_USER") ?? "sa";
+        var geniusDbPass = Environment.GetEnvironmentVariable("GENIUS_DB_PASS") ?? "";
+        string BuildConn(string ip) =>
+            string.IsNullOrWhiteSpace(geniusDbPass)
+                ? ""
+                : $"Server={ip};Database=Genius3;User Id={geniusDbUser};Password={geniusDbPass};TrustServerCertificate=True;Connect Timeout=30;";
+
+        var devices = new List<StoreDevice>();
+
+        // Router
+        devices.Add(new StoreDevice
+        {
+            DeviceId = $"{code}-Router",
+            StoreCode = code, StoreName = name,
+            DeviceType = "Router", DeviceName = $"{code}-Router",
+            CalculatedIpAddress = $"{ipBlock}.1",
+            DbConnectionString = "",
+        });
+
+        // PC
+        var pcIp = $"{ipBlock}.2";
+        devices.Add(new StoreDevice
+        {
+            DeviceId = $"{code}-PC",
+            StoreCode = code, StoreName = name,
+            DeviceType = "PC", DeviceName = $"{code}-PC",
+            CalculatedIpAddress = pcIp,
+            DbConnectionString = BuildConn(pcIp),
+        });
+
+        // Kasalar: .31, .32, .33, ...
+        for (int i = 1; i <= req.KasaCount; i++)
+        {
+            var kasaIp = $"{ipBlock}.{30 + i}";
+            devices.Add(new StoreDevice
+            {
+                DeviceId = $"{code}-K{i}",
+                StoreCode = code, StoreName = name,
+                DeviceType = $"Kasa-{i}", DeviceName = $"{code}-Kasa-{i}",
+                CalculatedIpAddress = kasaIp,
+                DbConnectionString = BuildConn(kasaIp),
+            });
+        }
+
+        _db.StoreDevices.AddRange(devices);
+        await _db.SaveChangesAsync();
+
+        _logger.LogInformation("Store provisioned: {Code} {Name} — {Count} devices (IP block: {IpBlock})",
+            code, name, devices.Count, ipBlock);
+
+        return Ok(new
+        {
+            success = true,
+            storeCode = code,
+            storeName = name,
+            ipBlock,
+            devicesCreated = devices.Select(d => new { d.DeviceId, d.DeviceType, d.CalculatedIpAddress }).ToList(),
+        });
+    }
+
     [HttpPost]
     [Authorize(Roles = "Admin")]
     public async Task<IActionResult> Create([FromBody] CreateStoreDeviceRequest req)
@@ -121,6 +203,16 @@ public class StoreDevicesController : ControllerBase
         _logger.LogInformation("Store device deleted: {DeviceId}", deviceId);
         return Ok(new { success = true, deletedDeviceId = deviceId });
     }
+}
+
+public class ProvisionStoreRequest
+{
+    public int StoreCode { get; set; }
+    public string StoreName { get; set; } = "";
+    /// <summary>IP bloğu prefix: ör. "192.168.240". Boşsa "192.168.{StoreCode}" kullanılır.</summary>
+    public string? IpBlock { get; set; }
+    /// <summary>Kasa sayısı (0-10). Default 3.</summary>
+    public int KasaCount { get; set; } = 3;
 }
 
 public class CreateStoreDeviceRequest

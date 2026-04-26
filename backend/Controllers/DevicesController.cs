@@ -256,22 +256,6 @@ public class DevicesController : ControllerBase
             return NotFound($"Device not found: {id}");
         }
 
-        var last24Hours = DateTime.UtcNow.AddHours(-24);
-
-        var metrics = await _dbContext.DeviceMetrics
-            .Where(m => m.DeviceId == id && m.TimestampUtc >= last24Hours)
-            .OrderByDescending(m => m.TimestampUtc)
-            .Take(120)
-            .OrderBy(m => m.TimestampUtc)
-            .Select(m => new DeviceMetricDto
-            {
-                TimestampUtc = m.TimestampUtc.ToString("o"),
-                CpuUsagePercent = m.CpuUsagePercent,
-                RamUsagePercent = m.RamUsagePercent,
-                DiskUsagePercent = m.DiskUsagePercent
-            })
-            .ToListAsync();
-
         var osInfoLocal = new OsInfoDto();
         if (!string.IsNullOrWhiteSpace(device.Os))
         {
@@ -340,8 +324,7 @@ public class DevicesController : ControllerBase
             PosVersion = device.PosVersion,
             Agent = !string.IsNullOrEmpty(device.AgentVersion),
             VncInstalled = device.VncInstalled,
-            VncPort = device.VncPort,
-            Metrics = metrics
+            VncPort = device.VncPort
         });
     }
 
@@ -376,6 +359,13 @@ public class DevicesController : ControllerBase
         device.IsTemporarilyClosed = request.IsClosed;
         device.TemporaryCloseReason = request.IsClosed ? request.Reason?.Trim() : null;
         await _dbContext.SaveChangesAsync();
+
+        // Cache'deki cihazı da güncelle (dashboard yanıp sönmesin)
+        DeviceStatusWorker.UpdateCachedDevice(device.Id, d =>
+        {
+            d.IsTemporarilyClosed = device.IsTemporarilyClosed;
+            d.TemporaryCloseReason = device.TemporaryCloseReason;
+        });
 
         return Ok(new
         {
@@ -418,7 +408,10 @@ public class DevicesController : ControllerBase
         var last24Hours = DateTime.UtcNow.AddHours(-24);
 
         var metrics = await _dbContext.DeviceMetrics
+            .AsNoTracking()
             .Where(m => m.DeviceId == id && m.TimestampUtc >= last24Hours)
+            .OrderByDescending(m => m.TimestampUtc)
+            .Take(120)
             .OrderBy(m => m.TimestampUtc)
             .Select(m => new DeviceMetricDto
             {
