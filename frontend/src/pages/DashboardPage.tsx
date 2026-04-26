@@ -3,26 +3,18 @@ import { Link } from "react-router-dom";
 import {
     Activity,
     AlertTriangle,
-    Building2,
-    ChevronRight,
-    Clock,
-    Database,
     Globe,
-    HardDrive,
     Laptop,
     Monitor,
     MonitorSmartphone,
     RefreshCw,
-    Server,
     ShieldCheck,
     Wifi,
     WifiOff,
-    Zap,
 } from "lucide-react";
-import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from "recharts";
+import AgendaTopicsPanel from "../components/dashboard/AgendaTopicsPanel";
 import { useTheme } from "../contexts/ThemeContext";
-import { apiClient, SqlDeviceWithStatus } from "../lib/apiClient";
-import Modal from "../components/ui/Modal";
+import { apiClient, SqlDeviceWithStatus, RouterClassification } from "../lib/apiClient";
 
 /* ─── Types ─── */
 interface DashboardData {
@@ -48,7 +40,7 @@ interface StoreSummary {
 }
 
 /* ─── Constants ─── */
-const SQL_CACHE_KEY = "ms_sql_devices_cache_v4";
+const SQL_CACHE_KEY = "ms_sql_devices_cache_v5";
 const EMPTY_DASHBOARD: DashboardData = { totalDevices: 0, online: 0, offline: 0, healthy: 0, warning: 0, critical: 0 };
 
 /* ─── Helpers ─── */
@@ -85,7 +77,7 @@ function fmtDuration(iso?: string | null) {
     if (days > 0) return `${days}g`;
     if (hours > 0) return `${hours}sa`;
     if (diffMinutes > 0) return `${diffMinutes}dk`;
-    return "az once";
+    return "az önce";
 }
 
 function fmtTime(date?: Date | null, withSeconds = false) {
@@ -186,11 +178,12 @@ const DashboardPage: React.FC = () => {
     });
     const [dashboardError, setDashboardError] = useState<string | null>(null);
     const [sqlError, setSqlError] = useState<string | null>(null);
-    const [isDeviceDistributionOpen, setIsDeviceDistributionOpen] = useState(false);
+    const [mobileRouters, setMobileRouters] = useState<RouterClassification[]>([]);
     const [, setTick] = useState(0);
 
+    // Süre gösterimi için 30 saniyede bir güncelle (her saniye değil — gereksiz re-render önlenir)
     useEffect(() => {
-        const timer = window.setInterval(() => setTick((v) => v + 1), 1000);
+        const timer = window.setInterval(() => setTick((v) => v + 1), 30000);
         return () => window.clearInterval(timer);
     }, []);
 
@@ -201,7 +194,7 @@ const DashboardPage: React.FC = () => {
             setData({ totalDevices: result.totalDevices, online: result.online, offline: result.offline, healthy: result.healthy, warning: result.warning, critical: result.critical });
             setDashboardUpdatedAt(new Date());
         } catch (error) {
-            setDashboardError(error instanceof Error ? error.message : "Agent ozeti alinamadi.");
+            setDashboardError(error instanceof Error ? error.message : "Agent özeti alınamadı.");
         } finally {
             setLoading(false);
         }
@@ -211,39 +204,96 @@ const DashboardPage: React.FC = () => {
         setSqlLoading(true);
         setSqlError(null);
         try {
-            const result = await apiClient.getSqlDevicesWithStatus({ timeoutMs: 3000 });
+            const result = await apiClient.getSqlDevicesWithStatus({ timeoutMs: 500 });
             const now = new Date();
             setSqlDevices(result);
             setSqlUpdatedAt(now);
             localStorage.setItem(SQL_CACHE_KEY, JSON.stringify({ savedAt: now.toISOString(), items: result }));
         } catch (error) {
-            setSqlError(error instanceof Error ? error.message : "SQL matrisi alinamadi.");
+            setSqlError(error instanceof Error ? error.message : "SQL matrisi alınamadı.");
         } finally {
             setSqlLoading(false);
         }
     }, []);
 
+    const loadRouterDiag = useCallback(async () => {
+        try {
+            const res = await apiClient.getRouterDiagnostics(10);
+            // Sadece mobil suphesi + kesin mobil + switchover gorunsun
+            const flagged = res.routers.filter(r =>
+                r.class === 'MobileSuspected' || r.class === 'MobileLikely' || r.switchoverDetected
+            );
+            setMobileRouters(flagged);
+        } catch {
+            // sessizce gormezden gel — widget gizlenir
+        }
+    }, []);
+
     useEffect(() => {
-        void loadDashboard();
-        void loadSql();
-        const interval = window.setInterval(() => { void loadDashboard(); void loadSql(); }, 30000);
+        void Promise.all([loadDashboard(), loadSql(), loadRouterDiag()]);
+        const interval = window.setInterval(() => { void Promise.all([loadDashboard(), loadSql(), loadRouterDiag()]); }, 15000);
         return () => window.clearInterval(interval);
+    }, [loadDashboard, loadSql, loadRouterDiag]);
+
+    useEffect(() => {
+        const handleRefresh = () => {
+            void Promise.all([loadDashboard(), loadSql()]);
+        };
+        window.addEventListener("ms-dashboard-refresh", handleRefresh);
+        return () => window.removeEventListener("ms-dashboard-refresh", handleRefresh);
     }, [loadDashboard, loadSql]);
 
-    /* ─── Derived data ─── */
+    /* ─── Derived data (tek geçişte hesapla) ─── */
     const summary = data ?? EMPTY_DASHBOARD;
-    const pcs = sqlDevices.filter((d) => d.deviceType?.toUpperCase() === "PC");
-    const posDevices = sqlDevices.filter((d) => d.deviceType?.toUpperCase().startsWith("KASA"));
-    const activePos = posDevices.filter((d) => !d.isTemporarilyClosed);
-    const closedPos = posDevices.filter((d) => d.isTemporarilyClosed).length;
-    const activePcs = pcs.filter((d) => !d.isTemporarilyClosed);
-    const closedPcs = pcs.filter((d) => d.isTemporarilyClosed).length;
-    const pcOnline = pcs.filter((d) => d.isOnline).length;
-    const posOnline = activePos.filter((d) => d.isOnline).length;
-    const pcOffline = activePcs.filter((d) => !d.isOnline).length;
-    const posOffline = activePos.length - posOnline;
-    const sqlOnline = activePcs.filter((d) => d.isOnline).length + posOnline;
-    const sqlTracked = activePcs.length + activePos.length;
+
+    const { pcs, posDevices, routers, geciciPcs, activePos, activePcs, activeRouters, activeGecici,
+        closedPos, closedPcs, closedRouters, closedGecici,
+        pcOnline, posOnline, routerOnline, geciciOnline,
+        pcOffline, posOffline, routerOffline, geciciOffline,
+        sqlOnline, sqlTracked } = useMemo(() => {
+        const _pcs: SqlDeviceWithStatus[] = [];
+        const _pos: SqlDeviceWithStatus[] = [];
+        const _routers: SqlDeviceWithStatus[] = [];
+        const _gecici: SqlDeviceWithStatus[] = [];
+        const _activePos: SqlDeviceWithStatus[] = [];
+        const _activePcs: SqlDeviceWithStatus[] = [];
+        const _activeRouters: SqlDeviceWithStatus[] = [];
+        const _activeGecici: SqlDeviceWithStatus[] = [];
+        let _closedPos = 0, _closedPcs = 0, _closedRouters = 0, _closedGecici = 0;
+        let _pcOn = 0, _posOn = 0, _routerOn = 0, _geciciOn = 0;
+
+        for (const d of sqlDevices) {
+            const type = d.deviceType?.toUpperCase();
+            if (type === "PC") {
+                _pcs.push(d);
+                if (d.isTemporarilyClosed) _closedPcs++;
+                else { _activePcs.push(d); if (d.isOnline) _pcOn++; }
+            } else if (type?.startsWith("KASA")) {
+                _pos.push(d);
+                if (d.isTemporarilyClosed) _closedPos++;
+                else { _activePos.push(d); if (d.isOnline) _posOn++; }
+            } else if (type === "ROUTER") {
+                _routers.push(d);
+                if (d.isTemporarilyClosed) _closedRouters++;
+                else { _activeRouters.push(d); if (d.isOnline) _routerOn++; }
+            } else if (type === "GECICI") {
+                _gecici.push(d);
+                if (d.isTemporarilyClosed) _closedGecici++;
+                else { _activeGecici.push(d); if (d.isOnline) _geciciOn++; }
+            }
+        }
+        return {
+            pcs: _pcs, posDevices: _pos, routers: _routers, geciciPcs: _gecici,
+            activePos: _activePos, activePcs: _activePcs, activeRouters: _activeRouters, activeGecici: _activeGecici,
+            closedPos: _closedPos, closedPcs: _closedPcs, closedRouters: _closedRouters, closedGecici: _closedGecici,
+            pcOnline: _pcOn, posOnline: _posOn, routerOnline: _routerOn, geciciOnline: _geciciOn,
+            pcOffline: _activePcs.length - _pcOn, posOffline: _activePos.length - _posOn,
+            routerOffline: _activeRouters.length - _routerOn, geciciOffline: _activeGecici.length - _geciciOn,
+            sqlOnline: _pcOn + _posOn + _geciciOn,
+            sqlTracked: _activePcs.length + _activePos.length + _activeGecici.length,
+        };
+    }, [sqlDevices]);
+
     const agentPct = pct(summary.online, summary.totalDevices);
     const sqlPct = pct(sqlOnline, sqlTracked);
     const healthPct = pct(summary.healthy, summary.totalDevices);
@@ -287,7 +337,7 @@ const DashboardPage: React.FC = () => {
     /* Offline cihaz listesi — lastSeen'e gore en yeni kapanan uste */
     const offlineDevices = useMemo(() => {
         return sqlDevices
-            .filter((d) => !d.isOnline && !d.isTemporarilyClosed)
+            .filter((d) => !d.isOnline && !d.isTemporarilyClosed && d.deviceType?.toUpperCase() !== "GECICI")
             .sort((a, b) => {
                 const ta = a.lastSeen ? new Date(a.lastSeen).getTime() : 0;
                 const tb = b.lastSeen ? new Date(b.lastSeen).getTime() : 0;
@@ -296,82 +346,107 @@ const DashboardPage: React.FC = () => {
     }, [sqlDevices]);
 
     /* Donut data */
-    const totalOnline = pcOnline + posOnline;
-    const totalOffline = pcOffline + posOffline;
+    const totalOnline = pcOnline + posOnline + routerOnline + geciciOnline;
+    // Gecici PC'ler operasyonel offline sayisina dahil edilmez.
+    const totalOffline = pcOffline + posOffline + routerOffline;
     const totalActive = totalOnline + totalOffline;
 
-    const deviceDonut = [
-        { name: "PC", value: pcs.length, color: c.sky },
-        { name: "POS", value: posDevices.length, color: c.emerald },
-    ].filter((d) => d.value > 0);
+    /* ─── StatusBand event ─── */
+    useEffect(() => {
+        window.dispatchEvent(new CustomEvent("ms-dashboard-status", {
+            detail: {
+                enabled: true,
+                message: "Kontrol Paneli verileri anlık olarak yenileniyor",
+                agentTime: fmtTime(dashboardUpdatedAt),
+                sqlTime: fmtTime(sqlUpdatedAt),
+                agentState: dashboardError ? "error" : "ok",
+                sqlState: sqlError ? (sqlDevices.length > 0 ? "cache" : "error") : (sqlLoading ? "loading" : "ok"),
+                isRefreshing: loading || sqlLoading,
+            },
+        }));
+        return () => {
+            window.dispatchEvent(new CustomEvent("ms-dashboard-status", { detail: { enabled: false } }));
+        };
+    }, [dashboardUpdatedAt, sqlUpdatedAt, dashboardError, sqlError, sqlDevices.length, sqlLoading, loading]);
 
     /* ─── Loading state ─── */
-    if (loading && !data && sqlLoading && sqlDevices.length === 0) {
+    const isInitialLoad = (loading && !data) || (sqlLoading && sqlDevices.length === 0);
+    if (isInitialLoad) {
         return (
             <div className="flex min-h-[68vh] items-center justify-center">
                 <div className="rounded-3xl border p-10 text-center ms-fade-up" style={{ background: c.card, borderColor: c.border, boxShadow: `0 24px 60px ${c.shadow}` }}>
-                    <RefreshCw className="mx-auto h-8 w-8 animate-spin" style={{ color: c.sky }} />
-                    <h2 className="mt-4 text-xl font-semibold" style={{ color: c.text }}>Kontrol paneli yukleniyor</h2>
-                    <p className="mt-2 text-sm" style={{ color: c.muted }}>Veriler hazirlaniyor...</p>
+                    <div className="relative mx-auto h-16 w-16 mb-5">
+                        <div className="absolute inset-0 rounded-full border-4 border-t-transparent animate-spin" style={{ borderColor: `${c.sky}30`, borderTopColor: c.sky }} />
+                        <div className="absolute inset-2 rounded-full border-4 border-b-transparent animate-spin" style={{ borderColor: `${c.emerald}20`, borderBottomColor: c.emerald, animationDirection: 'reverse', animationDuration: '1.5s' }} />
+                        <div className="absolute inset-0 flex items-center justify-center">
+                            <div className="h-3 w-3 rounded-full animate-pulse" style={{ background: c.sky }} />
+                        </div>
+                    </div>
+                    <h2 className="text-xl font-semibold" style={{ color: c.text }}>Kontrol Paneli</h2>
+                    <p className="mt-2 text-sm" style={{ color: c.muted }}>Veriler hazırlanıyor...</p>
+                    <div className="flex items-center justify-center gap-4 mt-5">
+                        <div className="flex items-center gap-2 text-xs" style={{ color: data ? c.emerald : c.muted }}>
+                            <div className={`h-1.5 w-1.5 rounded-full ${data ? '' : 'animate-pulse'}`} style={{ background: data ? c.emerald : c.muted }} />
+                            Agent {data ? '✓' : '...'}
+                        </div>
+                        <div className="flex items-center gap-2 text-xs" style={{ color: sqlDevices.length > 0 ? c.emerald : c.muted }}>
+                            <div className={`h-1.5 w-1.5 rounded-full ${sqlDevices.length > 0 ? '' : 'animate-pulse'}`} style={{ background: sqlDevices.length > 0 ? c.emerald : c.muted }} />
+                            SQL Matrisi {sqlDevices.length > 0 ? '✓' : '...'}
+                        </div>
+                    </div>
                 </div>
             </div>
         );
     }
 
     const statusColor = level === "critical" ? c.rose : level === "watch" ? c.amber : c.emerald;
-    const statusGlow = level === "critical" ? c.roseGlow : level === "watch" ? c.amberGlow : c.emeraldGlow;
     const statusLabel = level === "critical" ? "Kritik" : level === "watch" ? "Izleme" : "Stabil";
+
     return (
         <div className="mx-auto max-w-[1600px] space-y-5 pb-8">
-            {/* ═══ TOP STATUS BANNER ═══ */}
+            {/* ═══ SIMPLE SUMMARY ═══ */}
             <section
-                className="relative overflow-hidden rounded-3xl border ms-fade-up"
-                style={{ background: `linear-gradient(135deg, ${c.card} 0%, ${statusGlow} 50%, ${c.card} 100%)`, borderColor: c.borderStrong, boxShadow: `0 20px 50px ${c.shadow}` }}
+                className="rounded-2xl border px-5 py-4 ms-fade-up"
+                style={{ background: c.card, borderColor: c.border, boxShadow: `0 8px 28px ${c.shadow}` }}
             >
-                {/* Animated gradient mesh background */}
-                <div className="pointer-events-none absolute inset-0 opacity-30" style={{ background: `radial-gradient(ellipse at 20% 50%, ${statusColor}22 0%, transparent 50%), radial-gradient(ellipse at 80% 20%, ${c.sky}15 0%, transparent 50%), radial-gradient(ellipse at 50% 80%, ${c.violet}10 0%, transparent 50%)`, backgroundSize: "200% 200%", animation: "ms-gradient-shift 8s ease-in-out infinite" }} />
-                {/* Decorative glow blob */}
-                <div className="pointer-events-none absolute -right-20 -top-20 h-60 w-60 rounded-full opacity-30" style={{ background: `radial-gradient(circle, ${statusColor} 0%, transparent 70%)`, animation: "ms-float 8s ease-in-out infinite" }} />
-                {/* Secondary floating orb */}
-                <div className="pointer-events-none absolute -left-10 bottom-0 h-40 w-40 rounded-full opacity-15" style={{ background: `radial-gradient(circle, ${c.sky} 0%, transparent 70%)`, animation: "ms-float 10s ease-in-out infinite reverse" }} />
-
-                <div className="relative flex flex-col gap-5 p-6 xl:flex-row xl:items-center xl:justify-between">
-                    <div className="flex items-center gap-5">
-                        {/* Animated pulse indicator */}
-                        <div className="relative flex h-14 w-14 shrink-0 items-center justify-center">
-                            {level !== "stable" && <div className="absolute inset-0 rounded-full" style={{ background: statusColor, opacity: 0.15, animation: "ms-pulse-ring 2s ease-out infinite" }} />}
-                            <div className="flex h-10 w-10 items-center justify-center rounded-full" style={{ background: statusColor + "22" }}>
-                                {level === "stable" ? <ShieldCheck className="h-5 w-5" style={{ color: statusColor }} /> : <AlertTriangle className="h-5 w-5" style={{ color: statusColor }} />}
-                            </div>
+                <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+                    <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                            <h1 className="text-xl font-bold tracking-tight" style={{ color: c.text }}>Kontrol Paneli</h1>
+                            <span className="rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest" style={{ color: statusColor, background: statusColor + "12", borderColor: statusColor + "35" }}>
+                                {statusLabel}
+                            </span>
                         </div>
-                        <div>
-                            <div className="flex items-center gap-3">
-                                <h1 className="text-2xl font-bold tracking-tight" style={{ color: c.text }}>Kontrol Paneli</h1>
-                                <span className="rounded-full border px-3 py-1 text-[11px] font-bold uppercase tracking-widest" style={{ color: statusColor, background: statusColor + "18", borderColor: statusColor + "40", boxShadow: `0 0 20px ${statusColor}20` }}>
-                                    {statusLabel}
-                                </span>
-                            </div>
-                            <p className="mt-1.5 text-sm" style={{ color: c.muted }}>
-                                {criticalStores.length > 0 ? `${criticalStores.length} magazada tam kesinti — acil mudahale gerekiyor.`
-                                    : watchStores.length > 0 ? `${watchStores.length} magazada parcali kayip goruldu.`
-                                    : closedStores.length > 0 ? `Tum sistemler normal. ${closedStores.length} magaza planli kapali.`
-                                    : "Tum sistemler normal calisiyor."}
-                            </p>
-                        </div>
+                        <p className="mt-1 text-sm" style={{ color: c.muted }}>
+                            {criticalStores.length > 0 ? `${criticalStores.length} mağazada tam kesinti var.`
+                                : watchStores.length > 0 ? `${watchStores.length} mağazada parçalı kayıp var.`
+                                : closedStores.length > 0 ? `Temiz. ${closedStores.length} mağaza planlı kapalı.`
+                                : "Temiz. Kritik aksiyon yok."}
+                        </p>
                     </div>
 
-                    <div className="flex flex-wrap items-center gap-3">
-                        <TimePill c={c} label="Saat" value={fmtTime(new Date(), true)} />
-                        <TimePill c={c} label="Agent" value={fmtTime(dashboardUpdatedAt)} status={dashboardError ? "error" : "ok"} />
-                        <TimePill c={c} label="SQL" value={fmtTime(sqlUpdatedAt)} status={sqlError ? (sqlDevices.length > 0 ? "cache" : "error") : (sqlLoading ? "loading" : "ok")} />
-                        <button
-                            onClick={() => { void loadDashboard(); void loadSql(); }}
-                            className="flex h-10 w-10 items-center justify-center rounded-xl border transition-all hover:scale-105 active:scale-95"
-                            style={{ background: c.cardSoft, borderColor: c.borderStrong, color: c.text }}
-                            title="Yenile"
-                        >
-                            <RefreshCw className={`h-4 w-4 ${(loading || sqlLoading) ? "animate-spin" : ""}`} />
-                        </button>
+                    <div className="flex flex-wrap items-center gap-2">
+                        <SummaryPill c={c} label="Agent" value={`${agentPct}%`} color={c.sky} />
+                        <SummaryPill c={c} label="SQL" value={`${sqlPct}%`} color={c.emerald} />
+                        <SummaryPill c={c} label="Mağaza" value={`${storePct}%`} color={c.amber} />
+                        <SummaryPill c={c} label="Offline" value={offlineDevices.length} color={offlineDevices.length > 0 ? c.rose : c.emerald} />
+                        <div className="hidden h-5 w-px xl:block" style={{ background: c.border }} />
+                        <div className="flex gap-2">
+                            <Link
+                                to="/offline-logs"
+                                className="rounded-lg border px-3 py-2 text-xs font-semibold transition-colors hover:bg-white/[0.06]"
+                                style={{ color: c.text, borderColor: c.border, background: c.cardSoft }}
+                            >
+                                Kesintiler
+                            </Link>
+                            <Link
+                                to="/devices"
+                                className="rounded-lg border px-3 py-2 text-xs font-semibold transition-colors hover:bg-white/[0.06]"
+                                style={{ color: c.text, borderColor: c.border, background: c.cardSoft }}
+                            >
+                                Cihazlar
+                            </Link>
+                        </div>
                     </div>
                 </div>
             </section>
@@ -379,31 +454,10 @@ const DashboardPage: React.FC = () => {
             {/* ═══ ERROR NOTICES ═══ */}
             {(dashboardError || sqlError) && (
                 <div className="grid gap-3 xl:grid-cols-2">
-                    {dashboardError && <Notice c={c} title="Agent ozeti gec geldi" message={dashboardError} />}
-                    {sqlError && <Notice c={c} title={sqlDevices.length > 0 ? "SQL matrisi cache gosteriyor" : "SQL matrisi bekliyor"} message={sqlError} />}
+                    {dashboardError && <Notice c={c} title="Agent özeti geç geldi" message={dashboardError} />}
+                    {sqlError && <Notice c={c} title={sqlDevices.length > 0 ? "SQL matrisi cache gösteriyor" : "SQL matrisi bekleniyor"} message={sqlError} />}
                 </div>
             )}
-
-            {/* ═══ KPI CARDS ═══ */}
-            <div className="grid items-start gap-4 sm:grid-cols-2 xl:grid-cols-[repeat(3,minmax(0,1fr))_1.2fr]">
-                <KpiCard c={c} icon={<Wifi />} title="Agent" value={`${agentPct}%`} sub={`${summary.online}/${summary.totalDevices} online`} accent={c.sky} glow={c.skyGlow} delay={0} percent={agentPct} />
-                <KpiCard c={c} icon={<Database />} title="SQL Matrisi" value={`${sqlPct}%`} sub={`${sqlOnline}/${sqlTracked} cevapliyor`} accent={c.emerald} glow={c.emeraldGlow} delay={1} percent={sqlPct} />
-                <KpiCard c={c} icon={<Building2 />} title="Magazalar" value={`${liveStoreCount}/${activeStoreCount || stores.length}`} sub={`${stores.length} toplam magaza`} accent={c.amber} glow={c.amberGlow} delay={2} percent={storePct} />
-                <DeviceDistributionSummaryCard
-                    c={c}
-                    delay={3}
-                    pcs={pcs.length}
-                    posDevices={posDevices.length}
-                    totalOnline={totalOnline}
-                    totalOffline={totalOffline}
-                    closedDevices={closedPos + closedPcs}
-                    pcOnline={pcOnline}
-                    posOnline={posOnline}
-                    closedPos={closedPos}
-                    closedPcs={closedPcs}
-                    onOpen={() => setIsDeviceDistributionOpen(true)}
-                />
-            </div>
 
             {/* ═══ MAIN GRID: Charts + Focus list ═══ */}
             <div className="grid gap-5 xl:grid-cols-[1fr_420px]">
@@ -415,14 +469,36 @@ const DashboardPage: React.FC = () => {
                             <div className="flex items-center gap-3">
                                 <Globe className="h-4 w-4" style={{ color: c.sky }} />
                                 <div>
-                                    <h3 className="text-sm font-semibold" style={{ color: c.text }}>Anlik Baglanti Durumu</h3>
+                                    <h3 className="text-sm font-semibold" style={{ color: c.text }}>Anlık Bağlantı Durumu</h3>
                                     <p className="text-xs" style={{ color: c.muted }}>{totalActive} aktif cihaz izleniyor</p>
                                 </div>
                             </div>
                             <div className="flex items-center gap-4">
+                                {/* Durum */}
                                 <div className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full" style={{ background: c.emerald }} /><span className="text-[10px]" style={{ color: c.muted }}>Online</span></div>
                                 <div className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full" style={{ background: c.rose }} /><span className="text-[10px]" style={{ color: c.muted }}>Offline</span></div>
-                                <div className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full" style={{ background: c.slate }} /><span className="text-[10px]" style={{ color: c.muted }}>Kapali</span></div>
+                                <div className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full" style={{ background: c.slate }} /><span className="text-[10px]" style={{ color: c.muted }}>Kapalı</span></div>
+                                {/* Tip ayrımı: şekil + renk */}
+                                <span className="text-[10px]" style={{ color: c.border }}>|</span>
+                                <div className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full border" style={{ borderColor: c.amber + "60", background: c.amber + "25" }} /><span className="text-[10px]" style={{ color: c.muted }}>Router</span></div>
+                                <div className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-[3px] border" style={{ borderColor: c.sky + "60", background: c.sky + "25" }} /><span className="text-[10px]" style={{ color: c.muted }}>PC</span></div>
+                                <div className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-md border" style={{ borderColor: c.violet + "60", background: c.violet + "25" }} /><span className="text-[10px]" style={{ color: c.muted }}>Geçici</span></div>
+                                <div className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-[1px] border" style={{ borderColor: c.emerald + "60", background: c.emerald + "25" }} /><span className="text-[10px]" style={{ color: c.muted }}>POS</span></div>
+                            </div>
+                        </div>
+                        {/* Router row */}
+                        <div className="mb-3">
+                            <div className="mb-2 flex items-center gap-2">
+                                <Wifi className="h-3.5 w-3.5" style={{ color: c.amber }} />
+                                <span className="text-xs font-semibold" style={{ color: c.text }}>Router</span>
+                                <span className="text-[10px]" style={{ color: c.muted }}>
+                                    ({routerOnline}/{activeRouters.length} online{closedRouters > 0 ? `, ${closedRouters} kapalı` : ""})
+                                </span>
+                            </div>
+                            <div className="flex flex-wrap gap-1.5">
+                                {routers.length > 0 ? [...routers].sort((a, b) => (a.storeCode ?? 0) - (b.storeCode ?? 0)).map((d) => (
+                                    <ConnectionDot key={d.deviceId} c={c} device={d} />
+                                )) : <span className="text-xs" style={{ color: c.muted }}>Router verisi yok</span>}
                             </div>
                         </div>
                         {/* PC row */}
@@ -430,7 +506,9 @@ const DashboardPage: React.FC = () => {
                             <div className="mb-2 flex items-center gap-2">
                                 <Laptop className="h-3.5 w-3.5" style={{ color: c.sky }} />
                                 <span className="text-xs font-semibold" style={{ color: c.text }}>PC</span>
-                                <span className="text-[10px]" style={{ color: c.muted }}>({pcOnline}/{pcs.length} online)</span>
+                                <span className="text-[10px]" style={{ color: c.muted }}>
+                                    ({pcOnline}/{activePcs.length} online{closedPcs > 0 ? `, ${closedPcs} kapalı` : ""})
+                                </span>
                             </div>
                             <div className="flex flex-wrap gap-1.5">
                                 {pcs.length > 0 ? [...pcs].sort((a, b) => (a.storeCode ?? 0) - (b.storeCode ?? 0)).map((d) => (
@@ -438,12 +516,29 @@ const DashboardPage: React.FC = () => {
                                 )) : <span className="text-xs" style={{ color: c.muted }}>PC verisi yok</span>}
                             </div>
                         </div>
+                        {/* Geçici PC row */}
+                        {geciciPcs.length > 0 && (
+                        <div className="mb-3">
+                            <div className="mb-2 flex items-center gap-2">
+                                <Monitor className="h-3.5 w-3.5" style={{ color: c.violet }} />
+                                <span className="text-xs font-semibold" style={{ color: c.text }}>Geçici PC</span>
+                                <span className="text-[10px]" style={{ color: c.muted }}>
+                                    ({geciciOnline}/{activeGecici.length} online{closedGecici > 0 ? `, ${closedGecici} kapalı` : ""})
+                                </span>
+                            </div>
+                            <div className="flex flex-wrap gap-1.5">
+                                {[...geciciPcs].sort((a, b) => (a.storeCode ?? 0) - (b.storeCode ?? 0)).map((d) => (
+                                    <ConnectionDot key={d.deviceId} c={c} device={d} />
+                                ))}
+                            </div>
+                        </div>
+                        )}
                         {/* POS row */}
                         <div>
                             <div className="mb-2 flex items-center gap-2">
                                 <MonitorSmartphone className="h-3.5 w-3.5" style={{ color: c.emerald }} />
                                 <span className="text-xs font-semibold" style={{ color: c.text }}>POS / Kasa</span>
-                                <span className="text-[10px]" style={{ color: c.muted }}>({posOnline}/{activePos.length} online{closedPos > 0 ? `, ${closedPos} kapali` : ""})</span>
+                                <span className="text-[10px]" style={{ color: c.muted }}>({posOnline}/{activePos.length} online{closedPos > 0 ? `, ${closedPos} kapalı` : ""})</span>
                             </div>
                             <div className="flex flex-wrap gap-1.5">
                                 {posDevices.length > 0 ? [...posDevices].sort((a, b) => (a.storeCode ?? 0) - (b.storeCode ?? 0)).map((d) => (
@@ -453,69 +548,83 @@ const DashboardPage: React.FC = () => {
                         </div>
                     </GlassCard>
 
-                    {/* Distribution & devices */}
-                    <div className="grid gap-4 lg:grid-cols-2">
-                        {/* Device distribution donut */}
-                        <GlassCard c={c}>
-                            <div className="mb-3 flex items-center justify-between">
-                                <div>
-                                    <h3 className="text-sm font-semibold" style={{ color: c.text }}>Cihaz Dagilimi</h3>
-                                    <p className="text-xs" style={{ color: c.muted }}>{pcs.length + posDevices.length} toplam cihaz</p>
-                                </div>
-                                <HardDrive className="h-4 w-4" style={{ color: c.amber }} />
-                            </div>
-                            <div className="flex items-center gap-6">
-                                {deviceDonut.length > 0 ? (
-                                    <ResponsiveContainer width={140} height={140}>
-                                        <PieChart>
-                                            <Pie data={deviceDonut} cx="50%" cy="50%" innerRadius={38} outerRadius={60} paddingAngle={2} dataKey="value" strokeWidth={0} animationBegin={0} animationDuration={1200} animationEasing="ease-out">
-                                                {deviceDonut.map((entry, i) => <Cell key={i} fill={entry.color} />)}
-                                            </Pie>
-                                            <Tooltip contentStyle={{ background: c.card, border: `1px solid ${c.border}`, borderRadius: 12, fontSize: 12, color: c.text }} />
-                                        </PieChart>
-                                    </ResponsiveContainer>
-                                ) : (
-                                    <div className="flex h-[140px] w-[140px] items-center justify-center text-sm" style={{ color: c.muted }}>--</div>
-                                )}
-                                <div className="flex-1 space-y-2">
-                                    <DeviceStat c={c} icon={<Laptop className="h-3.5 w-3.5" />} label="PC" online={pcs.length} total={pcs.length} color={c.sky} showTotal />
-                                    <DeviceStat c={c} icon={<MonitorSmartphone className="h-3.5 w-3.5" />} label="POS" online={posDevices.length} total={posDevices.length} color={c.emerald} showTotal />
-                                </div>
-                            </div>
-                        </GlassCard>
-
-                        {/* Progress bars */}
-                        <GlassCard c={c}>
-                            <div className="mb-3 flex items-center justify-between">
-                                <h3 className="text-sm font-semibold" style={{ color: c.text }}>Kapsama Oranlari</h3>
-                                <Activity className="h-4 w-4" style={{ color: c.emerald }} />
-                            </div>
-                            <div className="space-y-4">
-                                <ProgressLine c={c} label="Agent" value={agentPct} detail={`${summary.online}/${summary.totalDevices}`} color={c.sky} />
-                                <ProgressLine c={c} label="SQL" value={sqlPct} detail={`${sqlOnline}/${sqlTracked}`} color={c.emerald} />
-                                <ProgressLine c={c} label="Magaza" value={storePct} detail={`${liveStoreCount}/${activeStoreCount}`} color={c.amber} />
-                                <ProgressLine c={c} label="Saglik" value={healthPct} detail={`${summary.healthy}/${summary.totalDevices}`} color={c.violet} />
-                            </div>
-                        </GlassCard>
-                    </div>
+                    <GlassCard c={c}>
+                        <div className="mb-3 flex items-center justify-between">
+                            <h3 className="text-sm font-semibold" style={{ color: c.text }}>Kapsama Oranları</h3>
+                            <Activity className="h-4 w-4" style={{ color: c.emerald }} />
+                        </div>
+                        <div className="space-y-4">
+                            <ProgressLine c={c} label="Agent" value={agentPct} detail={`${summary.online}/${summary.totalDevices}`} color={c.sky} />
+                            <ProgressLine c={c} label="SQL" value={sqlPct} detail={`${sqlOnline}/${sqlTracked}`} color={c.emerald} />
+                            <ProgressLine c={c} label="Mağaza" value={storePct} detail={`${liveStoreCount}/${activeStoreCount}`} color={c.amber} />
+                            <ProgressLine c={c} label="Sağlık" value={healthPct} detail={`${summary.healthy}/${summary.totalDevices}`} color={c.violet} />
+                        </div>
+                    </GlassCard>
 
                 </div>
 
                 {/* ═══ RIGHT SIDEBAR ═══ */}
                 <div className="space-y-5">
+                    {/* Mobil hatta gectigi tahmin edilen router'lar */}
+                    {mobileRouters.length > 0 && (
+                        <GlassCard c={c}>
+                            <div className="mb-3 flex items-center justify-between">
+                                <div>
+                                    <h3 className="text-sm font-semibold flex items-center gap-2" style={{ color: c.text }}>
+                                        <Wifi className="h-4 w-4" style={{ color: c.amber }} />
+                                        Mobil Hatta Geçen Router'lar
+                                    </h3>
+                                    <p className="text-[10px]" style={{ color: c.muted }}>
+                                        {mobileRouters.length} mağaza 4.5G yedek hat şüphesi
+                                    </p>
+                                </div>
+                                <Link to="/ag-teshis?tab=router-hat" className="text-[10px] px-2 py-1 rounded border" style={{ borderColor: c.border, color: c.muted }}>
+                                    Detay
+                                </Link>
+                            </div>
+                            <div className="space-y-1.5 max-h-[260px] overflow-auto scrollbar-thin scrollbar-thumb-slate-700 scrollbar-track-transparent">
+                                {mobileRouters.slice(0, 12).map(r => {
+                                    const severe = r.class === 'MobileLikely';
+                                    const bg = severe ? c.roseGlow : c.track;
+                                    const dot = severe ? c.rose : c.amber;
+                                    return (
+                                        <Link key={r.deviceId} to={`/ag-teshis?tab=router-hat&store=${r.storeCode}`}
+                                            className="flex items-center gap-2 rounded-lg px-2.5 py-1.5 hover:opacity-90"
+                                            style={{ background: bg }}>
+                                            <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: dot }} />
+                                            <span className="text-[11px] font-medium truncate flex-1" style={{ color: c.text }}>
+                                                [{r.storeCode}] {r.storeName}
+                                            </span>
+                                            {r.avgRttMs != null && (
+                                                <span className="text-[10px] font-mono shrink-0" style={{ color: c.muted }}>
+                                                    {r.avgRttMs}ms
+                                                </span>
+                                            )}
+                                            {r.switchoverDetected && (
+                                                <span className="text-[9px] font-bold px-1.5 py-0.5 rounded shrink-0" style={{ background: c.amber + '22', color: c.amber }}>
+                                                    SWITCH
+                                                </span>
+                                            )}
+                                        </Link>
+                                    );
+                                })}
+                            </div>
+                        </GlassCard>
+                    )}
+
                     {/* Offline cihazlar — üstte */}
                     <GlassCard c={c}>
                         <div className="mb-3 flex items-center justify-between">
                             <div>
-                                <h3 className="text-sm font-semibold" style={{ color: c.text }}>Offline Cihazlar</h3>
-                                <p className="text-[10px]" style={{ color: c.muted }}>{offlineDevices.length} cihaz erisim disi</p>
+                                <h3 className="text-sm font-semibold" style={{ color: c.text }}>Çevrimdışı Cihazlar</h3>
+                                <p className="text-[10px]" style={{ color: c.muted }}>{offlineDevices.length} cihaz erişim dışı</p>
                             </div>
                             {offlineDevices.length > 0 && <span className="flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-bold text-white" style={{ background: c.rose }}>{offlineDevices.length}</span>}
                         </div>
                         {offlineDevices.length === 0 ? (
                             <div className="rounded-xl border border-dashed px-4 py-8 text-center" style={{ borderColor: c.emeraldBorder, background: c.emeraldGlow }}>
                                 <ShieldCheck className="mx-auto h-6 w-6" style={{ color: c.emerald }} />
-                                <p className="mt-2 text-xs font-medium" style={{ color: c.text }}>Tum cihazlar online</p>
+                                <p className="mt-2 text-xs font-medium" style={{ color: c.text }}>Tüm cihazlar online</p>
                             </div>
                         ) : (
                             <div className="space-y-1.5 max-h-[320px] overflow-auto scrollbar-thin scrollbar-thumb-slate-700 scrollbar-track-transparent">
@@ -534,12 +643,14 @@ const DashboardPage: React.FC = () => {
                                 <div className="text-sm font-bold" style={{ color: c.rose }}>{totalOffline}</div>
                                 <div className="text-[9px]" style={{ color: c.muted }}>Offline</div>
                             </div>
-                            {(closedPos > 0 || closedPcs > 0) && (
+                            {(closedPos > 0 || closedPcs > 0 || closedRouters > 0 || closedGecici > 0) && (
                                 <div className="flex-1 rounded-lg px-2.5 py-1.5 text-center" style={{ background: c.track }}>
-                                    <div className="text-sm font-bold" style={{ color: c.slate }}>{closedPos + closedPcs}</div>
-                                    <div className="text-[9px]" style={{ color: c.muted }}>Kapali</div>
+                                    <div className="text-sm font-bold" style={{ color: c.slate }}>{closedPos + closedPcs + closedRouters + closedGecici}</div>
+                                    <div className="text-[9px]" style={{ color: c.muted }}>Kapalı</div>
                                     <div className="flex justify-center gap-2 mt-0.5">
+                                        {closedRouters > 0 && <span className="text-[8px]" style={{ color: c.muted }}>{closedRouters} Router</span>}
                                         {closedPcs > 0 && <span className="text-[8px]" style={{ color: c.muted }}>{closedPcs} PC</span>}
+                                        {closedGecici > 0 && <span className="text-[8px]" style={{ color: c.muted }}>{closedGecici} Geçici</span>}
                                         {closedPos > 0 && <span className="text-[8px]" style={{ color: c.muted }}>{closedPos} Kasa</span>}
                                     </div>
                                 </div>
@@ -547,17 +658,17 @@ const DashboardPage: React.FC = () => {
                         </div>
                     </GlassCard>
 
-                    {/* Kesinti & Kapali magazalar — altta */}
+                    {/* Kesinti & Kapalı magazalar — altta */}
                     <GlassCard c={c}>
                         <div className="mb-4 flex items-center justify-between">
-                            <h3 className="text-sm font-semibold" style={{ color: c.text }}>Kesinti & Kapali Magazalar</h3>
+                            <h3 className="text-sm font-semibold" style={{ color: c.text }}>Kesinti & Kapalı Mağazalar</h3>
                             {attention.length > 0 && <span className="flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-bold text-white" style={{ background: issueCount > 0 ? c.rose : c.sky }}>{attention.length}</span>}
                         </div>
                         {attention.length === 0 ? (
                             <div className="rounded-2xl border border-dashed px-5 py-10 text-center" style={{ borderColor: c.emeraldBorder, background: c.emeraldGlow }}>
                                 <ShieldCheck className="mx-auto h-8 w-8" style={{ color: c.emerald }} />
-                                <p className="mt-3 text-sm font-medium" style={{ color: c.text }}>Acik kesinti yok</p>
-                                <p className="mt-1 text-xs" style={{ color: c.muted }}>Tum hatlar temiz gorunuyor.</p>
+                                <p className="mt-3 text-sm font-medium" style={{ color: c.text }}>Açık kesinti yok</p>
+                                <p className="mt-1 text-xs" style={{ color: c.muted }}>Tüm hatlar temiz görünüyor.</p>
                             </div>
                         ) : (
                             <div className="space-y-2">
@@ -566,32 +677,11 @@ const DashboardPage: React.FC = () => {
                                 ))}
                             </div>
                         )}
+                        <AgendaTopicsPanel c={c} />
                     </GlassCard>
                 </div>
             </div>
 
-            <Modal
-                isOpen={isDeviceDistributionOpen}
-                onClose={() => setIsDeviceDistributionOpen(false)}
-                title="Cihaz Dagilimi"
-                size="md"
-            >
-                <DeviceDistributionModalContent
-                    c={c}
-                    pcs={pcs.length}
-                    posDevices={posDevices.length}
-                    totalOnline={totalOnline}
-                    totalOffline={totalOffline}
-                    closedDevices={closedPos + closedPcs}
-                    pcOnline={pcOnline}
-                    posOnline={posOnline}
-                    pcOffline={pcOffline}
-                    posOffline={posOffline}
-                    closedPos={closedPos}
-                    closedPcs={closedPcs}
-                    deviceDonut={deviceDonut}
-                />
-            </Modal>
         </div>
     );
 };
@@ -599,6 +689,14 @@ const DashboardPage: React.FC = () => {
 /* ═══════════════════════════════════════════
    SUB-COMPONENTS
    ═══════════════════════════════════════════ */
+
+const SummaryPill: React.FC<{ c: Palette; label: string; value: string | number; color: string }> = ({ c, label, value, color }) => (
+    <div className="flex items-center gap-2 rounded-lg border px-3 py-2" style={{ background: c.cardSoft, borderColor: c.border }}>
+        <span className="h-1.5 w-1.5 rounded-full" style={{ background: color }} />
+        <span className="text-[11px] font-semibold" style={{ color: c.muted }}>{label}</span>
+        <span className="text-xs font-bold tabular-nums" style={{ color }}>{value}</span>
+    </div>
+);
 
 function storeToneColor(status: StoreSummary["status"], c: Palette) {
     if (status === "critical") return c.rose;
@@ -611,22 +709,35 @@ const OfflineRow: React.FC<{ c: Palette; device: SqlDeviceWithStatus }> = ({ c, 
     const d = device;
     const type = (d.deviceType || "").toUpperCase();
     const isPC = type === "PC";
-    const label = isPC ? "PC" : type.replace("KASA-", "K");
+    const isRouter = type === "ROUTER";
+    const isGecici = type === "GECICI";
+    const label = isRouter ? "RTR" : isPC ? "PC" : isGecici ? "GEÇ" : type.replace("KASA-", "K");
+    const isPingSqlDown = !isRouter && d.pingReachable === true && d.sqlReachable === false;
+    const badgeBg = isPingSqlDown ? c.amberSoft : isRouter ? c.amberSoft : isPC ? c.skySoft : isGecici ? c.violetSoft : c.emeraldSoft;
+    const badgeColor = isPingSqlDown ? c.amber : isRouter ? c.amber : isPC ? c.sky : isGecici ? c.violet : c.emerald;
     const mins = d.lastSeen ? Math.max(0, Math.floor((Date.now() - new Date(d.lastSeen).getTime()) / 60000)) : null;
     const dur = mins === null ? "?" : mins < 60 ? `${mins}dk` : mins < 1440 ? `${Math.floor(mins / 60)}sa ${mins % 60}dk` : `${Math.floor(mins / 1440)}g ${Math.floor((mins % 1440) / 60)}sa`;
     const urgent = mins !== null && mins >= 30;
+    const dotColor = isPingSqlDown ? c.amber : c.rose;
     return (
-        <div className="flex items-center gap-2 rounded-lg border px-2.5 py-2" style={{ background: c.cardSoft, borderColor: urgent ? c.roseBorder : c.border }}>
-            <span className="h-2 w-2 shrink-0 rounded-full animate-pulse" style={{ background: c.rose }} />
+        <div className="flex items-center gap-2 rounded-lg border px-2.5 py-2" style={{ background: c.cardSoft, borderColor: isPingSqlDown ? c.amberBorder : urgent ? c.roseBorder : c.border }}>
+            <span className="h-2 w-2 shrink-0 rounded-full animate-pulse" style={{ background: dotColor }} />
             <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-1.5">
-                    <span className="rounded px-1 py-0.5 text-[8px] font-bold" style={{ background: isPC ? c.skySoft : c.amberSoft, color: isPC ? c.sky : c.amber }}>{label}</span>
+                    <span className="rounded px-1 py-0.5 text-[8px] font-bold" style={{ background: badgeBg, color: badgeColor }}>{label}</span>
                     <span className="text-[11px] font-semibold truncate" style={{ color: c.text }}>[{d.storeCode}] {d.storeName}</span>
                 </div>
-                <div className="text-[10px] font-mono" style={{ color: c.subtle }}>{d.calculatedIpAddress}</div>
+                <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-mono" style={{ color: c.subtle }}>{d.calculatedIpAddress}</span>
+                    {!isRouter && d.pingReachable != null && (
+                        <span className="text-[8px] font-bold" style={{ color: isPingSqlDown ? c.amber : c.rose }}>
+                            {isPingSqlDown ? "SQL KAPALI" : "ERISIM YOK"}
+                        </span>
+                    )}
+                </div>
             </div>
             <div className="shrink-0 text-right">
-                <div className="text-xs font-bold" style={{ color: urgent ? c.rose : c.amber }}>{dur}</div>
+                <div className="text-xs font-bold" style={{ color: isPingSqlDown ? c.amber : urgent ? c.rose : c.amber }}>{dur}</div>
             </div>
         </div>
     );
@@ -635,20 +746,45 @@ const OfflineRow: React.FC<{ c: Palette; device: SqlDeviceWithStatus }> = ({ c, 
 const ConnectionDot: React.FC<{ c: Palette; device: SqlDeviceWithStatus }> = ({ c, device }) => {
     const isClosed = device.isTemporarilyClosed;
     const isOnline = device.isOnline;
-    const color = isClosed ? c.slate : isOnline ? c.emerald : c.rose;
-    const label = `${device.storeCode} / ${device.deviceName || device.deviceType}${isClosed ? " (kapali)" : isOnline ? " — online" : " — OFFLINE"}${device.lastSeen ? `\nSon: ${fmtDuration(device.lastSeen)}` : ""}`;
+    const type = (device.deviceType || "").toUpperCase();
+    const isRouter = type === "ROUTER";
+    const isPC = type === "PC";
+    const isGecici = type === "GECICI";
+    // Ping OK ama SQL kapali → cihaz acik, SQL servis sorunu (sari)
+    const isPingOnlySqlDown = !isRouter && !isClosed && !isOnline
+        && device.pingReachable === true && device.sqlReachable === false;
+    // Router: amber accent, PC: sky accent, Gecici: violet accent, POS: emerald accent
+    const typeAccent = isRouter ? c.amber : isPC ? c.sky : isGecici ? c.violet : c.emerald;
+    const color = isClosed ? c.slate : isOnline ? typeAccent : isPingOnlySqlDown ? c.amber : c.rose;
+    const typeName = isRouter ? "Router" : isPC ? "PC" : isGecici ? "Geçici PC" : device.deviceName || device.deviceType;
+    const statusText = isClosed ? " (kapalı)" : isOnline ? " — online"
+        : isPingOnlySqlDown ? " — SQL KAPALI (cihaz acik)" : " — OFFLINE";
+    const pingStr = device.pingReachable === true ? "OK" : device.pingReachable === false ? "FAIL" : "—";
+    const sqlStr = device.sqlReachable === true ? "OK" : device.sqlReachable === false ? "FAIL" : "—";
+    const geciciLabel = isGecici ? `${device.deviceName || device.deviceId}` : "";
+    const label = `${device.storeCode} / ${typeName}${geciciLabel ? ` (${geciciLabel})` : ""}${statusText}${device.lastSeen ? `\nSon: ${fmtDuration(device.lastSeen)}` : ""}\n${device.calculatedIpAddress}${!isRouter ? `\nPing: ${pingStr} | SQL: ${sqlStr}` : ""}`;
+    // Router: circle, PC: rounded square, Gecici: rounded-md (hexagon-ish), POS: square
+    const shapeClass = isRouter
+        ? "rounded-full"
+        : isPC
+        ? "rounded-lg"
+        : isGecici
+        ? "rounded-md"
+        : "rounded-sm";
     return (
         <div
-            className="group relative flex h-7 w-7 cursor-default items-center justify-center rounded-lg border text-[8px] font-bold transition-all duration-200 hover:scale-125 hover:z-10"
+            className={`group relative flex h-7 w-7 cursor-default items-center justify-center ${isGecici ? "border-2 border-dashed" : "border"} text-[8px] font-bold transition-all duration-200 hover:scale-125 hover:z-10 ${shapeClass}`}
             style={{ background: color + "18", borderColor: color + "30", color, "--breathe-color": color + "40" } as React.CSSProperties}
             title={label}
         >
-            {device.storeCode}
+            {isGecici
+                ? (device.calculatedIpAddress || "").split(".").pop()
+                : device.storeCode}
             {!isClosed && !isOnline && (
-                <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full" style={{ background: c.rose, animation: "ms-pulse-ring 2.5s ease-out infinite" }} />
+                <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full" style={{ background: isPingOnlySqlDown ? c.amber : c.rose, animation: "ms-pulse-ring 2.5s ease-out infinite" }} />
             )}
             {isOnline && (
-                <span className="absolute inset-0 rounded-lg opacity-0 transition-opacity duration-200 group-hover:opacity-100" style={{ boxShadow: `0 0 12px ${color}50` }} />
+                <span className={`absolute inset-0 ${shapeClass} opacity-0 transition-opacity duration-200 group-hover:opacity-100`} style={{ boxShadow: `0 0 12px ${color}50` }} />
             )}
         </div>
     );
@@ -662,277 +798,6 @@ const GlassCard: React.FC<{ c: Palette; children: React.ReactNode; className?: s
         {children}
     </div>
 );
-
-const TimePill: React.FC<{ c: Palette; label: string; value: string; status?: "ok" | "error" | "cache" | "loading" }> = ({ c, label, value, status }) => (
-    <div className="flex items-center gap-2 rounded-xl border px-3 py-2" style={{ background: c.cardSoft, borderColor: c.border }}>
-        {status && (
-            <span
-                className="h-1.5 w-1.5 rounded-full"
-                style={{ background: status === "ok" ? c.emerald : status === "error" ? c.rose : status === "cache" ? c.amber : c.sky }}
-            />
-        )}
-        <div>
-            <div className="text-[9px] font-bold uppercase tracking-widest" style={{ color: c.subtle }}>{label}</div>
-            <div className="text-xs font-semibold" style={{ color: c.text }}>{value}</div>
-        </div>
-    </div>
-);
-
-const AnimatedRing: React.FC<{ percent: number; color: string; size?: number; strokeWidth?: number; delay?: number }> = ({ percent, color, size = 80, strokeWidth = 6, delay = 0 }) => {
-    const radius = (size - strokeWidth) / 2;
-    const circumference = 2 * Math.PI * radius;
-    const offset = circumference - (Math.min(percent, 100) / 100) * circumference;
-    return (
-        <svg width={size} height={size} className="shrink-0 -rotate-90 drop-shadow-lg" style={{ filter: `drop-shadow(0 0 8px ${color}40)` }}>
-            <circle cx={size / 2} cy={size / 2} r={radius} fill="none" stroke={color + "18"} strokeWidth={strokeWidth} />
-            <circle
-                cx={size / 2} cy={size / 2} r={radius} fill="none" stroke={`url(#grad-${delay})`} strokeWidth={strokeWidth}
-                strokeLinecap="round" strokeDasharray={circumference} strokeDashoffset={offset}
-                style={{ "--ring-circumference": String(circumference), "--ring-offset": String(offset), animation: `ms-ring-fill 1.5s cubic-bezier(0.16,1,0.3,1) ${delay}ms both` } as React.CSSProperties}
-            />
-            <defs>
-                <linearGradient id={`grad-${delay}`} x1="0%" y1="0%" x2="100%" y2="0%">
-                    <stop offset="0%" stopColor={color} stopOpacity="0.6" />
-                    <stop offset="100%" stopColor={color} stopOpacity="1" />
-                </linearGradient>
-            </defs>
-        </svg>
-    );
-};
-
-const KpiCard: React.FC<{ c: Palette; icon: React.ReactNode; title: string; value: string; sub: string; accent: string; glow: string; delay: number; percent?: number }> = ({ c, icon, title, value, sub, accent, glow, delay, percent }) => {
-    const numericValue = parseInt(value) || 0;
-    const animatedVal = useAnimatedNumber(numericValue, 1200);
-    const displayValue = value.includes("%") ? `${animatedVal}%` : value.includes("/") ? value : `${animatedVal}`;
-
-    return (
-        <div
-            className="group relative overflow-hidden rounded-2xl border p-5 ms-fade-up ms-glass-hover"
-            style={{ background: c.card, borderColor: c.border, boxShadow: `0 8px 32px ${c.shadow}`, animationDelay: `${delay * 120}ms` }}
-        >
-            {/* Animated gradient background */}
-            <div
-                className="pointer-events-none absolute inset-0 opacity-0 transition-opacity duration-500 group-hover:opacity-100"
-                style={{ background: `linear-gradient(135deg, ${accent}08 0%, ${accent}15 50%, transparent 100%)` }}
-            />
-            {/* Breathing glow orb */}
-            <div
-                className="pointer-events-none absolute -right-6 -top-6 h-28 w-28 rounded-full"
-                style={{ background: `radial-gradient(circle, ${accent}25 0%, transparent 70%)`, animation: `ms-glow-breathe 4s ease-in-out infinite`, animationDelay: `${delay * 300}ms` }}
-            />
-            <div className="relative flex items-center gap-4">
-                {/* Animated ring with icon center */}
-                {percent !== undefined ? (
-                    <div className="relative shrink-0">
-                        <AnimatedRing percent={percent} color={accent} delay={delay * 120 + 400} />
-                        <div className="absolute inset-0 flex flex-col items-center justify-center">
-                            <span className="text-lg font-black" style={{ color: accent, animation: `ms-number-pop 0.6s cubic-bezier(0.16,1,0.3,1) ${delay * 120 + 600}ms both` }}>{Math.min(percent, 100)}</span>
-                            <span className="text-[8px] font-bold uppercase" style={{ color: accent + "90" }}>%</span>
-                        </div>
-                    </div>
-                ) : (
-                    <div className="relative shrink-0 flex h-[80px] w-[80px] items-center justify-center">
-                        <div className="flex h-14 w-14 items-center justify-center rounded-2xl" style={{ background: `linear-gradient(135deg, ${accent}20, ${accent}35)`, boxShadow: `0 4px 20px ${accent}25` }}>
-                            {React.cloneElement(icon as React.ReactElement, { className: "h-6 w-6", style: { color: accent } })}
-                        </div>
-                        <div className="absolute inset-0 rounded-full" style={{ border: `2px solid ${accent}15` }} />
-                    </div>
-                )}
-                <div className="min-w-0 flex-1">
-                    <div className="text-[10px] font-bold uppercase tracking-widest" style={{ color: c.subtle }}>{title}</div>
-                    <div className="mt-1 text-3xl font-black tracking-tight" style={{ color: c.text }}>{displayValue}</div>
-                    <div className="mt-1 text-xs" style={{ color: c.muted }}>{sub}</div>
-                </div>
-                {/* Accent icon top-right */}
-                <div className="absolute right-0 top-0 p-1" style={{ color: accent + "30" }}>
-                    {React.cloneElement(icon as React.ReactElement, { className: "h-8 w-8" })}
-                </div>
-            </div>
-        </div>
-    );
-};
-
-const DeviceDistributionSummaryCard: React.FC<{
-    c: Palette;
-    delay: number;
-    pcs: number;
-    posDevices: number;
-    totalOnline: number;
-    totalOffline: number;
-    closedDevices: number;
-    pcOnline: number;
-    posOnline: number;
-    closedPos: number;
-    closedPcs: number;
-    onOpen: () => void;
-}> = ({ c, delay, pcs, posDevices, totalOnline, totalOffline, closedDevices, pcOnline, posOnline, closedPos, closedPcs, onOpen }) => {
-    const totalDevices = pcs + posDevices;
-    const onlinePct = pct(totalOnline, Math.max(totalDevices - closedDevices, 0));
-
-    return (
-        <button
-            type="button"
-            onClick={onOpen}
-            className="sm:col-span-2 xl:col-span-1 self-start text-left focus:outline-none"
-        >
-            <GlassCard
-                c={c}
-                className="h-full border-none p-0"
-                style={{ animationDelay: `${delay * 120}ms`, background: `linear-gradient(145deg, ${c.card} 0%, ${c.cardSoft} 100%)`, boxShadow: `0 14px 36px ${c.shadow}` }}
-            >
-                <div className="flex flex-col gap-3 p-5">
-                    <div className="flex items-start justify-between gap-3">
-                        <div>
-                            <h3 className="text-sm font-semibold" style={{ color: c.text }}>Cihaz Dagilimi</h3>
-                            <p className="text-xs" style={{ color: c.muted }}>{totalDevices} cihaz tek bakista</p>
-                        </div>
-                        <div className="flex h-9 w-9 items-center justify-center rounded-2xl" style={{ background: `linear-gradient(135deg, ${c.amberSoft}, ${c.skySoft})`, color: c.text }}>
-                            <HardDrive className="h-4 w-4" />
-                        </div>
-                    </div>
-
-                    <div className="grid grid-cols-3 gap-2">
-                        <CompactMetric c={c} label="Online" value={`${onlinePct}%`} hint={`${totalOnline}`} color={c.emerald} compact />
-                        <CompactMetric c={c} label="Offline" value={`${totalOffline}`} hint="sorun" color={c.rose} compact />
-                        <CompactMetric c={c} label="Kapali" value={`${closedDevices}`} hint="beklemede" color={c.slate} compact />
-                    </div>
-
-                    <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-1">
-                        <MiniDistributionRow c={c} label="PC" value={pcs} online={pcOnline} closed={closedPcs} color={c.sky} compact />
-                        <MiniDistributionRow c={c} label="POS" value={posDevices} online={posOnline} closed={closedPos} color={c.emerald} compact />
-                    </div>
-
-                    <div className="flex items-center justify-between rounded-2xl border px-3 py-2" style={{ background: c.cardAlt, borderColor: c.border }}>
-                        <div className="text-[11px] font-medium" style={{ color: c.text }}>Detayi ac</div>
-                        <ChevronRight className="h-4 w-4" style={{ color: c.subtle }} />
-                    </div>
-                </div>
-            </GlassCard>
-        </button>
-    );
-};
-
-const DeviceDistributionModalContent: React.FC<{
-    c: Palette;
-    pcs: number;
-    posDevices: number;
-    totalOnline: number;
-    totalOffline: number;
-    closedDevices: number;
-    pcOnline: number;
-    posOnline: number;
-    pcOffline: number;
-    posOffline: number;
-    closedPos: number;
-    closedPcs: number;
-    deviceDonut: Array<{ name: string; value: number; color: string }>;
-}> = ({ c, pcs, posDevices, totalOnline, totalOffline, closedDevices, pcOnline, posOnline, pcOffline, posOffline, closedPos, closedPcs, deviceDonut }) => {
-    const totalDevices = pcs + posDevices;
-    const segments = [
-        { label: "PC", total: pcs, online: pcOnline, offline: pcOffline, closed: closedPcs, color: c.sky },
-        { label: "POS", total: posDevices, online: posOnline, offline: posOffline, closed: closedPos, color: c.emerald },
-    ];
-
-    return (
-        <div className="space-y-5">
-            <div className="grid gap-3 sm:grid-cols-4">
-                <CompactMetric c={c} label="Toplam" value={`${totalDevices}`} hint="cihaz" color={c.text} />
-                <CompactMetric c={c} label="Online" value={`${totalOnline}`} hint="aktif" color={c.emerald} />
-                <CompactMetric c={c} label="Offline" value={`${totalOffline}`} hint="erisim disi" color={c.rose} />
-                <CompactMetric c={c} label="Kapali" value={`${closedDevices}`} hint="beklemede" color={c.slate} />
-            </div>
-
-            <div className="grid gap-5 lg:grid-cols-[240px_1fr]">
-                <div className="rounded-2xl border p-4" style={{ background: `linear-gradient(180deg, ${c.cardAlt}, ${c.cardSoft})`, borderColor: c.border }}>
-                    <div className="mb-3 flex items-center justify-between">
-                        <div>
-                            <div className="text-sm font-semibold" style={{ color: c.text }}>Tip Dagilimi</div>
-                            <div className="text-xs" style={{ color: c.muted }}>PC ve POS orani</div>
-                        </div>
-                        <HardDrive className="h-4 w-4" style={{ color: c.amber }} />
-                    </div>
-                    {deviceDonut.length > 0 ? (
-                        <div className="mx-auto h-[180px] w-[180px]">
-                            <ResponsiveContainer width="100%" height="100%">
-                                <PieChart>
-                                    <Pie data={deviceDonut} cx="50%" cy="50%" innerRadius={48} outerRadius={74} paddingAngle={3} dataKey="value" strokeWidth={0}>
-                                        {deviceDonut.map((entry, i) => <Cell key={i} fill={entry.color} />)}
-                                    </Pie>
-                                    <Tooltip contentStyle={{ background: c.card, border: `1px solid ${c.border}`, borderRadius: 12, fontSize: 12, color: c.text }} />
-                                </PieChart>
-                            </ResponsiveContainer>
-                        </div>
-                    ) : (
-                        <div className="flex h-[180px] items-center justify-center text-sm" style={{ color: c.muted }}>Veri yok</div>
-                    )}
-                    <div className="mt-3 flex flex-wrap gap-2">
-                        {deviceDonut.map((entry) => (
-                            <MiniTag key={entry.name} c={c} label={`${entry.name} ${entry.value}`} color={entry.color} />
-                        ))}
-                    </div>
-                </div>
-
-                <div className="space-y-3">
-                    {segments.map((segment) => (
-                        <div key={segment.label} className="rounded-2xl border p-4" style={{ background: c.cardAlt, borderColor: c.border }}>
-                            <div className="mb-3 flex items-center justify-between">
-                                <div>
-                                    <div className="text-sm font-semibold" style={{ color: c.text }}>{segment.label}</div>
-                                    <div className="text-xs" style={{ color: c.muted }}>{segment.total} cihaz</div>
-                                </div>
-                                <span className="rounded-full px-2.5 py-1 text-[10px] font-bold uppercase" style={{ background: segment.color + "18", color: segment.color }}>
-                                    {pct(segment.online, Math.max(segment.total - segment.closed, 0))}% online
-                                </span>
-                            </div>
-
-                            <div className="mb-3 flex h-2.5 overflow-hidden rounded-full" style={{ background: c.track }}>
-                                {segment.online > 0 && <div style={{ width: `${(segment.online / Math.max(segment.total, 1)) * 100}%`, background: segment.color }} />}
-                                {segment.offline > 0 && <div style={{ width: `${(segment.offline / Math.max(segment.total, 1)) * 100}%`, background: c.rose }} />}
-                                {segment.closed > 0 && <div style={{ width: `${(segment.closed / Math.max(segment.total, 1)) * 100}%`, background: c.slate }} />}
-                            </div>
-
-                            <div className="grid grid-cols-3 gap-2">
-                                <CompactMetric c={c} label="Online" value={`${segment.online}`} hint="bagli" color={segment.color} />
-                                <CompactMetric c={c} label="Offline" value={`${segment.offline}`} hint="sorunlu" color={c.rose} />
-                                <CompactMetric c={c} label="Kapali" value={`${segment.closed}`} hint="beklemede" color={c.slate} />
-                            </div>
-                        </div>
-                    ))}
-                </div>
-            </div>
-        </div>
-    );
-};
-
-const CompactMetric: React.FC<{ c: Palette; label: string; value: string; hint: string; color: string; compact?: boolean }> = ({ c, label, value, hint, color, compact }) => (
-    <div className={compact ? "rounded-2xl border px-3 py-2.5" : "rounded-2xl border px-3 py-3"} style={{ background: `linear-gradient(135deg, ${c.cardSoft}, ${color === c.text ? c.cardSoft : color + "08"})`, borderColor: c.border }}>
-        <div className="text-[9px] font-bold uppercase tracking-widest" style={{ color: c.subtle }}>{label}</div>
-        <div className={compact ? "mt-1 text-lg font-black tabular-nums" : "mt-1 text-xl font-black tabular-nums"} style={{ color }}>{value}</div>
-        <div className="text-[10px]" style={{ color: c.muted }}>{hint}</div>
-    </div>
-);
-
-const MiniDistributionRow: React.FC<{ c: Palette; label: string; value: number; online: number; closed: number; color: string; compact?: boolean }> = ({ c, label, value, online, closed, color, compact }) => {
-    const offline = Math.max(value - online - closed, 0);
-    return (
-        <div className={compact ? "rounded-2xl border px-3 py-2.5" : "rounded-2xl border px-3 py-3"} style={{ background: c.cardAlt, borderColor: c.border }}>
-            <div className={compact ? "mb-1.5 flex items-center justify-between" : "mb-2 flex items-center justify-between"}>
-                <span className="text-xs font-semibold" style={{ color: c.text }}>{label}</span>
-                <span className="text-[10px] font-bold uppercase" style={{ color }}>{value} cihaz</span>
-            </div>
-            <div className="flex h-2 overflow-hidden rounded-full" style={{ background: c.track }}>
-                {online > 0 && <div style={{ width: `${(online / Math.max(value, 1)) * 100}%`, background: color }} />}
-                {offline > 0 && <div style={{ width: `${(offline / Math.max(value, 1)) * 100}%`, background: c.rose }} />}
-                {closed > 0 && <div style={{ width: `${(closed / Math.max(value, 1)) * 100}%`, background: c.slate }} />}
-            </div>
-            <div className={compact ? "mt-1.5 flex items-center justify-between text-[10px]" : "mt-2 flex items-center justify-between text-[10px]"} style={{ color: c.muted }}>
-                <span>{online} online</span>
-                <span>{offline} offline</span>
-                <span>{closed} kapali</span>
-            </div>
-        </div>
-    );
-};
 
 const Notice: React.FC<{ c: Palette; title: string; message: string }> = ({ c, title, message }) => (
     <div className="flex items-start gap-3 rounded-2xl border p-4" style={{ background: c.roseSoft, borderColor: c.roseBorder }}>
@@ -968,24 +833,9 @@ const ProgressLine: React.FC<{ c: Palette; label: string; value: number; detail:
     );
 };
 
-const DeviceStat: React.FC<{ c: Palette; icon: React.ReactNode; label: string; online: number; total: number; color: string; isClosed?: boolean; showTotal?: boolean }> = ({ c, icon, label, online, total, color, isClosed, showTotal }) => {
-    const animatedVal = useAnimatedNumber(total, 1200);
-    return (
-        <div className="flex items-center gap-3 rounded-xl border px-3 py-2 ms-fade-up" style={{ background: c.cardSoft, borderColor: c.border }}>
-            <div style={{ color }}>{icon}</div>
-            <div className="flex-1">
-                <div className="text-xs font-semibold" style={{ color: c.text }}>{label}</div>
-                <div className="text-[10px] font-semibold tabular-nums" style={{ color: showTotal ? color : c.muted }}>
-                    {showTotal ? `${animatedVal} cihaz` : isClosed ? `${total} beklemede` : `${online}/${total} online`}
-                </div>
-            </div>
-        </div>
-    );
-};
-
 const StoreCard: React.FC<{ c: Palette; store: StoreSummary; rank: number }> = ({ c, store, rank }) => {
     const color = storeToneColor(store.status, c);
-    const statusLabel = store.status === "critical" ? "Kritik" : store.status === "watch" ? "Izleme" : store.status === "closed" ? "Kapali" : "Stabil";
+    const statusLabel = store.status === "critical" ? "Kritik" : store.status === "watch" ? "Izleme" : store.status === "closed" ? "Kapalı" : "Stabil";
     const isCritical = store.status === "critical";
     return (
         <div
@@ -1003,7 +853,7 @@ const StoreCard: React.FC<{ c: Palette; store: StoreSummary; rank: number }> = (
                 <div className="mt-1 flex items-center gap-2">
                     <span className="rounded-full px-2 py-0.5 text-[9px] font-bold uppercase" style={{ background: color + "20", color, boxShadow: isCritical ? `0 0 8px ${color}25` : "none" }}>{statusLabel}</span>
                     <span className="text-[10px]" style={{ color: c.subtle }}>
-                        {store.status === "closed" ? (store.reason || "Planli kapali") : `${store.onlinePos}/${store.activePos} POS`}
+                        {store.status === "closed" ? (store.reason || "Planlı kapalı") : `${store.onlinePos}/${store.activePos} POS`}
                     </span>
                     {store.since && <span className="text-[10px] font-semibold" style={{ color }}>{fmtDuration(store.since)}</span>}
                 </div>
@@ -1011,24 +861,5 @@ const StoreCard: React.FC<{ c: Palette; store: StoreSummary; rank: number }> = (
         </div>
     );
 };
-
-const NavLink: React.FC<{ c: Palette; to: string; icon: React.ReactNode; label: string; accent: string }> = ({ c, to, icon, label, accent }) => (
-    <Link to={to} className="group flex items-center gap-3 rounded-xl border px-4 py-2.5 transition-all duration-200 hover:scale-[1.02]" style={{ background: c.cardSoft, borderColor: c.border }}>
-        <div className="flex h-8 w-8 items-center justify-center rounded-lg transition-all duration-200 group-hover:scale-110" style={{ background: accent + "15", color: accent }}>{icon}</div>
-        <span className="flex-1 text-sm font-medium" style={{ color: c.text }}>{label}</span>
-        <ChevronRight className="h-3.5 w-3.5 transition-transform duration-200 group-hover:translate-x-1" style={{ color: c.subtle }} />
-    </Link>
-);
-
-const MiniTag: React.FC<{ c: Palette; label: string; color: string }> = ({ c, label, color }) => (
-    <span className="rounded-full px-2 py-0.5 text-[10px] font-semibold" style={{ background: color + "18", color }}>{label}</span>
-);
-
-const QuickStat: React.FC<{ c: Palette; label: string; value: string; color: string }> = ({ c, label, value, color }) => (
-    <div className="rounded-xl border px-3 py-3" style={{ background: `linear-gradient(135deg, ${c.cardSoft}, ${color}06)`, borderColor: c.border }}>
-        <div className="text-[9px] font-bold uppercase tracking-widest" style={{ color: c.subtle }}>{label}</div>
-        <div className="mt-1.5 text-2xl font-black tabular-nums" style={{ color, textShadow: `0 0 20px ${color}20` }}>{value}</div>
-    </div>
-);
 
 export default DashboardPage;

@@ -10,7 +10,11 @@ type SortKey = "deviceName" | "storeCode" | "diskCPercent" | "diskDPercent";
 type SortDir = "asc" | "desc";
 type Tab = "pc" | "kasa";
 
-const DiskStatusPage: React.FC = () => {
+type DiskStatusPageProps = {
+    embedded?: boolean;
+};
+
+const DiskStatusPage: React.FC<DiskStatusPageProps> = ({ embedded = false }) => {
     const [activeTab, setActiveTab] = useState<Tab>("pc");
 
     const [pcDevices, setPcDevices] = useState<DiskDevice[]>([]);
@@ -109,7 +113,7 @@ const DiskStatusPage: React.FC = () => {
     };
 
     return (
-        <div className="p-6 space-y-6 bg-transparent min-h-screen text-slate-200">
+        <div className={embedded ? "space-y-6 bg-transparent text-slate-200" : "p-6 space-y-6 bg-transparent min-h-screen text-slate-200"}>
             {/* Header */}
             <div className="flex items-center justify-between">
                 <div>

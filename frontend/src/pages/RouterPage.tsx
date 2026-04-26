@@ -3,7 +3,7 @@ import { apiClient, SqlDeviceWithStatus } from "../lib/apiClient";
 import Spinner from "../components/ui/Spinner";
 import DeviceTabs from "../components/DeviceTabs";
 import {
-    Laptop, RefreshCw, Search, Wifi, WifiOff, Network, PauseCircle, PlayCircle,
+    Wifi, WifiOff, RefreshCw, Search, Network, PauseCircle, PlayCircle,
     Store, Eye, EyeOff,
 } from "lucide-react";
 
@@ -18,16 +18,16 @@ const fmtOffline = (lastSeen: string | null): string => {
 };
 
 /* ─── CSS (once) ─── */
-const STYLE_ID = "ms-pc-breathe";
+const STYLE_ID = "ms-router-breathe";
 if (typeof document !== "undefined" && !document.getElementById(STYLE_ID)) {
     const s = document.createElement("style");
     s.id = STYLE_ID;
     s.textContent = `
-        @keyframes ms-breathe {
-            0%,100% { box-shadow: 0 0 6px rgba(16,185,129,0.4); }
-            50%     { box-shadow: 0 0 18px rgba(16,185,129,0.8); }
+        @keyframes ms-rtr-breathe {
+            0%,100% { box-shadow: 0 0 6px rgba(245,158,11,0.4); }
+            50%     { box-shadow: 0 0 18px rgba(245,158,11,0.8); }
         }
-        .ms-breathe { animation: ms-breathe 3s ease-in-out infinite; }
+        .ms-rtr-breathe { animation: ms-rtr-breathe 3s ease-in-out infinite; }
     `;
     document.head.appendChild(s);
 }
@@ -35,7 +35,7 @@ if (typeof document !== "undefined" && !document.getElementById(STYLE_ID)) {
 /* ═══════════════════════════════════════════
    MAIN PAGE
    ═══════════════════════════════════════════ */
-const BilgisayarlarPage: React.FC = () => {
+const RouterPage: React.FC = () => {
     const [devices, setDevices] = useState<SqlDeviceWithStatus[]>([]);
     const [search, setSearch] = useState("");
     const [isLoading, setIsLoading] = useState(true);
@@ -51,14 +51,10 @@ const BilgisayarlarPage: React.FC = () => {
                 if (!silent) setIsLoading(true);
                 const data = await apiClient.getSqlDevicesWithStatus({ timeoutMs: 500, maxConcurrency: 40 });
                 if (alive) {
-                    const t = (data ?? []).filter(d => {
-                        const dt = d.deviceType?.toUpperCase();
-                        return dt === "PC" || dt === "GECICI";
-                    });
-                    setDevices(t);
+                    setDevices((data ?? []).filter(d => d.deviceType?.toUpperCase() === "ROUTER"));
                     setLastUpdated(new Date());
                 }
-            } catch (err) { console.error("PC load failed:", err); }
+            } catch (err) { console.error("Router load failed:", err); }
             finally { if (alive && !silent) setIsLoading(false); }
         };
         load();
@@ -89,8 +85,7 @@ const BilgisayarlarPage: React.FC = () => {
         if (q) list = list.filter(d =>
             d.storeName.toLowerCase().includes(q) ||
             String(d.storeCode).includes(q) ||
-            d.calculatedIpAddress.includes(q) ||
-            d.deviceName.toLowerCase().includes(q)
+            d.calculatedIpAddress.includes(q)
         );
         if (statusFilter === "online") list = list.filter(d => d.isOnline && !d.isTemporarilyClosed);
         if (statusFilter === "offline") list = list.filter(d => !d.isOnline && !d.isTemporarilyClosed);
@@ -107,13 +102,13 @@ const BilgisayarlarPage: React.FC = () => {
             {/* ═══ Header ═══ */}
             <div className="flex items-center justify-between">
                 <h1 className="text-2xl font-bold text-white flex items-center gap-3">
-                    <Laptop className="w-7 h-7 text-sky-500" />
-                    Bilgisayarlar
+                    <Wifi className="w-7 h-7 text-amber-500" />
+                    Router Yonetimi
                 </h1>
                 <div className="flex items-center gap-3 text-xs text-slate-400 font-mono bg-slate-900/40 px-4 py-2 rounded-xl border border-slate-700/50">
                     Son: {lastUpdated.toLocaleTimeString("tr-TR")}
                     <button onClick={() => window.location.reload()} className="p-1.5 bg-slate-800 hover:bg-slate-700 rounded-lg border border-slate-700/50" title="Yenile">
-                        <RefreshCw className="w-3.5 h-3.5 text-sky-500" />
+                        <RefreshCw className="w-3.5 h-3.5 text-amber-500" />
                     </button>
                 </div>
             </div>
@@ -132,19 +127,19 @@ const BilgisayarlarPage: React.FC = () => {
                     <input
                         type="text" placeholder="Magaza adi, kod veya IP..."
                         value={search} onChange={e => setSearch(e.target.value)}
-                        className="w-full pl-10 pr-4 py-2.5 bg-slate-800/50 border border-slate-600/50 rounded-lg text-white placeholder-slate-500 text-sm focus:outline-none focus:border-sky-500/50"
+                        className="w-full pl-10 pr-4 py-2.5 bg-slate-800/50 border border-slate-600/50 rounded-lg text-white placeholder-slate-500 text-sm focus:outline-none focus:border-amber-500/50"
                     />
                 </div>
                 {(["all", "online", "offline", "closed"] as const).map(f => (
                     <button key={f} onClick={() => setStatusFilter(f)}
-                        className={`px-3 py-2 rounded-lg text-xs font-bold transition-colors ${statusFilter === f ? "bg-sky-500/20 text-sky-400 border border-sky-500/30" : "text-slate-400 hover:text-white hover:bg-slate-800 border border-transparent"}`}>
+                        className={`px-3 py-2 rounded-lg text-xs font-bold transition-colors ${statusFilter === f ? "bg-amber-500/20 text-amber-400 border border-amber-500/30" : "text-slate-400 hover:text-white hover:bg-slate-800 border border-transparent"}`}>
                         {f === "all" ? "Hepsi" : f === "online" ? "Online" : f === "offline" ? "Offline" : "Kapali"}
                     </button>
                 ))}
                 <button onClick={() => setShowClosed(!showClosed)} className="p-2 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors" title={showClosed ? "Gecici kapalilari gizle" : "Gecici kapalilari goster"}>
                     {showClosed ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
                 </button>
-                <div className="text-xs text-slate-500 font-mono shrink-0">{filtered.length} Cihaz</div>
+                <div className="text-xs text-slate-500 font-mono shrink-0">{filtered.length} Router</div>
             </div>
 
             {/* ═══ Grid ═══ */}
@@ -157,7 +152,7 @@ const BilgisayarlarPage: React.FC = () => {
                 ) : (
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-4 pb-4">
                         {filtered.map(d => (
-                            <PcCard key={d.deviceId} device={d} onToggleClose={handleToggleClose} />
+                            <RouterCard key={d.deviceId} device={d} onToggleClose={handleToggleClose} />
                         ))}
                     </div>
                 )}
@@ -190,20 +185,19 @@ const StatCard: React.FC<{ icon: React.ReactNode; label: string; count: number; 
     );
 };
 
-const PcCard: React.FC<{ device: SqlDeviceWithStatus; onToggleClose: (id: string, closed: boolean, reason?: string) => void }> = ({ device, onToggleClose }) => {
+const RouterCard: React.FC<{ device: SqlDeviceWithStatus; onToggleClose: (id: string, closed: boolean, reason?: string) => void }> = ({ device, onToggleClose }) => {
     const [showDialog, setShowDialog] = useState(false);
     const [reason, setReason] = useState("");
     const d = device;
     const isClosed = d.isTemporarilyClosed;
     const isOn = d.isOnline && !isClosed;
     const isOff = !d.isOnline && !isClosed;
-    const isGecici = d.deviceType?.toUpperCase() === "GECICI";
 
     return (
         <div className={`relative rounded-2xl border p-4 flex flex-col gap-3 transition-all hover:-translate-y-0.5 hover:shadow-lg group
-            ${isClosed ? "border-amber-500/30 bg-slate-800/40" : isGecici ? "border-violet-500/30 bg-slate-800/60 border-dashed" : isOn ? "border-slate-700 bg-slate-800/60" : "border-rose-500/30 bg-slate-800/60"}`}>
+            ${isClosed ? "border-amber-500/30 bg-slate-800/40" : isOn ? "border-slate-700 bg-slate-800/60" : "border-rose-500/30 bg-slate-800/60"}`}>
             {/* Top beam */}
-            <div className={`absolute top-0 left-0 w-full h-1 rounded-t-2xl ${isClosed ? "bg-amber-500" : isGecici ? "bg-violet-500" : isOn ? "bg-emerald-500" : "bg-rose-500"}`} />
+            <div className={`absolute top-0 left-0 w-full h-1 rounded-t-2xl ${isClosed ? "bg-amber-500" : isOn ? "bg-amber-500/60" : "bg-rose-500"}`} />
 
             {/* Header row */}
             <div className="flex items-start justify-between gap-2">
@@ -211,14 +205,11 @@ const PcCard: React.FC<{ device: SqlDeviceWithStatus; onToggleClose: (id: string
                     {/* Breathing dot */}
                     <div className={`w-3 h-3 shrink-0 rounded-full
                         ${isClosed ? "bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.6)]"
-                            : isOn ? "bg-emerald-500 ms-breathe"
+                            : isOn ? "bg-amber-500 ms-rtr-breathe"
                             : "bg-rose-500 animate-pulse shadow-[0_0_8px_rgba(225,29,72,0.8)]"}`}
                     />
                     <div className="min-w-0">
-                        <div className="text-sm font-bold text-white truncate flex items-center gap-1.5">
-                            [{d.storeCode}] {d.storeName}
-                            {isGecici && <span className="shrink-0 px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-wider bg-violet-500/15 text-violet-400 border border-violet-500/25 rounded">Geçici</span>}
-                        </div>
+                        <div className="text-sm font-bold text-white truncate">[{d.storeCode}] {d.storeName}</div>
                         <div className="text-[11px] text-slate-400 font-mono">{d.calculatedIpAddress}</div>
                     </div>
                 </div>
@@ -266,7 +257,7 @@ const PcCard: React.FC<{ device: SqlDeviceWithStatus; onToggleClose: (id: string
             <div className="space-y-1.5 text-[11px]">
                 <div className="flex items-center gap-2 text-slate-400">
                     <Network className="w-3 h-3 shrink-0" />
-                    <span className="font-mono">{d.deviceName}</span>
+                    <span className="font-mono">Gateway: {d.calculatedIpAddress}</span>
                 </div>
                 <div className="flex items-center gap-2 text-slate-400">
                     <Store className="w-3 h-3 shrink-0" />
@@ -292,4 +283,4 @@ const PcCard: React.FC<{ device: SqlDeviceWithStatus; onToggleClose: (id: string
     );
 };
 
-export default BilgisayarlarPage;
+export default RouterPage;

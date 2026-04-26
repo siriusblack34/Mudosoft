@@ -51,98 +51,111 @@ public sealed class HeartbeatService : IHeartbeatSender
 
         if (!string.IsNullOrWhiteSpace(_config.BackendUrl))
             _http.BaseAddress = new Uri(_config.BackendUrl);
+
+        _http.Timeout = TimeSpan.FromSeconds(30);
     }
 
     public async Task SendHeartbeatAsync(CancellationToken token)
     {
-        try
+        const int maxAttempts = 2;
+
+        for (int attempt = 1; attempt <= maxAttempts; attempt++)
         {
-            // 1. RSA Public Key'i çek
-            var publicKey = await _rsaKeys.GetPublicKeyAsync(token);
-
-            var ip = _config.IpAddress;
-            if (string.IsNullOrWhiteSpace(ip))
-                ip = GetLocalIp(); 
-
-            // 💡 EKLENDİ: Agent Version'ı çalışma zamanından al
-            var agentVersion = Assembly.GetExecutingAssembly().GetName().Version?.ToString();
-            
-            // 💡 EKLENDİ: StoreCode'u config'den al
-            var storeCode = _config.StoreCode ?? "0"; 
-
-            // 2. Payload oluştur
-            var payloadDto = new DeviceHeartbeatDto
+            try
             {
-                DeviceId = _identityProvider.GetDeviceId(),
-                Hostname = Environment.MachineName,
-                IpAddress = ip,
-                
-                // Status
-                Online = true, 
-                
-                // Performance Metrics
-                CpuUsage = _sys.GetCpuUsage(),
-                RamUsage = _sys.GetRamUsage(),
-                DiskUsage = _sys.GetDiskUsage(),
-                
-                // System Info
-                OsVersion = _sys.GetOsName(),
-                PosVersion = "",
-                SqlVersion = "",
-                
-                // Hardware Inventory
-                CpuModel = _sys.GetCpuModel(),
-                TotalRamMB = _sys.GetTotalRamMB(),
-                TotalDiskGB = _sys.GetTotalDiskGB(),
-                GpuModel = _sys.GetGpuModel(),
+                // 1. RSA Public Key'i çek
+                var publicKey = await _rsaKeys.GetPublicKeyAsync(token);
 
-                // D Drive Metrics
-                DiskDUsage = _sys.GetDiskDUsage(),
-                TotalDiskDGB = _sys.GetTotalDiskDGB(),
-                
-                // User & Session
-                LastLoggedInUser = _sys.GetLastLoggedInUser(),
-                
-                // Uptime (actual boot time)
-                UptimeSince = _sys.GetSystemBootTime(),
-                
-                // Agent Info
-                AgentVersion = agentVersion, 
-                StoreCode = storeCode        
-            };
+                var ip = _config.IpAddress;
+                if (string.IsNullOrWhiteSpace(ip))
+                    ip = GetLocalIp();
 
-            // 3. Payload'u Şifrele (Hibrit Model)
-            var encryptedPayload = _aes.EncryptPayload(payloadDto, publicKey);
-            
-            // 4. HTTP İsteğini Hazırla
-            // 4. HTTP İsteğini Hazırla
-            var request = new HttpRequestMessage(HttpMethod.Post, "api/agent/report");
-            request.Headers.Add("X-Encrypted", "1"); // Request Header (Doğru yer)
-            
-            request.Content = new StringContent(
-                JsonSerializer.Serialize(encryptedPayload),
-                Encoding.UTF8,
-                "application/json");
+                var agentVersion = Assembly.GetExecutingAssembly().GetName().Version?.ToString();
+                var storeCode = _config.StoreCode ?? "0";
 
-            var resp = await _http.SendAsync(request, token);
+                // 2. Payload oluştur
+                var payloadDto = new DeviceHeartbeatDto
+                {
+                    DeviceId = _identityProvider.GetDeviceId(),
+                    Hostname = Environment.MachineName,
+                    IpAddress = ip,
 
-            if (resp.IsSuccessStatusCode)
-            {
-                _logger.LogInformation("💓 Heartbeat OK → {Code}", resp.StatusCode);
-                LastHeartbeatUtc = DateTime.UtcNow;
-                IsConnected = true;
+                    // Status
+                    Online = true,
+
+                    // Performance Metrics
+                    CpuUsage = _sys.GetCpuUsage(),
+                    RamUsage = _sys.GetRamUsage(),
+                    DiskUsage = _sys.GetDiskUsage(),
+
+                    // System Info
+                    OsVersion = _sys.GetOsName(),
+                    PosVersion = "",
+                    SqlVersion = "",
+
+                    // Hardware Inventory
+                    CpuModel = _sys.GetCpuModel(),
+                    TotalRamMB = _sys.GetTotalRamMB(),
+                    TotalDiskGB = _sys.GetTotalDiskGB(),
+                    GpuModel = _sys.GetGpuModel(),
+
+                    // D Drive Metrics
+                    DiskDUsage = _sys.GetDiskDUsage(),
+                    TotalDiskDGB = _sys.GetTotalDiskDGB(),
+
+                    // User & Session
+                    LastLoggedInUser = _sys.GetLastLoggedInUser(),
+
+                    // Uptime (actual boot time)
+                    UptimeSince = _sys.GetSystemBootTime(),
+
+                    // Agent Info
+                    AgentVersion = agentVersion,
+                    StoreCode = storeCode
+                };
+
+                // 3. Payload'u Şifrele (Hibrit Model)
+                var encryptedPayload = _aes.EncryptPayload(payloadDto, publicKey);
+
+                // 4. HTTP İsteğini Hazırla
+                var request = new HttpRequestMessage(HttpMethod.Post, "api/agent/report");
+                request.Headers.Add("X-Encrypted", "1");
+
+                request.Content = new StringContent(
+                    JsonSerializer.Serialize(encryptedPayload),
+                    Encoding.UTF8,
+                    "application/json");
+
+                var resp = await _http.SendAsync(request, token);
+
+                if (resp.IsSuccessStatusCode)
+                {
+                    _logger.LogInformation("💓 Heartbeat OK → {Code} (attempt {Attempt})", resp.StatusCode, attempt);
+                    LastHeartbeatUtc = DateTime.UtcNow;
+                    IsConnected = true;
+                    return; // Basarili — donguden cik
+                }
+                else
+                {
+                    _logger.LogWarning("💔 Heartbeat FAILED → {Code} (attempt {Attempt})", resp.StatusCode, attempt);
+                }
             }
-            else
+            catch (Exception ex) when (attempt < maxAttempts)
             {
-                _logger.LogWarning("💔 Heartbeat FAILED → {Code} - {Body}", resp.StatusCode, await resp.Content.ReadAsStringAsync(token));
+                _logger.LogWarning(ex, "Heartbeat attempt {Attempt} failed, retrying in 3s...", attempt);
+                await Task.Delay(3000, token);
+                continue;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Heartbeat ERROR (final attempt)");
                 IsConnected = false;
+                return;
             }
         }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Heartbeat ERROR");
-            IsConnected = false;
-        }
+
+        // Tum denemeler basarisiz
+        IsConnected = false;
     }
     
     private string GetLocalIp()

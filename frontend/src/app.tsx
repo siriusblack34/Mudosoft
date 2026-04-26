@@ -3,6 +3,7 @@ import routes from "./routes";
 import ErrorBoundary from "./components/common/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import { AuthProvider } from "./contexts/AuthContext";
+import { MenuVisibilityProvider } from "./contexts/MenuVisibilityContext";
 
 function App() {
   const router = createBrowserRouter(routes);
@@ -10,7 +11,9 @@ function App() {
     <ErrorBoundary>
       <ThemeProvider>
         <AuthProvider>
-          <RouterProvider router={router} />
+          <MenuVisibilityProvider>
+            <RouterProvider router={router} />
+          </MenuVisibilityProvider>
         </AuthProvider>
       </ThemeProvider>
     </ErrorBoundary>

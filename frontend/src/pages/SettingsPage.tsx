@@ -3,13 +3,17 @@ import { apiClient } from '../lib/apiClient';
 import { useAuth } from '../contexts/AuthContext';
 import {
   Users, Store, Plus, Trash2, KeyRound, Edit3, Save, X,
-  Shield, Wrench, Clock, CheckCircle, XCircle, Search, Lock
+  Shield, Wrench, Clock, CheckCircle, XCircle, Search, Lock, Menu, Eye, EyeOff,
+  Bell, Mail, Send, Wifi, RefreshCw
 } from 'lucide-react';
+import { useMenuVisibility } from '../contexts/MenuVisibilityContext';
+import { navGroups } from '../layout/sidebar';
 
 // ─── Types ───
 interface UserItem {
   id: number; username: string; fullName: string; role: string;
   isActive: boolean; createdAt: string; lastLoginAt: string | null;
+  email: string | null;
 }
 interface LoginHistoryItem {
   id: number; username: string; loginAt: string; ipAddress: string | null; success: boolean;
@@ -20,7 +24,7 @@ interface StoreDeviceItem {
   isTemporarilyClosed: boolean; temporaryCloseReason: string | null; lastSeen: string | null;
 }
 
-type Tab = 'password' | 'users' | 'stores' | 'logins';
+type Tab = 'password' | 'users' | 'stores' | 'logins' | 'menus' | 'alarms';
 
 const SettingsPage: React.FC = () => {
   const { isAdmin } = useAuth();
@@ -30,7 +34,9 @@ const SettingsPage: React.FC = () => {
     { id: 'password' as Tab, label: 'Şifre Değiştir', icon: Lock, adminOnly: false },
     { id: 'users' as Tab, label: 'Kullanıcı Yönetimi', icon: Users, adminOnly: true },
     { id: 'stores' as Tab, label: 'Mağaza / Kasa', icon: Store, adminOnly: true },
+    { id: 'menus' as Tab, label: 'Menü Yönetimi', icon: Menu, adminOnly: true },
     { id: 'logins' as Tab, label: 'Giriş Geçmişi', icon: Clock, adminOnly: false },
+    { id: 'alarms' as Tab, label: 'E-posta Alarmları', icon: Bell, adminOnly: true },
   ];
 
   const tabs = allTabs.filter(t => !t.adminOnly || isAdmin);
@@ -58,7 +64,9 @@ const SettingsPage: React.FC = () => {
       {tab === 'password' && <ChangePasswordPanel />}
       {tab === 'users' && isAdmin && <UserManagement />}
       {tab === 'stores' && isAdmin && <StoreManagement />}
+      {tab === 'menus' && isAdmin && <MenuManagementPanel />}
       {tab === 'logins' && <LoginHistoryPanel />}
+      {tab === 'alarms' && isAdmin && <EmailAlarmPanel />}
     </div>
   );
 };
@@ -72,8 +80,8 @@ const UserManagement: React.FC = () => {
   const [showCreate, setShowCreate] = useState(false);
   const [editId, setEditId] = useState<number | null>(null);
   const [resetId, setResetId] = useState<number | null>(null);
-  const [form, setForm] = useState({ username: '', password: '', fullName: '', role: 'Teknisyen' });
-  const [editForm, setEditForm] = useState({ fullName: '', role: '', isActive: true });
+  const [form, setForm] = useState({ username: '', password: '', fullName: '', role: 'Teknisyen', email: '' });
+  const [editForm, setEditForm] = useState({ fullName: '', role: '', isActive: true, email: '' });
   const [newPass, setNewPass] = useState('');
   const [msg, setMsg] = useState('');
 
@@ -91,7 +99,7 @@ const UserManagement: React.FC = () => {
     try {
       await apiClient.post('/api/users', form);
       setShowCreate(false);
-      setForm({ username: '', password: '', fullName: '', role: 'Teknisyen' });
+      setForm({ username: '', password: '', fullName: '', role: 'Teknisyen', email: '' });
       load();
     } catch (e: any) { setMsg(e.message); }
   };
@@ -153,6 +161,8 @@ const UserManagement: React.FC = () => {
               <option value="Admin">Admin</option>
               <option value="Teknisyen">Teknisyen</option>
             </select>
+            <input placeholder="E-posta (opsiyonel)" type="email" value={form.email}
+              onChange={e => setForm({ ...form, email: e.target.value })} className="text-sm col-span-2" />
           </div>
           <div className="flex gap-2">
             <button onClick={handleCreate} className="btn-primary text-sm"><Save className="w-3.5 h-3.5" /> Kaydet</button>
@@ -168,6 +178,7 @@ const UserManagement: React.FC = () => {
             <tr className="border-b border-ms-border text-ms-text-muted text-xs">
               <th className="text-left px-4 py-3">Kullanıcı</th>
               <th className="text-left px-4 py-3">Ad Soyad</th>
+              <th className="text-left px-4 py-3">E-posta</th>
               <th className="text-left px-4 py-3">Rol</th>
               <th className="text-left px-4 py-3">Durum</th>
               <th className="text-left px-4 py-3">Son Giriş</th>
@@ -176,7 +187,7 @@ const UserManagement: React.FC = () => {
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={6} className="text-center py-8 text-ms-text-muted">Yükleniyor...</td></tr>
+              <tr><td colSpan={7} className="text-center py-8 text-ms-text-muted">Yükleniyor...</td></tr>
             ) : users.map(u => (
               <tr key={u.id} className="border-b border-ms-border/50 hover:bg-ms-border/30 transition-colors">
                 <td className="px-4 py-3 font-mono text-ms-text">{u.username}</td>
@@ -185,6 +196,12 @@ const UserManagement: React.FC = () => {
                     <input value={editForm.fullName} onChange={e => setEditForm({ ...editForm, fullName: e.target.value })}
                       className="text-sm w-full" />
                   ) : u.fullName}
+                </td>
+                <td className="px-4 py-3 text-ms-text-muted text-xs">
+                  {editId === u.id ? (
+                    <input value={editForm.email} onChange={e => setEditForm({ ...editForm, email: e.target.value })}
+                      className="text-sm w-full" type="email" placeholder="E-posta" />
+                  ) : (u.email || <span className="text-ms-text-muted/50">—</span>)}
                 </td>
                 <td className="px-4 py-3">
                   {editId === u.id ? (
@@ -226,7 +243,7 @@ const UserManagement: React.FC = () => {
                       </div>
                     ) : (
                       <>
-                        <button onClick={() => { setEditId(u.id); setEditForm({ fullName: u.fullName, role: u.role, isActive: u.isActive }); }}
+                        <button onClick={() => { setEditId(u.id); setEditForm({ fullName: u.fullName, role: u.role, isActive: u.isActive, email: u.email || '' }); }}
                           className="p-1.5 rounded-lg hover:bg-sky-500/10 text-sky-400" title="Düzenle"><Edit3 className="w-3.5 h-3.5" /></button>
                         <button onClick={() => setResetId(u.id)}
                           className="p-1.5 rounded-lg hover:bg-amber-500/10 text-amber-400" title="Şifre Sıfırla"><KeyRound className="w-3.5 h-3.5" /></button>
@@ -253,9 +270,13 @@ const StoreManagement: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [showCreate, setShowCreate] = useState(false);
+  const [showProvision, setShowProvision] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
   const [form, setForm] = useState({ storeCode: '', storeName: '', deviceType: 'Kasa-1', deviceName: '', calculatedIpAddress: '', dbConnectionString: '' });
   const [editForm, setEditForm] = useState({ storeName: '', deviceName: '', deviceType: '', calculatedIpAddress: '', dbConnectionString: '' });
+  const [provForm, setProvForm] = useState({ storeCode: '', storeName: '', ipBlock: '', kasaCount: '3' });
+  const [provResult, setProvResult] = useState<any>(null);
+  const [provLoading, setProvLoading] = useState(false);
   const [msg, setMsg] = useState('');
 
   const load = async () => {
@@ -280,6 +301,21 @@ const StoreManagement: React.FC = () => {
     if (!stores.has(d.storeCode)) stores.set(d.storeCode, { storeName: d.storeName, devices: [] });
     stores.get(d.storeCode)!.devices.push(d);
   }
+
+  const handleProvision = async () => {
+    setProvLoading(true); setProvResult(null); setMsg('');
+    try {
+      const res = await apiClient.post<any>('/api/store-devices/provision', {
+        storeCode: parseInt(provForm.storeCode) || 0,
+        storeName: provForm.storeName,
+        ipBlock: provForm.ipBlock || undefined,
+        kasaCount: parseInt(provForm.kasaCount) || 3,
+      });
+      setProvResult(res);
+      load();
+    } catch (e: any) { setMsg(e.message); }
+    finally { setProvLoading(false); }
+  };
 
   const handleCreate = async () => {
     try {
@@ -319,9 +355,14 @@ const StoreManagement: React.FC = () => {
             onChange={e => setSearch(e.target.value)}
             className="w-full pl-9 text-sm" />
         </div>
-        <button onClick={() => setShowCreate(true)} className="btn-primary text-sm shrink-0">
-          <Plus className="w-4 h-4" /> Yeni Cihaz
-        </button>
+        <div className="flex gap-2 shrink-0">
+          <button onClick={() => { setShowProvision(true); setShowCreate(false); setProvResult(null); }} className="btn-primary text-sm">
+            <Plus className="w-4 h-4" /> Yeni Mağaza
+          </button>
+          <button onClick={() => { setShowCreate(true); setShowProvision(false); }} className="btn-secondary text-sm">
+            <Plus className="w-4 h-4" /> Tek Cihaz
+          </button>
+        </div>
       </div>
 
       {msg && (
@@ -330,7 +371,92 @@ const StoreManagement: React.FC = () => {
         </div>
       )}
 
-      {/* Create Form */}
+      {/* Provision Form — Yeni Mağaza Prosedürü */}
+      {showProvision && (
+        <div className="bg-ms-bg-soft border border-violet-500/20 rounded-xl p-4 space-y-3">
+          <h3 className="text-sm font-bold text-ms-text">Yeni Mağaza Oluştur</h3>
+          <p className="text-[11px] text-ms-text-muted">
+            Router + PC + kasalar otomatik oluşturulur. IP: bloğu.1 (Router), bloğu.2 (PC), bloğu.31-3N (Kasalar)
+          </p>
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            <div>
+              <label className="form-label">Mağaza Kodu</label>
+              <input type="number" placeholder="ör. 258" value={provForm.storeCode}
+                onChange={e => setProvForm({ ...provForm, storeCode: e.target.value })} className="text-sm" />
+            </div>
+            <div>
+              <label className="form-label">Mağaza Adı</label>
+              <input placeholder="ör. Datça Marina" value={provForm.storeName}
+                onChange={e => setProvForm({ ...provForm, storeName: e.target.value })} className="text-sm" />
+            </div>
+            <div>
+              <label className="form-label">IP Bloğu</label>
+              <input placeholder="ör. 192.168.240" value={provForm.ipBlock}
+                onChange={e => setProvForm({ ...provForm, ipBlock: e.target.value })} className="text-sm" />
+              <p className="text-[10px] text-ms-text-muted mt-0.5">Boşsa 192.168.{'{kod}'} kullanılır</p>
+            </div>
+            <div>
+              <label className="form-label">Kasa Sayısı</label>
+              <select value={provForm.kasaCount} onChange={e => setProvForm({ ...provForm, kasaCount: e.target.value })}
+                className="text-sm">
+                {[0,1,2,3,4,5].map(n => <option key={n} value={n}>{n} kasa</option>)}
+              </select>
+            </div>
+          </div>
+
+          {/* Önizleme */}
+          {provForm.storeCode && provForm.storeName && (
+            <div className="bg-ms-panel border border-ms-border rounded-lg p-3 space-y-1 text-[12px] text-ms-text-muted">
+              <div className="text-[10px] font-semibold uppercase tracking-wider text-ms-text-muted mb-1">Oluşturulacak cihazlar</div>
+              {(() => {
+                const block = provForm.ipBlock || `192.168.${provForm.storeCode}`;
+                const code = provForm.storeCode;
+                const kasaCount = parseInt(provForm.kasaCount) || 3;
+                const items = [
+                  { id: `${code}-Router`, type: 'Router', ip: `${block}.1` },
+                  { id: `${code}-PC`, type: 'PC', ip: `${block}.2` },
+                  ...Array.from({ length: kasaCount }, (_, i) => ({
+                    id: `${code}-K${i+1}`, type: `Kasa-${i+1}`, ip: `${block}.${31+i}`,
+                  })),
+                ];
+                return (
+                  <div className="grid grid-cols-2 lg:grid-cols-3 gap-x-4 gap-y-0.5">
+                    {items.map(it => (
+                      <div key={it.id} className="flex items-center gap-2">
+                        <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded ${
+                          it.type === 'Router' ? 'bg-emerald-500/10 text-emerald-400'
+                          : it.type === 'PC' ? 'bg-sky-500/10 text-sky-400'
+                          : 'bg-amber-500/10 text-amber-400'
+                        }`}>{it.type}</span>
+                        <span className="font-mono text-ms-text">{it.ip}</span>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })()}
+            </div>
+          )}
+
+          <div className="flex gap-2">
+            <button onClick={handleProvision} disabled={provLoading || !provForm.storeCode || !provForm.storeName}
+              className="btn-primary text-sm">
+              {provLoading ? <><RefreshCw className="w-3.5 h-3.5 animate-spin" /> Oluşturuluyor...</> : <><Save className="w-3.5 h-3.5" /> Mağaza Oluştur</>}
+            </button>
+            <button onClick={() => { setShowProvision(false); setProvResult(null); }} className="btn-secondary text-sm">
+              <X className="w-3.5 h-3.5" /> İptal
+            </button>
+          </div>
+
+          {provResult && (
+            <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-lg p-3 text-sm text-emerald-300">
+              <span className="font-semibold">{provResult.storeName}</span> ({provResult.storeCode}) — {provResult.devicesCreated?.length} cihaz oluşturuldu.
+              <span className="ml-2 font-mono text-[11px] text-emerald-400">IP: {provResult.ipBlock}.*</span>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Create Form — Tek Cihaz */}
       {showCreate && (
         <div className="bg-ms-bg-soft border border-ms-border rounded-xl p-4 space-y-3">
           <h3 className="text-sm font-bold text-ms-text">Yeni Mağaza / Cihaz Ekle</h3>
@@ -546,6 +672,409 @@ const LoginHistoryPanel: React.FC = () => {
             ))}
           </tbody>
         </table>
+      </div>
+    </div>
+  );
+};
+
+// ════════════════════════════════════════
+// MENU MANAGEMENT
+// ════════════════════════════════════════
+const MenuManagementPanel: React.FC = () => {
+  const { hiddenMenus, setHiddenMenus } = useMenuVisibility();
+  const [localHidden, setLocalHidden] = useState<Set<string>>(new Set(hiddenMenus));
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState('');
+
+  useEffect(() => {
+    setLocalHidden(new Set(hiddenMenus));
+  }, [hiddenMenus]);
+
+  const allPaths = navGroups.flatMap(g => g.items.map(i => i.to));
+  // Ayarlar sayfasi her zaman gorunur olmali
+  const configurablePaths = allPaths.filter(p => p !== '/settings' && p !== '/');
+
+  const toggle = (path: string) => {
+    setLocalHidden(prev => {
+      const next = new Set(prev);
+      if (next.has(path)) next.delete(path);
+      else next.add(path);
+      return next;
+    });
+  };
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      await setHiddenMenus(Array.from(localHidden));
+      setMsg('Kaydedildi');
+      setTimeout(() => setMsg(''), 3000);
+    } catch (e: any) {
+      setMsg(e.message || 'Hata olustu');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const hideAll = () => setLocalHidden(new Set(configurablePaths));
+  const showAll = () => setLocalHidden(new Set());
+
+  const hasChanges = (() => {
+    const current = new Set(hiddenMenus);
+    if (current.size !== localHidden.size) return true;
+    for (const p of localHidden) if (!current.has(p)) return true;
+    return false;
+  })();
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-lg font-bold text-ms-text">Teknisyen Menü Yönetimi</h2>
+          <p className="text-xs text-ms-text-muted mt-0.5">
+            Teknisyenlerin sidebar'da gorebilecegi sayfalari ayarlayin. Admin her zaman tum menuleri gorur.
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <button onClick={showAll} className="btn-secondary text-xs">
+            <Eye className="w-3.5 h-3.5" /> Tümünü Göster
+          </button>
+          <button onClick={hideAll} className="btn-secondary text-xs">
+            <EyeOff className="w-3.5 h-3.5" /> Tümünü Gizle
+          </button>
+          <button onClick={handleSave} disabled={saving || !hasChanges}
+            className="btn-primary text-xs disabled:opacity-40">
+            <Save className="w-3.5 h-3.5" />
+            {saving ? 'Kaydediliyor...' : 'Kaydet'}
+          </button>
+        </div>
+      </div>
+
+      {msg && (
+        <div className="text-xs text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 rounded-lg px-3 py-2">
+          {msg}
+        </div>
+      )}
+
+      <div className="space-y-3">
+        {navGroups.map(group => {
+          const items = group.items.filter(i => i.to !== '/settings' && i.to !== '/');
+          if (items.length === 0) return null;
+
+          const groupHiddenCount = items.filter(i => localHidden.has(i.to)).length;
+
+          return (
+            <div key={group.title} className="bg-ms-bg-soft border border-ms-border rounded-xl overflow-hidden">
+              <div className="flex items-center justify-between px-4 py-2.5 border-b border-ms-border/50"
+                style={{ background: 'rgba(255,255,255,0.01)' }}>
+                <span className="text-sm font-semibold text-ms-text">{group.title}</span>
+                <span className="text-[10px] text-ms-text-muted">
+                  {items.length - groupHiddenCount}/{items.length} gorunur
+                </span>
+              </div>
+              <div className="divide-y divide-ms-border/30">
+                {items.map(item => {
+                  const isHidden = localHidden.has(item.to);
+                  return (
+                    <button
+                      key={item.to}
+                      onClick={() => toggle(item.to)}
+                      className={`w-full flex items-center gap-3 px-4 py-2.5 text-left transition-all hover:bg-white/[0.02] ${
+                        isHidden ? 'opacity-40' : ''
+                      }`}
+                    >
+                      <div className={`w-8 h-5 rounded-full relative transition-colors ${
+                        isHidden ? 'bg-slate-700' : 'bg-violet-600'
+                      }`}>
+                        <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${
+                          isHidden ? 'left-0.5' : 'left-3.5'
+                        }`} />
+                      </div>
+                      <span className="text-ms-text-muted">{item.icon}</span>
+                      <span className="text-sm text-ms-text font-medium flex-1">{item.label}</span>
+                      <span className="text-[10px] font-mono text-ms-text-muted">{item.to}</span>
+                      {isHidden ? (
+                        <EyeOff className="w-3.5 h-3.5 text-slate-500" />
+                      ) : (
+                        <Eye className="w-3.5 h-3.5 text-violet-400" />
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="rounded-lg px-4 py-3 text-[11px]"
+        style={{ background: 'rgba(139,92,246,0.05)', border: '1px solid rgba(139,92,246,0.15)', color: 'var(--ms-text-muted)' }}>
+        <strong className="text-violet-400">Not:</strong> Kontrol Paneli ve Ayarlar sayfalari her zaman gorunurdur.
+        Gizlenen sayfalar yalnizca teknisyen kullanicilarin sidebar'indan kaldirilir.
+      </div>
+    </div>
+  );
+};
+
+// ════════════════════════════════════════
+// EMAIL ALARM SETTINGS
+// ════════════════════════════════════════
+interface SmtpConfig {
+  host: string; port: number; username: string; hasPassword: boolean;
+  useSsl: boolean; fromAddress: string; fromName: string;
+}
+interface AlarmConfig {
+  emailAlertsEnabled: boolean; alertRecipientRoles: string[]; cooldownMinutes: number;
+}
+
+const EmailAlarmPanel: React.FC = () => {
+  const [smtp, setSmtp] = useState({ host: '', port: 587, username: '', password: '', useSsl: false, fromAddress: '', fromName: 'MudoSoft RMM' });
+  const [hasPassword, setHasPassword] = useState(false);
+  const [alarm, setAlarm] = useState<AlarmConfig>({ emailAlertsEnabled: false, alertRecipientRoles: ['Admin'], cooldownMinutes: 30 });
+  const [users, setUsers] = useState<{ fullName: string; email: string | null; role: string }[]>([]);
+  const [smtpMsg, setSmtpMsg] = useState('');
+  const [smtpMsgType, setSmtpMsgType] = useState<'success' | 'error'>('error');
+  const [alarmMsg, setAlarmMsg] = useState('');
+  const [testMsg, setTestMsg] = useState('');
+  const [testMsgType, setTestMsgType] = useState<'success' | 'error'>('error');
+  const [deliveryMsg, setDeliveryMsg] = useState('');
+  const [deliveryMsgType, setDeliveryMsgType] = useState<'success' | 'error'>('error');
+  const [saving, setSaving] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [sendingTestEmail, setSendingTestEmail] = useState(false);
+
+  useEffect(() => {
+    apiClient.get<SmtpConfig>('/api/app-settings/smtp').then(data => {
+      setSmtp(prev => ({ ...prev, host: data.host, port: data.port, username: data.username, useSsl: data.useSsl, fromAddress: data.fromAddress, fromName: data.fromName }));
+      setHasPassword(data.hasPassword);
+    }).catch(() => {});
+    apiClient.get<AlarmConfig>('/api/app-settings/alarm').then(setAlarm).catch(() => {});
+    apiClient.get<{ fullName: string; email: string | null; role: string }[]>('/api/users').then(setUsers).catch(() => {});
+  }, []);
+
+  const saveSmtp = async () => {
+    setSaving(true); setSmtpMsg('');
+    try {
+      await apiClient.put('/api/app-settings/smtp', smtp);
+      setSmtpMsg('SMTP ayarları kaydedildi');
+      setSmtpMsgType('success');
+      if (smtp.password) setHasPassword(true);
+      setSmtp(prev => ({ ...prev, password: '' }));
+    } catch (e: any) { setSmtpMsg(e.message); setSmtpMsgType('error'); }
+    finally { setSaving(false); setTimeout(() => setSmtpMsg(''), 4000); }
+  };
+
+  const testSmtp = async () => {
+    setTesting(true); setTestMsg('');
+    try {
+      const res = await apiClient.post<{ success: boolean; message: string }>('/api/app-settings/smtp/test', {});
+      setTestMsg(res.message);
+      setTestMsgType(res.success ? 'success' : 'error');
+    } catch (e: any) { setTestMsg(e.message); setTestMsgType('error'); }
+    finally { setTesting(false); setTimeout(() => setTestMsg(''), 6000); }
+  };
+
+  const sendTestEmail = async () => {
+    setSendingTestEmail(true); setDeliveryMsg('');
+    try {
+      const res = await apiClient.post<{ success: boolean; message: string }>('/api/app-settings/smtp/send-test-email', {});
+      setDeliveryMsg(res.message);
+      setDeliveryMsgType(res.success ? 'success' : 'error');
+    } catch (e: any) { setDeliveryMsg(e.message); setDeliveryMsgType('error'); }
+    finally { setSendingTestEmail(false); setTimeout(() => setDeliveryMsg(''), 8000); }
+  };
+
+  const saveAlarm = async () => {
+    setAlarmMsg('');
+    try {
+      await apiClient.put('/api/app-settings/alarm', alarm);
+      setAlarmMsg('Alarm ayarları kaydedildi');
+      setTimeout(() => setAlarmMsg(''), 3000);
+    } catch (e: any) { setAlarmMsg(e.message); }
+  };
+
+  const toggleRole = (role: string) => {
+    setAlarm(prev => {
+      const roles = prev.alertRecipientRoles.includes(role)
+        ? prev.alertRecipientRoles.filter(r => r !== role)
+        : [...prev.alertRecipientRoles, role];
+      return { ...prev, alertRecipientRoles: roles };
+    });
+  };
+
+  const recipientCount = users.filter(u => u.email && alarm.alertRecipientRoles.includes(u.role)).length;
+
+  return (
+    <div className="space-y-6 max-w-2xl">
+      {/* SMTP Ayarlari */}
+      <div>
+        <h2 className="text-lg font-bold text-ms-text flex items-center gap-2 mb-4">
+          <Mail className="w-5 h-5 text-violet-400" /> SMTP Ayarları
+        </h2>
+        <div className="bg-ms-bg-soft border border-ms-border rounded-xl p-5 space-y-4">
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="form-label">Sunucu (Host)</label>
+              <input value={smtp.host} onChange={e => setSmtp({ ...smtp, host: e.target.value })}
+                className="w-full text-sm" placeholder="smtp.mudo.com.tr" />
+            </div>
+            <div>
+              <label className="form-label">Port</label>
+              <input type="number" value={smtp.port} onChange={e => setSmtp({ ...smtp, port: parseInt(e.target.value) || 587 })}
+                className="w-full text-sm" />
+            </div>
+            <div>
+              <label className="form-label">Kullanıcı Adı</label>
+              <input value={smtp.username} onChange={e => setSmtp({ ...smtp, username: e.target.value })}
+                className="w-full text-sm" placeholder="mudosoft@mudo.com.tr" />
+            </div>
+            <div>
+              <label className="form-label">Şifre {hasPassword && <span className="text-emerald-400 text-[10px]">(kayıtlı)</span>}</label>
+              <input type="password" value={smtp.password} onChange={e => setSmtp({ ...smtp, password: e.target.value })}
+                className="w-full text-sm" placeholder={hasPassword ? '••••••••' : 'SMTP şifresi'} />
+            </div>
+            <div>
+              <label className="form-label">Gönderen Adres</label>
+              <input value={smtp.fromAddress} onChange={e => setSmtp({ ...smtp, fromAddress: e.target.value })}
+                className="w-full text-sm" placeholder="mudosoft@mudo.com.tr" />
+            </div>
+            <div>
+              <label className="form-label">Gönderen İsim</label>
+              <input value={smtp.fromName} onChange={e => setSmtp({ ...smtp, fromName: e.target.value })}
+                className="w-full text-sm" placeholder="MudoSoft RMM" />
+            </div>
+          </div>
+          <label className="flex items-center gap-2 text-sm text-ms-text cursor-pointer">
+            <input type="checkbox" checked={smtp.useSsl} onChange={e => setSmtp({ ...smtp, useSsl: e.target.checked })}
+              className="rounded" />
+            SSL/TLS kullan (port 465 için)
+          </label>
+
+          {smtpMsg && (
+            <div className={`text-xs rounded-lg px-3 py-2 border ${
+              smtpMsgType === 'success' ? 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20'
+                : 'text-red-400 bg-red-500/10 border-red-500/20'
+            }`}>{smtpMsg}</div>
+          )}
+          {testMsg && (
+            <div className={`text-xs rounded-lg px-3 py-2 border ${
+              testMsgType === 'success' ? 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20'
+                : 'text-red-400 bg-red-500/10 border-red-500/20'
+            }`}>{testMsg}</div>
+          )}
+          {deliveryMsg && (
+            <div className={`text-xs rounded-lg px-3 py-2 border ${
+              deliveryMsgType === 'success' ? 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20'
+                : 'text-red-400 bg-red-500/10 border-red-500/20'
+            }`}>{deliveryMsg}</div>
+          )}
+
+          <div className="flex gap-2">
+            <button onClick={saveSmtp} disabled={saving} className="btn-primary text-sm">
+              <Save className="w-3.5 h-3.5" /> {saving ? 'Kaydediliyor...' : 'Kaydet'}
+            </button>
+            <button onClick={testSmtp} disabled={testing || !smtp.host} className="btn-secondary text-sm">
+              <Wifi className="w-3.5 h-3.5" /> {testing ? 'Test ediliyor...' : 'SMTP Testi'}
+            </button>
+            <button onClick={sendTestEmail} disabled={sendingTestEmail || !smtp.host} className="btn-secondary text-sm">
+              <Send className="w-3.5 h-3.5" /> {sendingTestEmail ? 'Gonderiliyor...' : 'Test Maili Gonder'}
+            </button>
+          </div>
+          <p className="text-[11px] text-ms-text-muted">
+            Test maili, oturum acmis admin kullanicisinin e-posta adresine gonderilir.
+          </p>
+        </div>
+      </div>
+
+      {/* Alarm Ayarlari */}
+      <div>
+        <h2 className="text-lg font-bold text-ms-text flex items-center gap-2 mb-4">
+          <Bell className="w-5 h-5 text-violet-400" /> Alarm Ayarları
+        </h2>
+        <div className="bg-ms-bg-soft border border-ms-border rounded-xl p-5 space-y-4">
+          <label className="flex items-center gap-3 cursor-pointer">
+            <div className={`w-10 h-6 rounded-full relative transition-colors ${
+              alarm.emailAlertsEnabled ? 'bg-violet-600' : 'bg-slate-700'
+            }`} onClick={() => setAlarm(prev => ({ ...prev, emailAlertsEnabled: !prev.emailAlertsEnabled }))}>
+              <div className={`absolute top-1 w-4 h-4 rounded-full bg-white shadow transition-transform ${
+                alarm.emailAlertsEnabled ? 'left-5' : 'left-1'
+              }`} />
+            </div>
+            <span className="text-sm text-ms-text font-medium">E-posta Bildirimleri Aktif</span>
+          </label>
+
+          <div>
+            <label className="form-label">Alıcı Roller</label>
+            <div className="flex gap-3">
+              {['Admin', 'Teknisyen'].map(role => (
+                <label key={role} className="flex items-center gap-2 text-sm text-ms-text cursor-pointer">
+                  <input type="checkbox" checked={alarm.alertRecipientRoles.includes(role)}
+                    onChange={() => toggleRole(role)} className="rounded" />
+                  {role}
+                </label>
+              ))}
+            </div>
+            <p className="text-[11px] text-ms-text-muted mt-1">
+              Secili rollerdeki e-posta adresi tanimli kullanici sayisi: <strong className="text-violet-400">{recipientCount}</strong>
+            </p>
+          </div>
+
+          <div>
+            <label className="form-label">Cooldown Süresi (dakika)</label>
+            <input type="number" value={alarm.cooldownMinutes}
+              onChange={e => setAlarm({ ...alarm, cooldownMinutes: parseInt(e.target.value) || 30 })}
+              className="w-32 text-sm" min={5} max={1440} />
+            <p className="text-[11px] text-ms-text-muted mt-1">
+              Aynı cihaz için tekrar alarm gönderilmeden önce bekleme süresi
+            </p>
+          </div>
+
+          {alarmMsg && (
+            <div className="text-xs text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 rounded-lg px-3 py-2">
+              {alarmMsg}
+            </div>
+          )}
+
+          <button onClick={saveAlarm} className="btn-primary text-sm">
+            <Save className="w-3.5 h-3.5" /> Kaydet
+          </button>
+        </div>
+      </div>
+
+      {/* Kullanici E-postalari */}
+      <div>
+        <h2 className="text-lg font-bold text-ms-text flex items-center gap-2 mb-4">
+          <Send className="w-5 h-5 text-violet-400" /> Kullanıcı E-postaları
+        </h2>
+        <div className="bg-ms-bg-soft border border-ms-border rounded-xl overflow-hidden">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-ms-border text-ms-text-muted text-xs">
+                <th className="text-left px-4 py-3">Kullanıcı</th>
+                <th className="text-left px-4 py-3">Rol</th>
+                <th className="text-left px-4 py-3">E-posta</th>
+              </tr>
+            </thead>
+            <tbody>
+              {users.map((u, i) => (
+                <tr key={i} className="border-b border-ms-border/50 hover:bg-ms-border/30 transition-colors">
+                  <td className="px-4 py-2.5 text-ms-text">{u.fullName}</td>
+                  <td className="px-4 py-2.5">
+                    <span className={`inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full ${
+                      u.role === 'Admin' ? 'bg-violet-500/10 text-violet-400' : 'bg-sky-500/10 text-sky-400'
+                    }`}>{u.role}</span>
+                  </td>
+                  <td className="px-4 py-2.5 text-xs font-mono text-ms-text-muted">
+                    {u.email || <span className="text-rose-400">Tanımsız</span>}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <p className="text-[11px] text-ms-text-muted mt-2">
+          E-posta adreslerini düzenlemek için <strong className="text-violet-400">Kullanıcı Yönetimi</strong> sekmesini kullanın.
+        </p>
       </div>
     </div>
   );

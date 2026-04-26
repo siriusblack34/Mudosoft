@@ -217,22 +217,40 @@ public sealed class VncInstallerService
 
     /// <summary>
     /// Generate a random 8-character alphanumeric password or load existing one.
+    /// Password is protected with DPAPI (machine-scope encryption).
     /// </summary>
     private string GetOrGeneratePassword()
     {
-        // Check if we already have a saved password
+        // Check if we already have a saved password (DPAPI encrypted)
         if (File.Exists(VncPasswordFile))
         {
             try
             {
-                var saved = File.ReadAllText(VncPasswordFile).Trim();
+                var encryptedBytes = File.ReadAllBytes(VncPasswordFile);
+                var decryptedBytes = System.Security.Cryptography.ProtectedData.Unprotect(
+                    encryptedBytes, null, System.Security.Cryptography.DataProtectionScope.LocalMachine);
+                var saved = Encoding.UTF8.GetString(decryptedBytes).Trim();
                 if (!string.IsNullOrEmpty(saved))
                 {
-                    _logger.LogInformation("[VNC] Using existing VNC password");
+                    _logger.LogInformation("[VNC] Using existing VNC password (DPAPI protected)");
                     return saved;
                 }
             }
-            catch { }
+            catch
+            {
+                // Eski plaintext dosya olabilir — okumayı dene, sonra DPAPI ile yeniden kaydet
+                try
+                {
+                    var plaintext = File.ReadAllText(VncPasswordFile).Trim();
+                    if (!string.IsNullOrEmpty(plaintext) && plaintext.Length <= 20)
+                    {
+                        _logger.LogInformation("[VNC] Migrating plaintext password to DPAPI");
+                        SavePasswordWithDpapi(plaintext);
+                        return plaintext;
+                    }
+                }
+                catch { }
+            }
         }
 
         // Generate new random password
@@ -241,18 +259,25 @@ public sealed class VncInstallerService
             .Select(b => chars[b % chars.Length])
             .ToArray());
 
-        // Save it
+        // Save with DPAPI
+        SavePasswordWithDpapi(password);
+        return password;
+    }
+
+    private void SavePasswordWithDpapi(string password)
+    {
         try
         {
-            File.WriteAllText(VncPasswordFile, password);
-            _logger.LogInformation("[VNC] Generated and saved new VNC password");
+            var plainBytes = Encoding.UTF8.GetBytes(password);
+            var encryptedBytes = System.Security.Cryptography.ProtectedData.Protect(
+                plainBytes, null, System.Security.Cryptography.DataProtectionScope.LocalMachine);
+            File.WriteAllBytes(VncPasswordFile, encryptedBytes);
+            _logger.LogInformation("[VNC] VNC password saved with DPAPI protection");
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "[VNC] Could not save VNC password file");
+            _logger.LogWarning(ex, "[VNC] Could not save VNC password file with DPAPI");
         }
-
-        return password;
     }
 
     /// <summary>

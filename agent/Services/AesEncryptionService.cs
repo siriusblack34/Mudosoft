@@ -49,10 +49,16 @@ public sealed class AesEncryptionService : IAesEncryptionService
         var payloadJson = JsonSerializer.Serialize(payloadObject);
         var encryptedPayload = EncryptStringAes(payloadJson, aesKeyBytes, aesIVBytes);
 
+        // HMAC-SHA256 for integrity verification
+        using var hmac = new HMACSHA256(aesKeyBytes);
+        var hmacHash = Convert.ToBase64String(
+            hmac.ComputeHash(Convert.FromBase64String(encryptedPayload)));
+
         return new EncryptedPayloadDto
         {
             EncryptedAesKey = encryptedAesKey,
-            EncryptedPayload = encryptedPayload
+            EncryptedPayload = encryptedPayload,
+            Hmac = hmacHash
         };
     }
 

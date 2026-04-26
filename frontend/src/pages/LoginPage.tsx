@@ -1,10 +1,15 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ShieldCheck, User, Lock, ArrowRight, Loader2, AlertCircle } from 'lucide-react';
+import { User, Lock, ArrowRight, Loader2, AlertCircle } from 'lucide-react';
 import { API_BASE_URL } from '../lib/apiClient';
+import { useAuth } from '../contexts/AuthContext';
+import { useMenuVisibility } from '../contexts/MenuVisibilityContext';
+import Logo from '../components/Logo';
 
 const LoginPage: React.FC = () => {
   const navigate = useNavigate();
+  const { setAuth } = useAuth();
+  const { refresh: refreshMenus } = useMenuVisibility();
   const [isLoading, setIsLoading] = useState(false);
   const [formData, setFormData] = useState({ username: '', password: '' });
   const [error, setError] = useState('');
@@ -64,6 +69,8 @@ const LoginPage: React.FC = () => {
       localStorage.setItem('username', data.username);
       localStorage.setItem('role', data.role || 'Admin');
       localStorage.setItem('fullName', data.fullName || data.username);
+      setAuth({ username: data.username, role: data.role || 'Admin', fullName: data.fullName || data.username });
+      await refreshMenus();
       navigate('/');
     } catch {
       setError('Sunucuya bağlanılamadı. Ağ bağlantınızı kontrol edip tekrar deneyin.');
@@ -86,9 +93,7 @@ const LoginPage: React.FC = () => {
       <div className="relative w-full max-w-sm mx-4">
         {/* Logo */}
         <div className="flex flex-col items-center mb-8">
-          <div className="w-14 h-14 bg-violet-600 rounded-2xl flex items-center justify-center shadow-xl shadow-violet-900/40 mb-4">
-            <ShieldCheck className="w-7 h-7 text-white" />
-          </div>
+          <Logo size={64} idSuffix="login" className="mb-4" />
           <h1 className="text-xl font-bold text-ms-text tracking-tight">MudoSoft RMM</h1>
           <p className="text-ms-text-muted text-sm mt-1">Yönetim Portalına Giriş</p>
         </div>

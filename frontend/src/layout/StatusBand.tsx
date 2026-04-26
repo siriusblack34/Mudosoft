@@ -1,25 +1,25 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { useAuth } from '../contexts/AuthContext';
-import { apiClient, API_BASE_URL } from '../lib/apiClient';
+import { useLocation, useNavigate } from 'react-router-dom';
+import { apiClient } from '../lib/apiClient';
 import { Device } from '../types';
-import { LogOut, Sun, Moon } from 'lucide-react';
+import { Sun, Moon, RefreshCw } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
+import Logo from '../components/Logo';
 
 // ─── System phrase logic ─────────────────────────────────────────────────────
 
 type SystemState = 'nominal' | 'degraded' | 'critical' | 'loading';
 
 function deriveSystemState(devices: Device[]): { state: SystemState; phrase: string } {
-  if (devices.length === 0) return { state: 'loading', phrase: 'Taraniyor...' };
+  if (devices.length === 0) return { state: 'loading', phrase: 'Taranıyor...' };
 
   const activeDevices = devices.filter(d => !(d.isTemporarilyClosed || (d.excludeFromOfflineList && !d.online)));
   const total = activeDevices.length;
-  if (total === 0) return { state: 'loading', phrase: 'TaranÄ±yor...' };
+  if (total === 0) return { state: 'loading', phrase: 'Taranıyor...' };
   const online = activeDevices.filter(d => d.online).length;
   const ratio = online / total;
 
-  if (ratio >= 0.95) return { state: 'nominal', phrase: 'Sistem sakin' };
+  if (ratio >= 0.95) return { state: 'nominal', phrase: 'Operational' };
   if (ratio >= 0.80) return { state: 'degraded', phrase: 'Dikkat gerekli' };
   if (ratio >= 0.50) return { state: 'critical', phrase: 'Müdahale gerekli' };
   return { state: 'critical', phrase: 'Kritik durum' };
@@ -38,12 +38,25 @@ interface StatusBandProps {
   devices: Device[];
 }
 
+interface DashboardTopbarState {
+  enabled: boolean;
+  message?: string;
+  agentTime?: string;
+  sqlTime?: string;
+  agentState?: 'ok' | 'error' | 'cache' | 'loading';
+  sqlState?: 'ok' | 'error' | 'cache' | 'loading';
+  isRefreshing?: boolean;
+}
+
 const StatusBand: React.FC<StatusBandProps> = ({ devices }) => {
   const navigate = useNavigate();
-  const { fullName, role } = useAuth();
+  const location = useLocation();
+  // auth artık sidebar'da
   const { isDark, toggleTheme } = useTheme();
   const [backendOk, setBackendOk] = useState(true);
   const [time, setTime] = useState(() => new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }));
+  const [dashboardTopbar, setDashboardTopbar] = useState<DashboardTopbarState>({ enabled: false });
+  const [refreshAnim, setRefreshAnim] = useState(false);
 
   // Clock
   useEffect(() => {
@@ -55,41 +68,35 @@ const StatusBand: React.FC<StatusBandProps> = ({ devices }) => {
 
   // Backend health check
   const checkBackend = useCallback(async () => {
-    try {
-      await fetch(`${API_BASE_URL}/api/dashboard/summary`, {
-        headers: { Authorization: `Bearer ${localStorage.getItem('token') || ''}` },
-        signal: AbortSignal.timeout(5000),
-      });
-      // Herhangi bir HTTP yanıtı (200, 401, 500 vs.) = sunucu ayakta
-      setBackendOk(true);
-    } catch {
-      // Network hatası veya timeout = gerçek bağlantı kopması
-      setBackendOk(false);
-    }
+    const ok = await apiClient.checkBackendHealth();
+    setBackendOk(ok);
   }, []);
 
   useEffect(() => {
     checkBackend();
-    const i = setInterval(checkBackend, 30_000);
+    const i = setInterval(checkBackend, 15_000);
     return () => clearInterval(i);
   }, [checkBackend]);
 
-  const pcs = devices.filter(d => d.hostname?.startsWith('WSTR') || d.hostname?.startsWith('TEST'));
-  const kasas = devices.filter(d => d.hostname?.startsWith('KSTR'));
-  const pcOnline = pcs.filter(d => d.online).length;
-  const kasaOnline = kasas.filter(d => d.online).length;
+  useEffect(() => {
+    const handleDashboardStatus = (event: Event) => {
+      const customEvent = event as CustomEvent<DashboardTopbarState>;
+      setDashboardTopbar(customEvent.detail || { enabled: false });
+    };
+    window.addEventListener('ms-dashboard-status', handleDashboardStatus as EventListener);
+    return () => window.removeEventListener('ms-dashboard-status', handleDashboardStatus as EventListener);
+  }, []);
+
+  const isKasa = (device: Device) => device.hostname?.startsWith('KSTR');
+  const pcs = devices.filter(d => !isKasa(d));
+  const kasas = devices.filter(d => isKasa(d));
+  const pcOnline = pcs.filter(d => d.online && !d.isTemporarilyClosed).length;
+  const kasaOnline = kasas.filter(d => d.online && !d.isTemporarilyClosed).length;
   const offline = devices.filter(d => !d.online && !d.excludeFromOfflineList && !d.isTemporarilyClosed).length;
 
   const { state, phrase } = deriveSystemState(devices);
   const dotColor = stateColors[state];
 
-  const initials = (fullName || 'AD').split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
-
-  const logout = () => {
-    ['isAuthenticated', 'token', 'tokenExpiresAt', 'username', 'role', 'fullName']
-      .forEach(k => localStorage.removeItem(k));
-    window.location.href = '/login';
-  };
 
   // Counter chip
   const Chip: React.FC<{ label: string; count: number; onClick?: () => void; muted?: boolean }> = ({ label, count, onClick, muted }) => (
@@ -102,24 +109,35 @@ const StatusBand: React.FC<StatusBandProps> = ({ devices }) => {
     </button>
   );
 
+  const TopbarPill: React.FC<{ label: string; value: string; status?: DashboardTopbarState['agentState'] }> = ({ label, value, status }) => {
+    const dotColor = status === 'ok' ? '#34d399' : status === 'error' ? '#fb7185' : status === 'cache' ? '#fbbf24' : '#38bdf8';
+    return (
+      <div className="flex items-center gap-2 rounded-xl border px-3 py-1.5" style={{ background: 'rgba(15,23,42,0.45)', borderColor: 'var(--ms-border)' }}>
+        {status && <span className="h-1.5 w-1.5 rounded-full" style={{ background: dotColor }} />}
+        <div>
+          <div className="text-[9px] font-bold uppercase tracking-[0.18em]" style={{ color: '#64748b' }}>{label}</div>
+          <div className="text-xs font-semibold text-slate-200">{value}</div>
+        </div>
+      </div>
+    );
+  };
+
   return (
     <header
-      className="h-12 flex items-center justify-between px-4 shrink-0 z-50 border-b transition-colors duration-500"
+      className="h-12 flex items-center gap-4 px-4 shrink-0 z-50 border-b transition-colors duration-500"
       style={{
         background: state === 'critical' ? 'rgba(239,68,68,0.03)' : 'var(--cc-band)',
         borderColor: 'var(--ms-border)',
       }}
     >
       {/* Left: brand + system phrase */}
-      <div className="flex items-center gap-4">
+      <div className="flex items-center gap-4 shrink-0">
         {/* Brand */}
         <button
           onClick={() => navigate('/')}
           className="flex items-center gap-2 hover:opacity-80 transition-opacity"
         >
-          <div className="h-6 w-6 rounded-md bg-violet-600 flex items-center justify-center">
-            <span className="text-white font-bold text-[9px]">MS</span>
-          </div>
+          <Logo size={30} idSuffix="statusband" />
         </button>
 
         {/* System phrase */}
@@ -159,38 +177,48 @@ const StatusBand: React.FC<StatusBandProps> = ({ devices }) => {
         )}
       </div>
 
-      {/* Right: theme + user + clock */}
-      <div className="flex items-center gap-2">
+      {/* Center: spacer or dashboard live status */}
+      <div className="min-w-0 flex-1" />
+
+      {/* Right: dashboard topbar pills + theme toggle */}
+      <div className="flex items-center gap-2 shrink-0">
+        {location.pathname === '/' && dashboardTopbar.enabled && (
+          <div className="flex items-center gap-2">
+            <TopbarPill label="Saat" value={time} />
+            <TopbarPill label="Agent" value={dashboardTopbar.agentTime || '--'} status={dashboardTopbar.agentState} />
+            <TopbarPill label="SQL" value={dashboardTopbar.sqlTime || '--'} status={dashboardTopbar.sqlState} />
+            <button
+              onClick={() => {
+                setRefreshAnim(true);
+                window.dispatchEvent(new CustomEvent('ms-dashboard-refresh'));
+                setTimeout(() => setRefreshAnim(false), 1200);
+              }}
+              className="flex h-9 items-center gap-1.5 rounded-xl px-3 text-xs font-semibold transition-all hover:bg-white/[0.06]"
+              style={{ color: '#e2e8f0' }}
+              title="Yenile"
+            >
+              <RefreshCw
+                className="h-3.5 w-3.5 transition-transform"
+                style={{
+                  animation: refreshAnim || dashboardTopbar.isRefreshing ? 'spin 0.8s ease-in-out' : 'none',
+                }}
+              />
+              <span>Yenile</span>
+            </button>
+          </div>
+        )}
+
+        <div className="w-px h-4" style={{ background: 'var(--ms-border)' }} />
+
         <button
           onClick={toggleTheme}
           className="h-7 w-7 flex items-center justify-center rounded text-slate-500 hover:text-slate-300 hover:bg-white/[0.04] transition-colors"
         >
           {isDark ? <Sun className="w-3.5 h-3.5" /> : <Moon className="w-3.5 h-3.5" />}
         </button>
-
-        <div className="w-px h-4" style={{ background: 'var(--ms-border)' }} />
-
-        <div className="flex items-center gap-2 px-1.5 py-1 rounded hover:bg-white/[0.04] transition-colors">
-          <div className="h-5 w-5 rounded-full bg-violet-700/80 flex items-center justify-center text-white font-semibold text-[8px] shrink-0">
-            {initials}
-          </div>
-          <span className="text-[11px] text-slate-400 font-medium hidden sm:inline">{fullName || 'Admin'}</span>
-          <button
-            onClick={logout}
-            className="p-0.5 text-slate-600 hover:text-red-400 transition-colors"
-            title="Çıkış"
-          >
-            <LogOut className="w-3 h-3" />
-          </button>
-        </div>
-
-        <div className="w-px h-4" style={{ background: 'var(--ms-border)' }} />
-
-        <span className="text-[11px] font-mono text-slate-600 w-10 text-right">{time}</span>
       </div>
     </header>
   );
 };
 
 export default StatusBand;
-

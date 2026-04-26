@@ -6,6 +6,11 @@ import { Check, Terminal, Play, RotateCcw, Monitor, Server, XCircle, AlertCircle
 
 type FilterType = "ALL" | "PC" | "POS" | "GECICI";
 
+const isRouter = (d: SqlDeviceWithStatus) => (d.deviceType ?? "").toLowerCase() === "router";
+const isPc = (d: SqlDeviceWithStatus) => (d.deviceType ?? "").toLowerCase() === "pc";
+const isPos = (d: SqlDeviceWithStatus) => (d.deviceType ?? "").toLowerCase().includes("kasa");
+const isGecici = (d: SqlDeviceWithStatus) => (d.deviceType ?? "").toLowerCase() === "gecici";
+
 const DeviceTypeBadge: React.FC<{ type: string }> = ({ type }) => {
     const t = type.toLowerCase();
     if (t === 'pc')
@@ -61,7 +66,12 @@ const SQLQueryPage: React.FC = () => {
                 });
 
                 if (isMounted) {
-                    setDevices(data ?? []);
+                    const runnableDevices = (data ?? []).filter(d => !isRouter(d));
+                    setDevices(runnableDevices);
+                    setSelectedDeviceIds(prev => {
+                        const runnableIds = new Set(runnableDevices.map(d => d.deviceId));
+                        return new Set([...prev].filter(id => runnableIds.has(id)));
+                    });
                     // If previously there was an error and now it succeeds, clear it
                     setPageError(null);
                 }
@@ -84,10 +94,6 @@ const SQLQueryPage: React.FC = () => {
     // =====================================================
     // FILTERING
     // =====================================================
-    const isPc = (d: SqlDeviceWithStatus) => (d.deviceType ?? "").toLowerCase() === "pc";
-    const isPos = (d: SqlDeviceWithStatus) => (d.deviceType ?? "").toLowerCase().includes("kasa");
-    const isGecici = (d: SqlDeviceWithStatus) => (d.deviceType ?? "").toLowerCase() === "gecici";
-
     const matchesSegment = (d: SqlDeviceWithStatus) => {
         if (filterType === "PC") return isPc(d);
         if (filterType === "POS") return isPos(d);

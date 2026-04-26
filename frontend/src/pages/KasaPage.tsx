@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { apiClient, SqlDeviceWithStatus } from "../lib/apiClient";
 import Spinner from "../components/ui/Spinner";
-import { Monitor, RefreshCw, Search, Wifi, WifiOff, Store, Network, Activity, Info, Trash2, Cpu, Hash, PauseCircle, PlayCircle } from "lucide-react";
+import { Monitor, RefreshCw, Search, Wifi, WifiOff, Store, Network, Activity, Info, Trash2, Cpu, PauseCircle, PlayCircle, Mail, Loader2 } from "lucide-react";
+import DeviceTabs from "../components/DeviceTabs";
 
 interface StoreRow {
     storeCode: number;
@@ -27,6 +28,25 @@ const DeviceDetailCard = ({ title, device, onDelete, onToggleClose }: { title: s
     const [sysInfoLoading, setSysInfoLoading] = useState(false);
     const [showCloseDialog, setShowCloseDialog] = useState(false);
     const [closeReason, setCloseReason] = useState("");
+    const [sendingLog, setSendingLog] = useState(false);
+    const [logMessage, setLogMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+
+    const handleSendLog = async () => {
+        if (!device) return;
+        setSendingLog(true);
+        setLogMessage(null);
+        try {
+            const res = await apiClient.post<{ success: boolean; message: string; fileCount: number; hasScreenshot: boolean }>(
+                `/api/kasa-log/send/${device.deviceId}`, undefined, 180_000
+            );
+            setLogMessage({ type: "success", text: res.message });
+        } catch (err: any) {
+            setLogMessage({ type: "error", text: err.message || "Log gönderilemedi" });
+        } finally {
+            setSendingLog(false);
+            setTimeout(() => setLogMessage(null), 15000);
+        }
+    };
 
     useEffect(() => {
         if (!device) return;
@@ -199,29 +219,66 @@ const DeviceDetailCard = ({ title, device, onDelete, onToggleClose }: { title: s
                     </div>
                 </div>
 
-                <div className="flex items-center gap-3 p-2.5 rounded-xl bg-slate-900/50 border border-slate-700/50 hover:bg-slate-900/80 transition-colors">
-                    <div className="p-1.5 bg-slate-800 rounded-md text-slate-400">
-                        <Hash className="w-4 h-4" />
-                    </div>
-                    <div className="overflow-hidden">
-                        <div className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold">Seri No</div>
-                        <div className="text-sm text-slate-200 font-mono mt-0.5 truncate">
-                            {sysInfoLoading ? <span className="text-slate-500 text-xs">Yükleniyor...</span>
-                                : sysInfo?.serialNumber
-                                    ? sysInfo.serialNumber
-                                    : <span className="text-rose-500/70 text-xs" title={sysInfo?.serialError || ''}>{sysInfo?.serialError ? '⚠ Hata' : '—'}</span>}
-                        </div>
-                    </div>
-                </div>
             </div>
+
+            {/* Log Gönder Butonu */}
+            {device.isOnline && (
+                <div className="mt-4 pt-3 border-t border-slate-700/50">
+                    {logMessage && (
+                        <div className={`mb-2 px-3 py-1.5 rounded-lg text-xs font-medium ${logMessage.type === "success" ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20" : "bg-rose-500/10 text-rose-400 border border-rose-500/20"}`}>
+                            {logMessage.text}
+                        </div>
+                    )}
+                    <button
+                        onClick={handleSendLog}
+                        disabled={sendingLog}
+                        className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 hover:bg-indigo-500/20 hover:border-indigo-500/40 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                        {sendingLog ? (
+                            <>
+                                <Loader2 className="w-4 h-4 animate-spin" />
+                                Log toplanıyor & gönderiliyor...
+                            </>
+                        ) : (
+                            <>
+                                <Mail className="w-4 h-4" />
+                                Kasa Logunu Maile Gönder
+                            </>
+                        )}
+                    </button>
+                </div>
+            )}
         </div>
     );
 };
 
+// Dashboard ile paylaşılan cache'den oku — anında gösterim için
+function readSharedSqlCache(): SqlDeviceWithStatus[] | null {
+    try {
+        const raw = localStorage.getItem("ms_sql_devices_cache_v4");
+        if (!raw) return null;
+        const parsed = JSON.parse(raw) as { savedAt?: string; items?: SqlDeviceWithStatus[] } | SqlDeviceWithStatus[];
+        const items = Array.isArray(parsed) ? parsed : parsed.items;
+        if (!Array.isArray(items) || items.length === 0) return null;
+        // 120 saniyeden eski cache'i kullanma
+        if (!Array.isArray(parsed) && parsed.savedAt) {
+            const age = Date.now() - new Date(parsed.savedAt).getTime();
+            if (age > 120_000) return null;
+        }
+        return items;
+    } catch { return null; }
+}
+
 const KasaPage: React.FC = () => {
-    const [devices, setDevices] = useState<SqlDeviceWithStatus[]>([]);
+    // Önce cache'den yükle — anında gösterim
+    const cachedKasas = useMemo(() => {
+        const all = readSharedSqlCache();
+        return all?.filter(d => d.deviceType?.toLowerCase().includes("kasa")) ?? [];
+    }, []);
+
+    const [devices, setDevices] = useState<SqlDeviceWithStatus[]>(cachedKasas);
     const [search, setSearch] = useState("");
-    const [isLoading, setIsLoading] = useState(true);
+    const [isLoading, setIsLoading] = useState(cachedKasas.length === 0);
     const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
     const [selectedStoreCode, setSelectedStoreCode] = useState<number | null>(null);
     const [statusFilter, setStatusFilter] = useState<"offline" | "closed" | null>(null);
@@ -255,7 +312,7 @@ const KasaPage: React.FC = () => {
 
         const load = async (silent = false) => {
             try {
-                if (!silent) setIsLoading(true);
+                if (!silent && devices.length === 0) setIsLoading(true);
 
                 const data = await apiClient.getSqlDevicesWithStatus({
                     timeoutMs: 500,
@@ -272,11 +329,12 @@ const KasaPage: React.FC = () => {
             } catch (err) {
                 console.error("Kasa devices load failed:", err);
             } finally {
-                if (isMounted && !silent) setIsLoading(false);
+                if (isMounted) setIsLoading(false);
             }
         };
 
-        load();
+        // Cache'den zaten veri varsa sessiz yükle
+        load(cachedKasas.length > 0);
         const intervalId = setInterval(() => load(true), 30000);
 
         return () => {
@@ -388,6 +446,7 @@ const KasaPage: React.FC = () => {
 
     return (
         <div className="p-6 h-[calc(100vh-2rem)] flex flex-col gap-6 max-w-[1920px] mx-auto w-full">
+            <DeviceTabs />
             {/* Header */}
             <div className="flex items-center justify-between">
                 <h1 className="text-2xl font-bold text-white flex items-center gap-3">

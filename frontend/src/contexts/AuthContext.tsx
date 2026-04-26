@@ -19,8 +19,8 @@ export const useAuth = () => useContext(AuthContext);
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [auth, setAuthState] = useState(() => ({
     username: localStorage.getItem('username') || '',
-    role: localStorage.getItem('role') || 'Admin',
-    fullName: localStorage.getItem('fullName') || 'Administrator',
+    role: localStorage.getItem('role') || '',
+    fullName: localStorage.getItem('fullName') || '',
   }));
 
   const setAuth = useCallback((data: { username: string; role: string; fullName: string }) => {

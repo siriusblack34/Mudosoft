@@ -212,7 +212,7 @@ function extractPayments(lines: ParsedLine[]): Payment[] {
       if (!match) return null;
       return { description: match[1].trim(), amount: parseFloat(match[2]), timestamp: line.timestamp };
     })
-    .filter((payment): payment is Payment => Boolean(payment));
+    .filter((payment): payment is NonNullable<typeof payment> => payment !== null);
 }
 
 function extractCustomerCode(lines: ParsedLine[]): string | undefined {

@@ -6,42 +6,44 @@
 
 /* ── Theme CSS Variables ── */
 :root {
-  --ms-bg:         #f4f4f5;   /* zinc-100 */
+  /* ── Deep Ocean — Light ── */
+  --ms-bg:         #f1f5f9;   /* slate-100 */
   --ms-bg-soft:    #ffffff;   /* white */
-  --ms-panel:      #fafafa;   /* zinc-50 */
-  --ms-border:     #d4d4d8;   /* zinc-300 */
-  --ms-text:       #18181b;   /* zinc-900 */
-  --ms-text-muted: #71717a;   /* zinc-500 */
+  --ms-panel:      #f8fafc;   /* slate-50 */
+  --ms-border:     #cbd5e1;   /* slate-300 */
+  --ms-text:       #0f172a;   /* slate-900 */
+  --ms-text-muted: #64748b;   /* slate-500 */
   --ms-input-bg:   #ffffff;
-  --ms-input-border:#d4d4d8;
-  --ms-hover-bg:   #e4e4e7;   /* zinc-200 */
-  --ms-table-row-border: #e4e4e7;
-  --ms-scrollbar:  #a1a1aa;
-  --ms-scrollbar-hover: #71717a;
+  --ms-input-border:#cbd5e1;
+  --ms-hover-bg:   #e2e8f0;   /* slate-200 */
+  --ms-table-row-border: #e2e8f0;
+  --ms-scrollbar:  #94a3b8;
+  --ms-scrollbar-hover: #64748b;
 }
 
 .dark {
-  --ms-bg:         #050910;
-  --ms-bg-soft:    #070b14;
-  --ms-panel:      #0a1020;
-  --ms-border:     #0f1724;
-  --ms-text:       #f8fafc;
-  --ms-text-muted: #94a3b8;
-  --ms-input-bg:   #0a1020;
-  --ms-input-border:#1e293b;
-  --ms-hover-bg:   rgba(255,255,255,0.03);
-  --ms-table-row-border: #0f1724;
-  --ms-scrollbar:  #1e293b;
-  --ms-scrollbar-hover: #334155;
+  /* ── Deep Ocean — Dark ── */
+  --ms-bg:         #0a1628;   /* derin okyanus */
+  --ms-bg-soft:    #0d1b30;
+  --ms-panel:      #0f1e35;
+  --ms-border:     #1c2e4a;
+  --ms-text:       #f0f9ff;   /* sky-50 — canlı beyaz-mavi */
+  --ms-text-muted: #94a3b8;   /* slate-400 */
+  --ms-input-bg:   #0f1e35;
+  --ms-input-border:#1c2e4a;
+  --ms-hover-bg:   rgba(56,189,248,0.06);   /* sky hover */
+  --ms-table-row-border: #1c2e4a;
+  --ms-scrollbar:  #1c2e4a;
+  --ms-scrollbar-hover: #2a4268;
 
   /* Command Center tokens */
-  --cc-strip:      #070b14;
-  --cc-edge:       #0f1724;
-  --cc-band:       #060910;
+  --cc-strip:      #0a1628;
+  --cc-edge:       #1c2e4a;
+  --cc-band:       #081324;
   --cc-nominal:    #22c55e;
   --cc-degraded:   #eab308;
   --cc-critical:   #ef4444;
-  --cc-neutral:    #475569;
+  --cc-neutral:    #64748b;
   --cc-text-ghost: #334155;
 }
 

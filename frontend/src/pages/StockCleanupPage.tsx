@@ -7,7 +7,11 @@ import {
 } from "lucide-react";
 import type { StockStatus } from "../contexts/PrefetchContext";
 
-export default function StockCleanupPage() {
+type StockCleanupPageProps = {
+    embedded?: boolean;
+};
+
+export default function StockCleanupPage({ embedded = false }: StockCleanupPageProps) {
     const [searchTerm, setSearchTerm] = useState("");
     const [cleaningDevices, setCleaningDevices] = useState<Set<string>>(new Set());
     const [statusFilter, setStatusFilter] = useState<"all" | "dirty" | "offline" | "error">("all");
@@ -57,7 +61,7 @@ export default function StockCleanupPage() {
         }
     };
 
-    // Toplu Temizleme (Clean All)
+    // Toplu Temizleme (Clean All) — JOB-BASED polling
     const handleCleanAll = async () => {
         const confirmMsg = "DİKKAT! Tüm mağazaların POS_STOCK_TRANSFER tablosu SİLİNECEK (Truncate).\n\nBu işlem geri alınamaz!\nDevam etmek istiyor musunuz?";
         if (!window.confirm(confirmMsg)) return;
@@ -65,12 +69,37 @@ export default function StockCleanupPage() {
 
         setIsFetching(true);
         try {
-            await apiClient.post("/api/stock-cleanup/clean-all", {});
-            alert("Tüm mağazalar için temizleme isteği gönderildi.\nSonuçları görmek için tekrar kontrol ediniz.");
-            fetchData();
+            const { jobId } = await apiClient.post<{ jobId: string; totalCount: number }>("/api/stock-cleanup/clean-all", {});
+
+            const maxIterations = 300; // 300 * 2s = 10dk güvenlik duvarı
+            for (let i = 0; i < maxIterations; i++) {
+                await new Promise(r => setTimeout(r, 2000));
+                const status = await apiClient.get<{
+                    completedCount: number;
+                    totalCount: number;
+                    successCount: number;
+                    offlineCount: number;
+                    errorCount: number;
+                    lastDeviceName?: string;
+                    isCompleted: boolean;
+                    error?: string;
+                }>(`/api/stock-cleanup/clean-all/${jobId}`);
+
+                if (status.isCompleted) {
+                    if (status.error) {
+                        alert(`Toplu temizleme hatası: ${status.error}`);
+                    } else {
+                        alert(`Toplu temizleme tamamlandı.\nBaşarılı: ${status.successCount}\nOffline: ${status.offlineCount}\nHata: ${status.errorCount}`);
+                    }
+                    await fetchData();
+                    return;
+                }
+            }
+            alert("Toplu temizleme beklenenden uzun sürdü. Sunucu logunu kontrol ediniz.");
         } catch (error) {
             console.error("Clean All error:", error);
             alert("Toplu temizleme sırasında hata oluştu!");
+        } finally {
             setIsFetching(false);
         }
     };
@@ -96,7 +125,7 @@ export default function StockCleanupPage() {
     };
 
     return (
-        <div className="p-6 h-[calc(100vh-2rem)] flex flex-col gap-5">
+        <div className={embedded ? "flex flex-col gap-5" : "p-6 h-[calc(100vh-2rem)] flex flex-col gap-5"}>
             {/* Page Header */}
             <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between glass-panel p-6 rounded-2xl border-white/5 shadow-lg">
                 <div>

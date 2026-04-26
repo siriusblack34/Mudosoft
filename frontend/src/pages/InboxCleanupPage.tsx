@@ -8,11 +8,16 @@ import {
 } from "lucide-react";
 import type { InboxStatus } from "../contexts/PrefetchContext";
 
-const InboxCleanupPage: React.FC = () => {
+type InboxCleanupPageProps = {
+    embedded?: boolean;
+};
+
+const InboxCleanupPage: React.FC<InboxCleanupPageProps> = ({ embedded = false }) => {
     const [devices, setDevices] = useState<InboxStatus[]>([]);
     const [search, setSearch] = useState("");
     const [isChecking, setIsChecking] = useState(false);
     const [isCleaning, setIsCleaning] = useState(false);
+    const [cleanProgress, setCleanProgress] = useState<{ completed: number; total: number } | null>(null);
     const [cleaningDeviceId, setCleaningDeviceId] = useState<string | null>(null);
     const [lastChecked, setLastChecked] = useState<Date | null>(null);
     const [statusMessage, setStatusMessage] = useState<string | null>(null);
@@ -23,7 +28,7 @@ const InboxCleanupPage: React.FC = () => {
         setIsChecking(true);
         setStatusMessage(null);
         try {
-            const data = await apiClient.post<InboxStatus[]>("/api/inbox-cleanup/check-all", undefined, 120_000);
+            const data = await apiClient.post<InboxStatus[]>("/api/inbox-cleanup/check-all", undefined, 300_000);
             setDevices(data);
             const now = new Date();
             setLastChecked(now);
@@ -54,21 +59,51 @@ const InboxCleanupPage: React.FC = () => {
         }
     };
 
-    // ===================== CLEAN ALL =====================
+    // ===================== CLEAN ALL (job-based) =====================
     const handleCleanAll = async () => {
         if (!window.confirm("Tüm online PC'lerdeki Inbox, Kasa ve Processed klasörlerindeki dosyalar silinecek. Devam edilsin mi?")) return;
 
         setIsCleaning(true);
-        setStatusMessage("Tüm PC'ler temizleniyor...");
+        setCleanProgress({ completed: 0, total: 0 });
+        setStatusMessage("Toplu temizlik başlatılıyor...");
         try {
-            const result = await apiClient.post<any>("/api/inbox-cleanup/clean-all");
-            setStatusMessage(`✅ Toplu temizlik tamamlandı: ${result.successCount}/${result.totalCount} başarılı`);
-            // Re-check all
+            const { jobId, totalCount } = await apiClient.post<{ jobId: string; totalCount: number }>("/api/inbox-cleanup/clean-all");
+            setCleanProgress({ completed: 0, total: totalCount });
+
+            while (true) {
+                await new Promise(r => setTimeout(r, 2000));
+                const status = await apiClient.get<{
+                    completedCount: number;
+                    totalCount: number;
+                    successCount: number;
+                    offlineCount: number;
+                    errorCount: number;
+                    lastDeviceName?: string;
+                    isCompleted: boolean;
+                    error?: string;
+                }>(`/api/inbox-cleanup/clean-all/${jobId}`);
+
+                setCleanProgress({ completed: status.completedCount, total: status.totalCount });
+                if (status.lastDeviceName && !status.isCompleted) {
+                    setStatusMessage(`Temizleniyor: ${status.completedCount}/${status.totalCount} — son: ${status.lastDeviceName}`);
+                }
+
+                if (status.isCompleted) {
+                    if (status.error) {
+                        setStatusMessage(`❌ Toplu temizlik hatası: ${status.error}`);
+                    } else {
+                        setStatusMessage(`✅ Toplu temizlik tamamlandı: ${status.successCount}/${status.totalCount} başarılı (${status.offlineCount} offline, ${status.errorCount} hata)`);
+                    }
+                    break;
+                }
+            }
+
             await handleCheckAll();
         } catch (err: any) {
             setStatusMessage(`❌ Toplu temizlik hatası: ${err.message}`);
         } finally {
             setIsCleaning(false);
+            setCleanProgress(null);
         }
     };
 
@@ -147,7 +182,7 @@ const InboxCleanupPage: React.FC = () => {
     };
 
     return (
-        <div className="p-6 h-[calc(100vh-2rem)] flex flex-col gap-5">
+        <div className={embedded ? "flex flex-col gap-5" : "p-6 h-[calc(100vh-2rem)] flex flex-col gap-5"}>
             {/* Header */}
             <div className="flex items-center justify-between glass-panel p-6 rounded-2xl border-white/5 shadow-lg">
                 <h1 className="text-2xl font-bold text-white flex items-center gap-3">
@@ -184,7 +219,9 @@ const InboxCleanupPage: React.FC = () => {
                         title={stats.error > 0 ? "Hata alanlar dahil tümünü temizlemeyi dene" : "Tümünü Temizle"}
                     >
                         {isCleaning ? <Spinner size="sm" /> : <Trash2 className="w-4 h-4" />}
-                        {stats.error > 0 ? "Hatalıları Zorla Temizle" : "Tümünü Temizle"}
+                        {isCleaning && cleanProgress
+                            ? `Temizleniyor ${cleanProgress.completed}/${cleanProgress.total}`
+                            : stats.error > 0 ? "Hatalıları Zorla Temizle" : "Tümünü Temizle"}
                     </button>
                 </div>
             </div>

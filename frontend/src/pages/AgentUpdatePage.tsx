@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { Upload, RefreshCcw, Rocket, Package, CheckCircle, AlertCircle, MonitorSmartphone, History, Wifi, WifiOff, Hammer, Activity } from "lucide-react";
-import { API_BASE_URL } from "../lib/apiClient";
+import { apiClient } from "../lib/apiClient";
 
 interface LatestVersionInfo {
     version: string;
@@ -47,32 +47,24 @@ const AgentUpdatePage: React.FC = () => {
 
     const fetchLatestVersion = useCallback(async () => {
         try {
-            const res = await fetch(`${API_BASE_URL}/api/updates/latest`);
-            const data = await res.json();
+            const data = await apiClient.getLatestVersion();
             setLatestVersion(data);
         } catch (err) { console.error(err); }
     }, []);
 
-    const authHeaders = useCallback(() => {
-        const token = localStorage.getItem('token');
-        return token ? { 'Authorization': `Bearer ${token}` } : {};
-    }, []);
-
     const fetchDevices = useCallback(async () => {
         try {
-            const res = await fetch(`${API_BASE_URL}/api/updates/device-versions`, { headers: authHeaders() });
-            const data = await res.json();
+            const data = await apiClient.getDeviceVersions();
             setDevices(data);
         } catch (err) { console.error(err); }
-    }, [authHeaders]);
+    }, []);
 
     const fetchHistory = useCallback(async () => {
         try {
-            const res = await fetch(`${API_BASE_URL}/api/updates/history`, { headers: authHeaders() });
-            const data = await res.json();
+            const data = await apiClient.getUpdateHistory();
             setHistory(Array.isArray(data) ? data.reverse() : []);
         } catch (err) { console.error(err); }
-    }, [authHeaders]);
+    }, []);
 
     useEffect(() => {
         fetchLatestVersion();
@@ -88,8 +80,7 @@ const AgentUpdatePage: React.FC = () => {
     useEffect(() => {
         const pollBuildStatus = async () => {
             try {
-                const res = await fetch(`${API_BASE_URL}/api/updates/build-status`, { headers: authHeaders() });
-                const data = await res.json();
+                const data = await apiClient.getBuildStatus();
 
                 // If it just finished building, refresh list
                 if (isBuilding && !data.isBuilding) {
@@ -124,22 +115,15 @@ const AgentUpdatePage: React.FC = () => {
         setUploading(true);
         setMessage(null);
         try {
-            const formData = new FormData();
-            formData.append('file', selectedFile);
-            formData.append('version', newVersion.trim());
-            const res = await fetch(`${API_BASE_URL}/api/updates/upload`, { method: 'POST', body: formData, headers: authHeaders() });
-            if (res.ok) {
-                const data = await res.json();
-                setMessage({ text: data.message || 'Upload başarılı!', type: 'success' });
-                setSelectedFile(null);
-                setNewVersion("");
-                fetchLatestVersion();
-                fetchHistory();
-            } else {
-                setMessage({ text: `Upload başarısız: ${res.status}`, type: 'error' });
-            }
-        } catch (err: any) {
-            setMessage({ text: `Hata: ${err.message}`, type: 'error' });
+            const data = await apiClient.uploadAgentPackage(selectedFile, newVersion.trim());
+            setMessage({ text: data.message || 'Upload başarılı!', type: 'success' });
+            setSelectedFile(null);
+            setNewVersion("");
+            fetchLatestVersion();
+            fetchHistory();
+        } catch (err: unknown) {
+            const msg = err instanceof Error ? err.message : 'Bilinmeyen hata';
+            setMessage({ text: `Hata: ${msg}`, type: 'error' });
         } finally { setUploading(false); }
     };
 
@@ -155,18 +139,11 @@ const AgentUpdatePage: React.FC = () => {
         setTriggering(true);
         setMessage(null);
         try {
-            const res = await fetch(
-                `${API_BASE_URL}/api/updates/trigger-all?backendUrl=${encodeURIComponent(remoteBackendUrl)}`,
-                { method: 'POST', headers: authHeaders() }
-            );
-            if (res.ok) {
-                const data = await res.json();
-                setMessage({ text: data.message || 'Güncelleme komutu gönderildi!', type: 'success' });
-            } else {
-                setMessage({ text: `Güncelleme başarısız: ${res.status}`, type: 'error' });
-            }
-        } catch (err: any) {
-            setMessage({ text: `Hata: ${err.message}`, type: 'error' });
+            const data = await apiClient.triggerAllUpdates(remoteBackendUrl);
+            setMessage({ text: data.message || 'Güncelleme komutu gönderildi!', type: 'success' });
+        } catch (err: unknown) {
+            const msg = err instanceof Error ? err.message : 'Bilinmeyen hata';
+            setMessage({ text: `Hata: ${msg}`, type: 'error' });
         } finally { setTriggering(false); }
     };
 
@@ -174,16 +151,12 @@ const AgentUpdatePage: React.FC = () => {
 
         setMessage(null);
         try {
-            const res = await fetch(`${API_BASE_URL}/api/updates/build`, { method: 'POST', headers: authHeaders() });
-            if (res.ok) {
-                setIsBuilding(true);
-                setBuildStatus("Derleme başlatılıyor...");
-            } else {
-                const errText = await res.text();
-                setMessage({ text: `Build başlatılamadı: ${errText}`, type: 'error' });
-            }
-        } catch (err: any) {
-            setMessage({ text: `Hata: ${err.message}`, type: 'error' });
+            await apiClient.buildNewAgent();
+            setIsBuilding(true);
+            setBuildStatus("Derleme başlatılıyor...");
+        } catch (err: unknown) {
+            const msg = err instanceof Error ? err.message : 'Bilinmeyen hata';
+            setMessage({ text: `Build başlatılamadı: ${msg}`, type: 'error' });
         }
     };
 

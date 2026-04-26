@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { useAuth } from '../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { formatDistanceToNow } from 'date-fns';
 import { tr } from 'date-fns/locale';
@@ -29,6 +30,7 @@ import type {
   StartOfflineServicesResponse,
 } from '../lib/apiClient';
 import type { Device } from '../types';
+import DeviceTabs from '../components/DeviceTabs';
 
 type SortKey = 'hostname' | 'storeCode' | 'cpuUsage' | 'ramUsage' | 'diskUsage' | 'online' | 'lastSeen';
 type SortDir = 'asc' | 'desc';
@@ -37,6 +39,7 @@ type ContextMenuState = { device: Device; x: number; y: number } | null;
 
 const DevicesPage: React.FC = () => {
   const navigate = useNavigate();
+  const { isAdmin } = useAuth();
   const [devices, setDevices] = useState<Device[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<FilterKey>('all');
@@ -446,6 +449,7 @@ const DevicesPage: React.FC = () => {
 
   return (
     <div className="space-y-6 p-1">
+      <DeviceTabs />
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-5">
           <h1 className="text-2xl font-bold text-white tracking-tight">Cihazlar</h1>
@@ -774,7 +778,7 @@ const DevicesPage: React.FC = () => {
               busy={busyDeviceId === contextDevice.id}
               onClick={() => { void handleToggleOfflineExclusion(contextDevice); }}
             />
-            {!contextDevice.online && (
+            {isAdmin && !contextDevice.online && (
               <ContextMenuButton
                 icon={<Trash2 className="h-4 w-4" />}
                 label="Sil"

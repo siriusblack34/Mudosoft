@@ -7,7 +7,11 @@ import {
 } from "lucide-react";
 import type { DbLogStatus } from "../contexts/PrefetchContext";
 
-export default function DbLogCleanupPage() {
+type DbLogCleanupPageProps = {
+    embedded?: boolean;
+};
+
+export default function DbLogCleanupPage({ embedded = false }: DbLogCleanupPageProps) {
     const [searchTerm, setSearchTerm] = useState("");
     const [cleaningDevices, setCleaningDevices] = useState<Set<string>>(new Set());
     const [statusFilter, setStatusFilter] = useState<"all" | "dirty" | "offline" | "error">("all");
@@ -115,7 +119,7 @@ export default function DbLogCleanupPage() {
     };
 
     return (
-        <div className="p-6 h-[calc(100vh-2rem)] flex flex-col gap-5">
+        <div className={embedded ? "flex flex-col gap-5" : "p-6 h-[calc(100vh-2rem)] flex flex-col gap-5"}>
             {/* Page Header */}
             <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between glass-panel p-6 rounded-2xl border-white/5 shadow-lg">
                 <div>

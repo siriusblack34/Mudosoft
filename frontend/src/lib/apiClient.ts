@@ -1,6 +1,9 @@
 // frontend/src/lib/apiClient.ts
 
-import type { Device } from "../types";
+import type {
+    Device, DashboardSummary, OfflineLogEntry, OfflineLogStats, CollectorReportEntry, EventLogEntry,
+    OutageMailTemplateGroup, OutageMailRequest, OutageMailPreview, OutageMailSendResult,
+} from "../types";
 
 // ==========================
 // TYPES
@@ -33,6 +36,17 @@ export interface CommandResultRecord {
     completedAtUtc: string | null;
 }
 
+export interface DeviceOfflineExclusionResponse {
+    deviceId: string;
+    excludeFromOfflineList: boolean;
+}
+
+export interface DeviceTemporaryCloseResponse {
+    deviceId: string;
+    isTemporarilyClosed: boolean;
+    temporaryCloseReason?: string | null;
+}
+
 // ✅ SQL QUERY – ENVANTER + STATUS
 export interface SqlDeviceWithStatus {
     deviceId: string;
@@ -42,18 +56,261 @@ export interface SqlDeviceWithStatus {
     deviceName: string;
     calculatedIpAddress: string;
     isOnline: boolean;
-    lastSeen: string | null; // ISO datetime, last time device was confirmed online
+    /** ICMP Ping sonucu (null = kontrol yapilmadi) */
+    pingReachable: boolean | null;
+    /** TCP 1433 SQL sonucu (null = kontrol yapilmadi, ornegin router) */
+    sqlReachable: boolean | null;
+    lastSeen: string | null;
     isTemporarilyClosed: boolean;
     temporaryCloseReason: string | null;
+}
+
+// ✅ NETWORK DIAGNOSTICS
+export interface StoreDiagnostic {
+    storeCode: number;
+    storeName: string;
+    type: 'FullOutage' | 'InternalNetwork' | 'RouterFlapping' | 'DeviceFlapping' | 'PartialOutage' | 'StoreFlapping';
+    severity: 'Critical' | 'Warning' | 'Info';
+    title: string;
+    message: string;
+    detectedAt: string;
+    routerOnline: boolean;
+    totalDevices: number;
+    onlineDevices: number;
+    offlineDevices: number;
+    flappingCount: number;
+    affectedDevices: string[];
+}
+
+export interface DiagnosticsResponse {
+    summary: {
+        analyzedAt: string;
+        totalStores: number;
+        issues: number;
+        critical: number;
+        warning: number;
+        byType: { type: string; count: number }[];
+    };
+    diagnostics: StoreDiagnostic[];
+}
+
+// ✅ ROUTER LINE DIAGNOSTICS (karasal / 4.5G tespiti)
+export type RouterLineClass = 'Unknown' | 'Terrestrial' | 'MobileSuspected' | 'MobileLikely' | 'Unstable';
+
+export interface RouterClassification {
+    deviceId: string;
+    storeCode: number;
+    storeName: string;
+    ip: string;
+    class: RouterLineClass;
+    reason: string;
+    sampleCount: number;
+    successRate: number;
+    avgRttMs: number | null;
+    p50Ms: number;
+    p95Ms: number;
+    stdDevMs: number;
+    lastSampleAt: string | null;
+    prevAvgRttMs: number | null;
+    switchoverDetected: boolean;
+    terrestrialMbps: number | null;
+    lineType: string | null;
+}
+
+export interface RouterDiagnosticsSummary {
+    analyzedAt: string;
+    windowMinutes: number;
+    total: number;
+    terrestrial: number;
+    mobileSuspected: number;
+    mobileLikely: number;
+    unstable: number;
+    unknown: number;
+    switchovers: number;
+}
+
+export interface RouterDiagnosticsResponse {
+    summary: RouterDiagnosticsSummary;
+    routers: RouterClassification[];
+}
+
+export interface RouterLatencyPoint {
+    sampledAt: string;
+    rttMs: number | null;
+    success: boolean;
+}
+
+export interface RouterLatencyHistory {
+    storeCode: number;
+    hours: number;
+    points: RouterLatencyPoint[];
+}
+
+export interface StoreNetworkInfo {
+    storeCode: number;
+    terrestrialMbps: number;
+    lineType: string | null;
+    notes: string | null;
+    updatedAt: string;
+}
+
+export interface StoreTimelineResponse {
+    summary: {
+        storeCode: number;
+        periodHours: number;
+        totalEvents: number;
+        deviceCount: number;
+        routerEvents: number;
+        pcEvents: number;
+        kasaEvents: number;
+    };
+    timeline: {
+        deviceId: string;
+        deviceType: string;
+        changes: { isOnline: boolean; changedAt: string }[];
+        totalChanges: number;
+        lastStatus: boolean;
+    }[];
 }
 
 // ✅ STORE MANAGERS
 export interface StoreManager {
     id: number;
     storeCode: number;
+    actualStoreCode?: number | null;
     storeName: string;
     fullName: string;
     phone: string;
+}
+
+export interface StoreOutageSummary {
+    storeCode: number;
+    storeName: string;
+    incidentCount: number;
+    totalOfflineMinutes: number;
+    averageOfflineMinutes: number;
+    lastOfflineAt: string | null;
+    lastOnlineAt: string | null;
+    isCurrentlyOffline: boolean;
+    maxOfflineKasaCount: number;
+}
+
+export interface StoreOutageIncident {
+    id: number;
+    storeCode: number;
+    storeName: string;
+    offlineKasaCount: number;
+    offlineAt: string;
+    onlineAt: string | null;
+    durationMinutes: number | null;
+    isStillOffline: boolean;
+}
+
+export interface StoreOutageReport {
+    periodDays: number;
+    generatedAtUtc: string;
+    totalIncidents: number;
+    currentlyOfflineStoreCount: number;
+    summary: StoreOutageSummary[];
+    incidents: StoreOutageIncident[];
+}
+
+export interface HardwareInventoryRow {
+    deviceId: string;
+    hostname: string;
+    storeCode: number;
+    storeName: string | null;
+    type: string;
+    ipAddress: string;
+    os: string;
+    agentVersion: string | null;
+    cpuModel: string | null;
+    gpuModel: string | null;
+    totalRamMB: number;
+    totalDiskGB: number;
+    totalDiskDGB: number | null;
+    cpuUsagePercent: number;
+    ramUsagePercent: number;
+    diskUsagePercent: number;
+    diskDUsagePercent: number | null;
+    healthStatus: string;
+    healthScore: number;
+    online: boolean;
+    lastSeen: string | null;
+    lastLoggedInUser: string | null;
+    systemBootTime: string | null;
+    vncInstalled: boolean;
+}
+
+export interface HardwareInventoryReport {
+    generatedAtUtc: string;
+    totalDevices: number;
+    onlineDevices: number;
+    criticalDevices: number;
+    rows: HardwareInventoryRow[];
+}
+
+export interface FaultDensityStore {
+    storeCode: number;
+    storeName: string;
+    deviceCount: number;
+    currentOfflineDevices: number;
+    criticalDevices: number;
+    warningDevices: number;
+    closedDevices: number;
+    devicesWithIssues: number;
+    incidentCount: number;
+    totalOfflineMinutes: number;
+    lastOfflineAt: string | null;
+    faultScore: number;
+}
+
+export interface FaultDensityDevice {
+    deviceId: string;
+    hostname: string;
+    storeCode: number;
+    storeName: string;
+    type: string;
+    online: boolean;
+    isTemporarilyClosed: boolean;
+    healthStatus: string;
+    healthScore: number;
+    cpuUsagePercent: number;
+    ramUsagePercent: number;
+    diskUsagePercent: number;
+    lastSeen: string | null;
+    issueScore: number;
+    issueReasons: string[];
+}
+
+export interface FaultDensityReport {
+    periodDays: number;
+    generatedAtUtc: string;
+    stores: FaultDensityStore[];
+    devices: FaultDensityDevice[];
+}
+
+export interface StartOfflineServicesResponse {
+    jobId?: string;
+    totalOffline: number;
+    attempted: number;
+    pingReachable: number;
+    startIssued: number;
+    runningConfirmed: number;
+    completedAtUtc?: string;
+    results: StartOfflineServiceResult[];
+}
+
+export interface StartOfflineServiceResult {
+    deviceId: string;
+    hostname: string;
+    ipAddress: string;
+    storeCode: number;
+    pingReachable: boolean;
+    startIssued: boolean;
+    runningConfirmed: boolean;
+    status: string;
+    message: string;
 }
 
 
@@ -192,6 +449,14 @@ export const apiClient = {
         return this.get(`/api/devices/${id}`);
     },
 
+    getDeviceMetrics(id: string): Promise<DeviceMetricDataPoint[]> {
+        return this.get(`/api/devices/${id}/metrics`);
+    },
+
+    deleteDevice(id: string): Promise<{ success: boolean; deletedDeviceId: string }> {
+        return this.delete(`/api/devices/${encodeURIComponent(id)}`);
+    },
+
     // ==========================
     // SQL QUERY – ✅ TEK DOĞRU KAYNAK
     // ==========================
@@ -222,12 +487,15 @@ export const apiClient = {
         return this.post("/api/actions/run-script", { deviceId, script });
     },
 
+    listServices(deviceId: string): Promise<{ commandId: string }> {
+        return this.post("/api/actions/list-services", { deviceId });
+    },
+
     folderCleanup(deviceId: string, path: string): Promise<{ commandId: string }> {
         return this.post("/api/actions/folder-cleanup", { deviceId, path });
     },
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    uploadFile(deviceId: string, file: File, remotePath: string): Promise<any> {
+    uploadFile(deviceId: string, file: File, remotePath: string): Promise<{ commandId: string }> {
         return new Promise((resolve, reject) => {
             const reader = new FileReader();
             reader.onload = async () => {
@@ -256,8 +524,7 @@ export const apiClient = {
     // ==========================
     // DASHBOARD
     // ==========================
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    getDashboard(): Promise<any> {
+    getDashboard(): Promise<DashboardSummary> {
         return this.get("/api/dashboard/summary");
     },
 
@@ -272,20 +539,51 @@ export const apiClient = {
         return this.post("/api/storemanagers/import", { rawText });
     },
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    getOfflineLogs(days = 7, storeCode?: number): Promise<any[]> {
+    // ==========================
+    // OUTAGE MAIL (arıza bildirimi)
+    // ==========================
+    getOutageMailTemplates(): Promise<OutageMailTemplateGroup[]> {
+        return this.get("/api/outage-mail/templates");
+    },
+    previewOutageMail(req: OutageMailRequest): Promise<OutageMailPreview> {
+        return this.post("/api/outage-mail/preview", req);
+    },
+    sendOutageMail(req: OutageMailRequest): Promise<OutageMailSendResult> {
+        return this.post("/api/outage-mail/send", req);
+    },
+
+    getOfflineLogs(days = 7, storeCode?: number): Promise<OfflineLogEntry[]> {
         const qs = new URLSearchParams({ days: String(days) });
         if (storeCode) qs.append("storeCode", String(storeCode));
         return this.get(`/api/sqlquery/offline-logs?${qs}`);
     },
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    getOfflineStats(days = 30): Promise<any[]> {
+    getOfflineStats(days = 30): Promise<OfflineLogStats[]> {
         return this.get(`/api/sqlquery/offline-logs/stats?days=${days}`);
+    },
+
+    getStoreOutageReport(days = 30): Promise<StoreOutageReport> {
+        return this.get(`/api/reports/store-outages?days=${days}`);
+    },
+
+    getHardwareInventoryReport(): Promise<HardwareInventoryReport> {
+        return this.get("/api/reports/hardware-inventory", 60_000);
+    },
+
+    getFaultDensityReport(days = 30): Promise<FaultDensityReport> {
+        return this.get(`/api/reports/fault-density?days=${days}`);
     },
 
     toggleTemporaryClose(deviceId: string, isClosed: boolean, reason?: string): Promise<{ success: boolean; deviceId: string; isTemporarilyClosed: boolean }> {
         return this.put(`/api/sqlquery/devices/${encodeURIComponent(deviceId)}/temporary-close`, { isClosed, reason });
+    },
+
+    setDeviceOfflineExclusion(deviceId: string, excludeFromOfflineList: boolean): Promise<DeviceOfflineExclusionResponse> {
+        return this.put(`/api/devices/${encodeURIComponent(deviceId)}/offline-exclusion`, { excludeFromOfflineList });
+    },
+
+    setDeviceTemporaryClose(deviceId: string, isClosed: boolean, reason?: string): Promise<DeviceTemporaryCloseResponse> {
+        return this.put(`/api/devices/${encodeURIComponent(deviceId)}/temporary-close`, { isClosed, reason });
     },
 
     deleteStoreDevice(deviceId: string): Promise<{ success: boolean; deletedDeviceId: string }> {
@@ -293,26 +591,117 @@ export const apiClient = {
     },
 
     // ==========================
+    // NETWORK DIAGNOSTICS
+    // ==========================
+    getActiveDiagnostics(windowMinutes = 30, flappingThreshold = 4): Promise<DiagnosticsResponse> {
+        return this.get(`/api/diagnostics/active?windowMinutes=${windowMinutes}&flappingThreshold=${flappingThreshold}`);
+    },
+
+    getStoreTimeline(storeCode: number, hours = 24): Promise<StoreTimelineResponse> {
+        return this.get(`/api/diagnostics/store/${storeCode}/timeline?hours=${hours}`);
+    },
+
+    // ==========================
+    // ROUTER LINE DIAGNOSTICS (karasal / 4.5G)
+    // ==========================
+    getRouterDiagnostics(windowMinutes = 10): Promise<RouterDiagnosticsResponse> {
+        return this.get(`/api/router-diagnostics/current?windowMinutes=${windowMinutes}`);
+    },
+
+    getRouterLatencyHistory(storeCode: number, hours = 24): Promise<RouterLatencyHistory> {
+        return this.get(`/api/router-diagnostics/store/${storeCode}/history?hours=${hours}`);
+    },
+
+    getStoreNetworkInfo(): Promise<StoreNetworkInfo[]> {
+        return this.get(`/api/router-diagnostics/network-info`);
+    },
+
+    updateStoreNetworkInfo(storeCode: number, data: { terrestrialMbps: number; lineType?: string | null; notes?: string | null }): Promise<StoreNetworkInfo> {
+        return this.put(`/api/router-diagnostics/network-info/${storeCode}`, data);
+    },
+
+    // ==========================
     // COLLECTOR / HEALTH
     // ==========================
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    getCollectorData(deviceId: string, collector?: string, limit = 50): Promise<any[]> {
+    getCollectorData(deviceId: string, collector?: string, limit = 50): Promise<CollectorReportEntry[]> {
         const qs = new URLSearchParams({ limit: String(limit) });
         if (collector) qs.append("collector", collector);
         return this.get(`/api/agent/collector-report/${encodeURIComponent(deviceId)}?${qs}`);
     },
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    getCollectorLatest(deviceId: string): Promise<any[]> {
+    getCollectorLatest(deviceId: string): Promise<CollectorReportEntry[]> {
         return this.get(`/api/agent/collector-report/${encodeURIComponent(deviceId)}/latest`);
     },
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    getEventLogs(deviceId: string, limit = 100): Promise<any[]> {
+    getEventLogs(deviceId: string, limit = 100): Promise<EventLogEntry[]> {
         return this.get(`/api/agent/collector-report/${encodeURIComponent(deviceId)}/eventlogs?limit=${limit}`);
+    },
+
+    // ==========================
+    // OFFLINE SERVICES
+    // ==========================
+    startOfflineServices(): Promise<StartOfflineServicesResponse> {
+        return this.post("/api/devices/start-offline-services");
+    },
+
+    getOfflineServiceStartStatus(jobId: string): Promise<StartOfflineServicesResponse> {
+        return this.get(`/api/devices/start-offline-services/${encodeURIComponent(jobId)}`);
     },
 
     getBaseUrl(): string {
         return API_BASE_URL;
-    }
+    },
+
+    /** Backend health check — herhangi bir HTTP yanıtı = sunucu ayakta. 401 redirect yapmaz. */
+    async checkBackendHealth(): Promise<boolean> {
+        try {
+            await fetch(buildUrl("/api/dashboard/summary"), {
+                headers: { ...getAuthHeaders() },
+                signal: AbortSignal.timeout(5000),
+            });
+            return true;
+        } catch {
+            return false;
+        }
+    },
+
+    // ==========================
+    // AGENT UPDATES
+    // ==========================
+    getLatestVersion(): Promise<{ version: string; fileName?: string; uploadedAt?: string; sizeBytes?: number; message?: string }> {
+        return this.get("/api/updates/latest");
+    },
+
+    getDeviceVersions(): Promise<{ id: string; hostname: string; online: boolean; agentVersion: string | null; storeCode: string | null; lastSeen: string | null }[]> {
+        return this.get("/api/updates/device-versions");
+    },
+
+    getUpdateHistory(): Promise<{ version: string; fileName: string; uploadedAt: string; sizeBytes: number }[]> {
+        return this.get("/api/updates/history");
+    },
+
+    getBuildStatus(): Promise<{ isBuilding: boolean; status: string; error: string }> {
+        return this.get("/api/updates/build-status");
+    },
+
+    async uploadAgentPackage(file: File, version: string): Promise<{ message: string }> {
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('version', version);
+        const res = await fetchWithTimeout(buildUrl("/api/updates/upload"), {
+            method: 'POST',
+            headers: { ...getAuthHeaders() },
+            body: formData,
+        });
+        if (!res.ok) throw new Error(`Upload failed: ${res.status}`);
+        return res.json();
+    },
+
+    triggerAllUpdates(backendUrl: string): Promise<{ message: string }> {
+        return this.post(`/api/updates/trigger-all?backendUrl=${encodeURIComponent(backendUrl)}`);
+    },
+
+    buildNewAgent(): Promise<void> {
+        return this.post("/api/updates/build");
+    },
 };

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
   Activity, ArrowLeft, Cpu, Download, FolderOpen, HardDrive,
@@ -52,6 +52,7 @@ const DeviceDetailsPage: React.FC = () => {
   const { deviceId } = useParams<{ deviceId: string }>();
   const navigate = useNavigate();
   const [dev, setDev] = useState<Device | null>(null);
+  const [metrics, setMetrics] = useState<DeviceMetric[]>([]);
   const [loading, setLoading] = useState(true);
   const [restarting, setRestarting] = useState(false);
   const [installingVnc, setInstallingVnc] = useState(false);
@@ -63,6 +64,7 @@ const DeviceDetailsPage: React.FC = () => {
   const [cleanResult, setCleanResult] = useState<string | null>(null);
 
   // Scanner
+  const scanRef = useRef<HTMLElement>(null);
   const [scanOpen, setScanOpen] = useState(false);
   const [scanning, setScanning] = useState(false);
   const [scanResults, setScanResults] = useState<any[]>([]);
@@ -81,6 +83,21 @@ const DeviceDetailsPage: React.FC = () => {
     load();
     const iv = setInterval(load, 10000);
     return () => { off = true; clearInterval(iv); };
+  }, [deviceId]);
+
+  useEffect(() => {
+    if (!deviceId) { setMetrics([]); return; }
+    let off = false;
+    const loadMetrics = async () => {
+      try {
+        const data = await apiClient.getDeviceMetrics(deviceId);
+        if (!off) setMetrics(data);
+      } catch {
+        if (!off) setMetrics([]);
+      }
+    };
+    void loadMetrics();
+    return () => { off = true; };
   }, [deviceId]);
 
   /* ---- actions ---- */
@@ -107,6 +124,10 @@ const DeviceDetailsPage: React.FC = () => {
     const subnet = parts.slice(0, 3).join(".");
     setScanOpen(true); setScanning(true); setScanResults([]); setScanError(null);
     setScanInfo({ subnet, range: `${subnet}.1 - ${subnet}.254`, total: 0 });
+    // Scan bölümüne kaydır
+    setTimeout(() => {
+      scanRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 100);
     try {
       const body: any = { subnet }; if (deviceId) body.deviceId = deviceId;
       const res = await apiClient.post<any>("/api/agent/remote-install/scan", body, 360000);
@@ -138,7 +159,6 @@ const DeviceDetailsPage: React.FC = () => {
   };
 
   /* ---- chart data ---- */
-  const metrics: DeviceMetric[] = dev?.metrics || [];
   const cpuData = useMemo(() => metrics.map(m => ({ name: fmt(m.timestampUtc), value: m.cpuUsagePercent })), [metrics]);
   const ramData = useMemo(() => metrics.map(m => ({ name: fmt(m.timestampUtc), value: m.ramUsagePercent })), [metrics]);
   const diskData = useMemo(() => metrics.map(m => ({ name: fmt(m.timestampUtc), value: m.diskUsagePercent })), [metrics]);
@@ -278,7 +298,7 @@ const DeviceDetailsPage: React.FC = () => {
 
       {/* ═══════════ IP SCANNER ═══════════ */}
       {scanOpen && (
-        <section className="rounded-2xl border border-teal-500/20 bg-ms-bg-soft overflow-hidden animate-fade-in">
+        <section ref={scanRef} className="rounded-2xl border border-teal-500/20 bg-ms-bg-soft overflow-hidden animate-fade-in">
           <div className="flex items-center justify-between px-5 py-3 border-b border-teal-500/10">
             <div className="flex items-center gap-2">
               <span className="p-1.5 rounded-lg bg-teal-500/10"><Radar className="w-4 h-4 text-teal-500 dark:text-teal-400" /></span>

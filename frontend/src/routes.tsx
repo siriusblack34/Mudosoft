@@ -11,11 +11,8 @@ import FileManagerPage from "./pages/FileManagerPage";
 import SoftwareDeploymentPage from "./pages/SoftwareDeploymentPage";
 import ScriptPage from "./pages/ScriptPage";
 import AgentUpdatePage from "./pages/AgentUpdatePage";
-import InboxCleanupPage from "./pages/InboxCleanupPage";
+import CleanupPage from "./pages/CleanupPage";
 import NotesPage from "./pages/NotesPage";
-import StockCleanupPage from "./pages/StockCleanupPage";
-import DbLogCleanupPage from "./pages/DbLogCleanupPage";
-import DiskStatusPage from "./pages/DiskStatusPage";
 
 import AuthGuard from "./layout/AuthGuard";
 import AdminGuard from "./layout/AdminGuard";
@@ -29,7 +26,17 @@ import WebRdpPage from "./pages/WebRdpPage";
 import HolidaysPage from "./pages/HolidaysPage";
 import RemoteInstallPage from "./pages/RemoteInstallPage";
 import BilgisayarlarPage from "./pages/BilgisayarlarPage";
+import MagazalarPage from "./pages/MagazalarPage";
+import RouterPage from "./pages/RouterPage";
+import NetworkDiagnosticsPage from "./pages/NetworkDiagnosticsPage";
 import PosLogAnalyzerPage from "./pages/PosLogAnalyzerPage";
+import TeamPage from "./pages/TeamPage";
+import PersonelPage from "./pages/PersonelPage";
+import StoreOutageReportPage from "./pages/StoreOutageReportPage";
+import HardwareInventoryReportPage from "./pages/HardwareInventoryReportPage";
+import FaultDensityReportPage from "./pages/FaultDensityReportPage";
+import GundemPage from "./pages/GundemPage";
+import OutageMailPage from "./pages/OutageMailPage";
 import { Navigate } from "react-router-dom";
 
 const routes = [
@@ -120,7 +127,7 @@ const routes = [
                 path: "/sql-query",
                 element: (
                     <ShellLayout>
-                        <AdminGuard><SQLQueryPage /></AdminGuard>
+                        <SQLQueryPage />
                     </ShellLayout>
                 ),
             },
@@ -133,6 +140,14 @@ const routes = [
                 ),
             },
             {
+                path: "/magazalar",
+                element: (
+                    <ShellLayout>
+                        <MagazalarPage />
+                    </ShellLayout>
+                ),
+            },
+            {
                 path: "/bilgisayarlar",
                 element: (
                     <ShellLayout>
@@ -141,26 +156,54 @@ const routes = [
                 ),
             },
             {
+                path: "/routerlar",
+                element: (
+                    <ShellLayout>
+                        <RouterPage />
+                    </ShellLayout>
+                ),
+            },
+            {
+                path: "/ag-teshis",
+                element: (
+                    <ShellLayout>
+                        <NetworkDiagnosticsPage />
+                    </ShellLayout>
+                ),
+            },
+            {
                 path: "/agent-update",
                 element: (
                     <ShellLayout>
-                        <AdminGuard><AgentUpdatePage /></AdminGuard>
+                        <AgentUpdatePage />
+                    </ShellLayout>
+                ),
+            },
+            {
+                path: "/cleanup",
+                element: (
+                    <ShellLayout>
+                        <CleanupPage />
                     </ShellLayout>
                 ),
             },
             {
                 path: "/inbox-cleanup",
-                element: (
-                    <ShellLayout>
-                        <InboxCleanupPage />
-                    </ShellLayout>
-                ),
+                element: <Navigate to="/cleanup?tab=plu-cache" replace />,
             },
             {
                 path: "/store-managers",
                 element: (
                     <ShellLayout>
-                        <AdminGuard><StoreManagersPage /></AdminGuard>
+                        <StoreManagersPage />
+                    </ShellLayout>
+                ),
+            },
+            {
+                path: "/ariza-bildirim",
+                element: (
+                    <ShellLayout>
+                        <OutageMailPage />
                     </ShellLayout>
                 ),
             },
@@ -174,27 +217,15 @@ const routes = [
             },
             {
                 path: "/stock-cleanup",
-                element: (
-                    <ShellLayout>
-                        <StockCleanupPage />
-                    </ShellLayout>
-                ),
+                element: <Navigate to="/cleanup?tab=plu-sql" replace />,
             },
             {
                 path: "/db-log-cleanup",
-                element: (
-                    <ShellLayout>
-                        <AdminGuard><DbLogCleanupPage /></AdminGuard>
-                    </ShellLayout>
-                ),
+                element: <Navigate to="/cleanup?tab=db-log" replace />,
             },
             {
                 path: "/disk-status",
-                element: (
-                    <ShellLayout>
-                        <DiskStatusPage />
-                    </ShellLayout>
-                ),
+                element: <Navigate to="/cleanup?tab=disk-status" replace />,
             },
             {
                 path: "/offline-logs",
@@ -249,10 +280,58 @@ const routes = [
                 ),
             },
             {
+                path: "/personel",
+                element: (
+                    <ShellLayout>
+                        <PersonelPage />
+                    </ShellLayout>
+                ),
+            },
+            {
+                path: "/team",
+                element: (
+                    <ShellLayout>
+                        <TeamPage />
+                    </ShellLayout>
+                ),
+            },
+            {
+                path: "/gundem",
+                element: (
+                    <ShellLayout>
+                        <GundemPage />
+                    </ShellLayout>
+                ),
+            },
+            {
                 path: "/remote-install",
                 element: (
                     <ShellLayout>
-                        <AdminGuard><RemoteInstallPage /></AdminGuard>
+                        <RemoteInstallPage />
+                    </ShellLayout>
+                ),
+            },
+            {
+                path: "/reports/store-outages",
+                element: (
+                    <ShellLayout>
+                        <StoreOutageReportPage />
+                    </ShellLayout>
+                ),
+            },
+            {
+                path: "/reports/hardware-inventory",
+                element: (
+                    <ShellLayout>
+                        <HardwareInventoryReportPage />
+                    </ShellLayout>
+                ),
+            },
+            {
+                path: "/reports/fault-density",
+                element: (
+                    <ShellLayout>
+                        <FaultDensityReportPage />
                     </ShellLayout>
                 ),
             },

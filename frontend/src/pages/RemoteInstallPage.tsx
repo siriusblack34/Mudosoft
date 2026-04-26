@@ -15,7 +15,7 @@ interface InstallStatus {
     id: string;
     ipAddress: string;
     storeCode: string;
-    phase: "pending" | "running" | "done" | "error";
+    phase: "pending" | "running" | "done" | "warn" | "error";
     error?: string;
     steps: InstallStep[];
     startedAt: string;
@@ -449,6 +449,7 @@ export default function RemoteInstallPage() {
                                             </>
                                         )}
                                         {target.status?.phase === "done" && <CheckCircle className="w-4 h-4 text-emerald-400 shrink-0" />}
+                                        {target.status?.phase === "warn" && <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />}
                                         {target.status?.phase === "error" && <XCircle className="w-4 h-4 text-red-400 shrink-0" />}
                                         {target.polling && <Loader2 className="w-4 h-4 text-blue-400 animate-spin shrink-0" />}
                                     </div>
@@ -456,6 +457,7 @@ export default function RemoteInstallPage() {
                                     {target.status && (
                                         <div className={`ml-6 p-3 rounded-lg border ${
                                             target.status.phase === "done"  ? "bg-emerald-500/5 border-emerald-500/20" :
+                                            target.status.phase === "warn"  ? "bg-amber-500/5 border-amber-500/20" :
                                             target.status.phase === "error" ? "bg-red-500/5 border-red-500/20" :
                                             "bg-blue-500/5 border-blue-500/20"
                                         }`}>

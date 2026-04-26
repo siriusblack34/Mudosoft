@@ -3,7 +3,7 @@ import { useLocation } from 'react-router-dom';
 import { Bell, Sun, Moon, Wifi, WifiOff } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 import { useAuth } from '../contexts/AuthContext';
-import { API_BASE_URL } from '../lib/apiClient';
+import { apiClient } from '../lib/apiClient';
 
 const PAGE_TITLES: Record<string, string> = {
   '/':               'Kontrol Paneli',
@@ -13,6 +13,7 @@ const PAGE_TITLES: Record<string, string> = {
   '/sql-query':      'SQL Sorgu',
   '/actions':        'İşlem Geçmişi',
   '/notes':          'Notlar',
+  '/cleanup':        'Temizlik Merkezi',
   '/inbox-cleanup':  'PLU Cache Temizlik',
   '/stock-cleanup':  'PLU SQL Temizlik',
   '/db-log-cleanup': 'Veritabanı Temizliği',
@@ -30,18 +31,8 @@ const Topbar: React.FC = () => {
   const [backendStatus, setBackendStatus] = useState<'connected' | 'disconnected' | 'checking'>('checking');
 
   const checkBackend = useCallback(async () => {
-    try {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 5000);
-      const res = await fetch(`${API_BASE_URL}/api/dashboard/summary`, {
-        signal: controller.signal,
-        headers: { Authorization: `Bearer ${localStorage.getItem('token') || ''}` },
-      });
-      clearTimeout(timeout);
-      setBackendStatus(res.ok || res.status === 401 ? 'connected' : 'disconnected');
-    } catch {
-      setBackendStatus('disconnected');
-    }
+    const ok = await apiClient.checkBackendHealth();
+    setBackendStatus(ok ? 'connected' : 'disconnected');
   }, []);
 
   useEffect(() => {
