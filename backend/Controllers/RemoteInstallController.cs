@@ -702,14 +702,28 @@ public class RemoteInstallController : ControllerBase
             }
             AddStep("Dosya kopyalama", "done", "Agent dosyaları kopyalandı");
 
-            // Step 4: .NET 8 Runtime kontrolü — yoksa servis kurulur ama baslatilamaz
+            // Step 4: .NET 8 Runtime kontrolü — yoksa otomatik kur (tools/dotnet-runtime-8.exe)
             AddStep(".NET 8 Runtime kontrolü", "running");
             var (netOk, netDetail) = await CheckDotNetRuntime(ip);
             if (!netOk)
             {
-                AddStep(".NET 8 Runtime kontrolü", "error", netDetail);
-                status.Phase = "error"; status.Error = netDetail;
-                return;
+                AddStep(".NET 8 Runtime kontrolü", "running", "Runtime yok, otomatik kurulum baslatiliyor...");
+                var (instOk, instDetail) = await InstallDotNetRuntime(ip);
+                if (!instOk)
+                {
+                    AddStep(".NET 8 Runtime kontrolü", "error", instDetail);
+                    status.Phase = "error"; status.Error = instDetail;
+                    return;
+                }
+                // Re-check after install
+                (netOk, netDetail) = await CheckDotNetRuntime(ip);
+                if (!netOk)
+                {
+                    AddStep(".NET 8 Runtime kontrolü", "error", "Kurulum tamamlandi ama runtime dogrulanamadi: " + netDetail);
+                    status.Phase = "error"; status.Error = netDetail;
+                    return;
+                }
+                netDetail = "Otomatik kuruldu — " + netDetail;
             }
             AddStep(".NET 8 Runtime kontrolü", "done", netDetail);
 
@@ -867,38 +881,40 @@ try {
     private async Task<(string State, string Detail)> InstallAndStartService(string ip)
     {
         // Dosyalar zaten SMB ile kopyalandı.
-        // schtasks kullanmadan doğrudan sc.exe remote komutlarıyla servis kuruluyor.
-        // (schtasks EDR alert'i tetikliyordu — T1053.005 Scheduled Task lateral movement)
+        // sc.exe argument quoting'i icin cmd /c kullaniyoruz — PowerShell native command
+        // arg parser'i binPath= "..." quoting'i bozuyor (exit 1639 / Invalid command line argument).
         var scriptPath = Path.Combine(Path.GetTempPath(), $"mudosvc_{ip.Replace('.', '_')}.ps1");
 
         var script = @"
 $ErrorActionPreference = 'Stop'
 $ip = '" + ip + @"'
 $svcName = 'MudosoftAgentService'
-$binPath = '""""""C:\Program Files\MudoSoft\Agent\MudoSoft.Agent.exe"""""" --service'
 try {
     # Registry: servis baslangic timeout'unu 120sn yap (yavas makineler icin)
     reg.exe add ""\\$ip\HKLM\SYSTEM\CurrentControlSet\Control"" /v ServicesPipeTimeout /t REG_DWORD /d 120000 /f 2>&1 | Out-Null
 
-    # Mevcut servisi durdur ve temizle (process yoksa hata yutulur)
-    $ErrorActionPreference = 'SilentlyContinue'
-    sc.exe ""\\$ip"" stop $svcName 2>&1 | Out-Null
+    # Mevcut servisi durdur (process yoksa hata yutulur)
+    cmd /c ""sc.exe \\$ip stop $svcName"" 2>&1 | Out-Null
     Start-Sleep -Seconds 2
     cmd /c ""taskkill /s $ip /f /im MudoSoft.Agent.exe /t"" 2>&1 | Out-Null
-    $ErrorActionPreference = 'Stop'
 
-    # Servis var mi kontrol et — yoksa olustur, varsa config guncelle
-    $queryResult = sc.exe ""\\$ip"" query $svcName 2>&1
+    # Servis var mi kontrol et
+    cmd /c ""sc.exe \\$ip query $svcName"" 2>&1 | Out-Null
     $queryExit = $LASTEXITCODE
+
+    # binPath= ""\""C:\Program Files\...\exe\"" --service"" -> cmd /c ile native quoting devre disi
+    $createCmd = 'sc.exe \\' + $ip + ' create ' + $svcName + ' binPath= ""\""C:\Program Files\MudoSoft\Agent\MudoSoft.Agent.exe\"" --service"" start= delayed-auto obj= LocalSystem DisplayName= ""MudoSoft Agent Service""'
+    $configCmd = 'sc.exe \\' + $ip + ' config ' + $svcName + ' binPath= ""\""C:\Program Files\MudoSoft\Agent\MudoSoft.Agent.exe\"" --service"" start= delayed-auto'
+
     if ($queryExit -ne 0) {
-        $createOutput = sc.exe ""\\$ip"" create $svcName binPath= $binPath start= delayed-auto obj= LocalSystem DisplayName= ""MudoSoft Agent Service"" 2>&1
+        $createOutput = cmd /c $createCmd 2>&1
         $createExit = $LASTEXITCODE
         if ($createExit -ne 0) {
             Write-Output ""SVC_FAIL: sc create basarisiz (exit=$createExit): $createOutput""
             return
         }
     } else {
-        $configOutput = sc.exe ""\\$ip"" config $svcName binPath= $binPath start= delayed-auto 2>&1
+        $configOutput = cmd /c $configCmd 2>&1
         $configExit = $LASTEXITCODE
         if ($configExit -ne 0) {
             Write-Output ""SVC_FAIL: sc config basarisiz (exit=$configExit): $configOutput""
@@ -908,11 +924,11 @@ try {
 
     # DelayedAutoStart, description, failure policy (kritik degil, sessiz gec)
     reg.exe add ""\\$ip\HKLM\SYSTEM\CurrentControlSet\Services\$svcName"" /v DelayedAutoStart /t REG_DWORD /d 1 /f 2>&1 | Out-Null
-    sc.exe ""\\$ip"" description $svcName ""MudoSoft RMM Agent"" 2>&1 | Out-Null
-    sc.exe ""\\$ip"" failure $svcName reset= 86400 actions= restart/5000/restart/10000/restart/30000 2>&1 | Out-Null
+    cmd /c ""sc.exe \\$ip description $svcName \""MudoSoft RMM Agent\"""" 2>&1 | Out-Null
+    cmd /c ""sc.exe \\$ip failure $svcName reset= 86400 actions= restart/5000/restart/10000/restart/30000"" 2>&1 | Out-Null
 
     # Servisi baslat
-    $startOutput = sc.exe ""\\$ip"" start $svcName 2>&1
+    $startOutput = cmd /c ""sc.exe \\$ip start $svcName"" 2>&1
     $startExit = $LASTEXITCODE
     # exit 1056 = ""An instance of the service is already running"" — tamam
     if ($startExit -ne 0 -and $startExit -ne 1056) {
@@ -920,18 +936,17 @@ try {
         return
     }
 
-    # Servis durumunu 30sn bekle — RUNNING olmali (START_PENDING kabul etmiyoruz, cogu zaman runtime eksik)
+    # Servis durumunu 30sn bekle — RUNNING olmali
     for ($i = 0; $i -lt 6; $i++) {
         Start-Sleep -Seconds 5
-        $svc = sc.exe ""\\$ip"" query $svcName 2>&1
+        $svc = cmd /c ""sc.exe \\$ip query $svcName"" 2>&1
         if ($svc -match 'RUNNING') {
             Write-Output 'SVC_OK: Servis kuruldu ve calisiyor'
             return
         }
     }
 
-    # Final state bilgisini de cikti olarak ver
-    $finalState = (sc.exe ""\\$ip"" query $svcName 2>&1) -join ' '
+    $finalState = (cmd /c ""sc.exe \\$ip query $svcName"" 2>&1) -join ' '
     Write-Output ""SVC_WARN: Servis olusturuldu ama 30sn icinde RUNNING durumuna gelmedi. Son durum: $finalState""
 } catch {
     Write-Output ""SVC_FAIL: $($_.Exception.Message)""
@@ -1028,6 +1043,66 @@ try {
             if (output.Contains("NET_OK"))
                 return (true, ".NET 8 Runtime mevcut: " + ExtractMarker(output, "NET_OK: "));
             return (false, ExtractMarker(output, "NET_FAIL: "));
+        }
+        finally
+        {
+            try { System.IO.File.Delete(scriptPath); } catch { }
+        }
+    }
+
+    private async Task<(bool Ok, string Detail)> InstallDotNetRuntime(string ip)
+    {
+        // tools/dotnet-runtime-8.exe zaten CopyFiles ile remote'a kopyalandi.
+        // WMI Win32_Process.Create ile silent install — ortalama 30-90sn surer.
+        var remoteExe = $@"\\{ip}\C$\Program Files\MudoSoft\Agent\tools\dotnet-runtime-8.exe";
+        if (!System.IO.File.Exists(remoteExe))
+        {
+            return (false, $"dotnet-runtime-8.exe remote'da bulunamadi: {remoteExe}");
+        }
+
+        var scriptPath = Path.Combine(Path.GetTempPath(), $"mudonetinst_{ip.Replace('.', '_')}.ps1");
+        var script = @"
+$ErrorActionPreference = 'Stop'
+$ip = '" + ip + @"'
+try {
+    $remoteTemp = ""\\$ip\C$\temp""
+    if (!(Test-Path $remoteTemp)) { New-Item -Path $remoteTemp -ItemType Directory -Force | Out-Null }
+    Copy-Item -Path ""\\$ip\C$\Program Files\MudoSoft\Agent\tools\dotnet-runtime-8.exe"" -Destination ""$remoteTemp\dotnet-runtime-8.exe"" -Force
+
+    $cmd = 'cmd.exe /c C:\temp\dotnet-runtime-8.exe /install /quiet /norestart > C:\temp\dotnet_install.log 2>&1'
+    $r = Invoke-WmiMethod -ComputerName $ip -Class Win32_Process -Name Create -ArgumentList $cmd -ErrorAction Stop
+    if ($r.ReturnValue -ne 0) {
+        Write-Output ""NETINST_FAIL: WMI process create failed (return=$($r.ReturnValue))""
+        return
+    }
+
+    # 5 dk bekle, .NET 8 directory'sini bul
+    for ($i = 0; $i -lt 60; $i++) {
+        Start-Sleep -Seconds 5
+        $sharedPath = ""\\$ip\C$\Program Files\dotnet\shared\Microsoft.NETCore.App""
+        if (Test-Path $sharedPath) {
+            $vers = @(Get-ChildItem $sharedPath -Directory -ErrorAction SilentlyContinue | Where-Object { $_.Name -like '8.*' })
+            if ($vers.Count -gt 0) {
+                Write-Output ""NETINST_OK: $($vers[0].Name)""
+                return
+            }
+        }
+    }
+    Write-Output 'NETINST_TIMEOUT'
+} catch {
+    Write-Output ""NETINST_FAIL: $($_.Exception.Message)""
+}
+";
+        await System.IO.File.WriteAllTextAsync(scriptPath, script);
+        try
+        {
+            var (_, output) = await RunPsFile(scriptPath);
+            _logger.LogInformation("[RemoteInstall] .NET install {Ip}: {Output}", ip, output);
+            if (output.Contains("NETINST_OK"))
+                return (true, ".NET 8 Runtime kuruldu");
+            if (output.Contains("NETINST_TIMEOUT"))
+                return (false, ".NET 8 kurulum 5dk icinde tamamlanmadi");
+            return (false, ExtractMarker(output, "NETINST_FAIL: "));
         }
         finally
         {

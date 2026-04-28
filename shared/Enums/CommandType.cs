@@ -1,5 +1,8 @@
+using System.Text.Json.Serialization;
+
 namespace Mudosoft.Shared.Enums;
 
+[JsonConverter(typeof(JsonStringEnumConverter))]
 public enum CommandType
 {
     Unknown = 0,
