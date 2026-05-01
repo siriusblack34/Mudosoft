@@ -290,6 +290,28 @@ export interface FaultDensityReport {
     devices: FaultDensityDevice[];
 }
 
+// ✅ REMOTE DESKTOP (VNC)
+export interface ActiveVncSession {
+    sessionId: string;
+    deviceId: string;
+    username: string | null;
+    targetIp: string;
+    startedAt: string;
+    durationMinutes: number;
+}
+
+export interface VncSessionLog {
+    id: number;
+    sessionId: string;
+    deviceId: string;
+    username: string | null;
+    targetIp: string;
+    startedAtUtc: string;
+    endedAtUtc: string | null;
+    durationSeconds: number | null;
+    disconnectReason: string | null;
+}
+
 export interface StartOfflineServicesResponse {
     jobId?: string;
     totalOffline: number;
@@ -695,6 +717,23 @@ export const apiClient = {
         });
         if (!res.ok) throw new Error(`Upload failed: ${res.status}`);
         return res.json();
+    },
+
+    // ==========================
+    // REMOTE DESKTOP (VNC)
+    // ==========================
+    getActiveVncSessions(): Promise<ActiveVncSession[]> {
+        return this.get("/api/rdp/sessions");
+    },
+
+    terminateVncSession(sessionId: string): Promise<{ message: string }> {
+        return this.delete(`/api/rdp/sessions/${encodeURIComponent(sessionId)}`);
+    },
+
+    getVncSessionLogs(deviceId?: string, limit = 200): Promise<VncSessionLog[]> {
+        const qs = new URLSearchParams({ limit: String(limit) });
+        if (deviceId) qs.append("deviceId", deviceId);
+        return this.get(`/api/rdp/logs?${qs}`);
     },
 
     triggerAllUpdates(backendUrl: string): Promise<{ message: string }> {

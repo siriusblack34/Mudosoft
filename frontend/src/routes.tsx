@@ -37,6 +37,8 @@ import HardwareInventoryReportPage from "./pages/HardwareInventoryReportPage";
 import FaultDensityReportPage from "./pages/FaultDensityReportPage";
 import GundemPage from "./pages/GundemPage";
 import OutageMailPage from "./pages/OutageMailPage";
+import ActiveSessionsPage from "./pages/ActiveSessionsPage";
+import SessionHistoryPage from "./pages/SessionHistoryPage";
 import { Navigate } from "react-router-dom";
 
 const routes = [
@@ -308,6 +310,22 @@ const routes = [
                 element: (
                     <ShellLayout>
                         <RemoteInstallPage />
+                    </ShellLayout>
+                ),
+            },
+            {
+                path: "/remote/sessions",
+                element: (
+                    <ShellLayout>
+                        <ActiveSessionsPage />
+                    </ShellLayout>
+                ),
+            },
+            {
+                path: "/remote/history",
+                element: (
+                    <ShellLayout>
+                        <SessionHistoryPage />
                     </ShellLayout>
                 ),
             },
