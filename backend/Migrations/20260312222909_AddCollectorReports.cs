@@ -4,7 +4,7 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
 #nullable disable
 
-namespace MudoSoft.Backend.Migrations
+namespace Orchestra.Backend.Migrations
 {
     /// <inheritdoc />
     public partial class AddCollectorReports : Migration

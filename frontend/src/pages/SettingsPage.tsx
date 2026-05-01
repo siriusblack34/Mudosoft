@@ -828,7 +828,7 @@ interface AlarmConfig {
 }
 
 const EmailAlarmPanel: React.FC = () => {
-  const [smtp, setSmtp] = useState({ host: '', port: 587, username: '', password: '', useSsl: false, fromAddress: '', fromName: 'MudoSoft RMM' });
+  const [smtp, setSmtp] = useState({ host: '', port: 587, username: '', password: '', useSsl: false, fromAddress: '', fromName: 'Orchestra' });
   const [hasPassword, setHasPassword] = useState(false);
   const [alarm, setAlarm] = useState<AlarmConfig>({ emailAlertsEnabled: false, alertRecipientRoles: ['Admin'], cooldownMinutes: 30 });
   const [users, setUsers] = useState<{ fullName: string; email: string | null; role: string }[]>([]);
@@ -941,7 +941,7 @@ const EmailAlarmPanel: React.FC = () => {
             <div>
               <label className="form-label">Gönderen İsim</label>
               <input value={smtp.fromName} onChange={e => setSmtp({ ...smtp, fromName: e.target.value })}
-                className="w-full text-sm" placeholder="MudoSoft RMM" />
+                className="w-full text-sm" placeholder="Orchestra" />
             </div>
           </div>
           <label className="flex items-center gap-2 text-sm text-ms-text cursor-pointer">

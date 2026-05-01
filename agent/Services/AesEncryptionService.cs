@@ -1,10 +1,10 @@
 using System.Security.Cryptography;
 using System.Text;
-using Mudosoft.Shared.Dtos;
+using Orchestra.Shared.Dtos;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
 
-namespace Mudosoft.Agent.Services;
+namespace Orchestra.Agent.Services;
 
 public interface IAesEncryptionService
 {

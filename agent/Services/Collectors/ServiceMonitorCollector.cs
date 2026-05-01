@@ -1,12 +1,12 @@
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using Mudosoft.Agent.Interfaces;
-using Mudosoft.Agent.Models;
-using Mudosoft.Shared.Dtos;
+using Orchestra.Agent.Interfaces;
+using Orchestra.Agent.Models;
+using Orchestra.Shared.Dtos;
 using System.ServiceProcess;
 using System.Text.Json;
 
-namespace Mudosoft.Agent.Services.Collectors;
+namespace Orchestra.Agent.Services.Collectors;
 
 /// <summary>
 /// Belirtilen Windows servislerinin durumunu izler.

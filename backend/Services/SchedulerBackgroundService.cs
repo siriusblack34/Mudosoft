@@ -1,8 +1,8 @@
-using MudoSoft.Backend.Data;
-using MudoSoft.Backend.Models;
+using Orchestra.Backend.Data;
+using Orchestra.Backend.Models;
 using Microsoft.EntityFrameworkCore;
 
-namespace MudoSoft.Backend.Services
+namespace Orchestra.Backend.Services
 {
     public class SchedulerBackgroundService : BackgroundService
     {
@@ -37,7 +37,7 @@ namespace MudoSoft.Backend.Services
         private async Task CheckAndExecuteTasksAsync(CancellationToken stoppingToken)
         {
             using var scope = _serviceProvider.CreateScope();
-            var db = scope.ServiceProvider.GetRequiredService<MudoSoftDbContext>();
+            var db = scope.ServiceProvider.GetRequiredService<OrchestraDbContext>();
             var cleanupService = scope.ServiceProvider.GetRequiredService<IInboxCleanupService>();
 
             var now = DateTime.UtcNow;

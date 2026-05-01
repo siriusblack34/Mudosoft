@@ -1,5 +1,5 @@
 // agent/Services/IHeartbeatSender.cs
-namespace Mudosoft.Agent.Services;
+namespace Orchestra.Agent.Services;
 
 public interface IHeartbeatSender
 {

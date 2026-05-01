@@ -1,6 +1,6 @@
-using Mudosoft.Shared.Dtos;    // <- BU OLSUN
+using Orchestra.Shared.Dtos;    // <- BU OLSUN
 
-namespace Mudosoft.Agent.Services;
+namespace Orchestra.Agent.Services;
 
 public interface ICommandExecutor
 {

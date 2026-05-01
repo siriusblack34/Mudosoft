@@ -9,10 +9,10 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.DependencyInjection;
-using MudoSoft.Backend.Data;
-using MudoSoft.Backend.Models;
+using Orchestra.Backend.Data;
+using Orchestra.Backend.Models;
 
-namespace MudoSoft.Backend.Services
+namespace Orchestra.Backend.Services
 {
     public class HeartbeatCheckerWorker : BackgroundService
     {
@@ -66,7 +66,7 @@ namespace MudoSoft.Backend.Services
         private async Task CheckAndUpdateDeviceStatusAsync()
         {
             using var scope = _scopeFactory.CreateScope();
-            var dbContext = scope.ServiceProvider.GetRequiredService<MudoSoftDbContext>();
+            var dbContext = scope.ServiceProvider.GetRequiredService<OrchestraDbContext>();
 
             var cutoffTime = DateTime.UtcNow - HeartbeatTimeout;
 
@@ -139,7 +139,7 @@ namespace MudoSoft.Backend.Services
         private async Task SendOfflineAlarmAsync(List<string> offlineDeviceIds)
         {
             using var scope = _scopeFactory.CreateScope();
-            var dbContext = scope.ServiceProvider.GetRequiredService<MudoSoftDbContext>();
+            var dbContext = scope.ServiceProvider.GetRequiredService<OrchestraDbContext>();
 
             var offlineDevices = await dbContext.Devices
                 .Where(d => offlineDeviceIds.Contains(d.Id)
@@ -232,7 +232,7 @@ namespace MudoSoft.Backend.Services
             }
         }
 
-        private void CleanupCooldowns(MudoSoftDbContext dbContext)
+        private void CleanupCooldowns(OrchestraDbContext dbContext)
         {
             // Online olan cihazlarin cooldown'ini temizle
             foreach (var key in _lastAlertSent.Keys.ToList())

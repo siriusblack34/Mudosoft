@@ -1,16 +1,16 @@
 using Microsoft.EntityFrameworkCore;
-using MudoSoft.Backend.Data;
-using MudoSoft.Backend.Models;
+using Orchestra.Backend.Data;
+using Orchestra.Backend.Models;
 using System.Collections.Generic;
 using System.Linq;
 
-namespace MudoSoft.Backend.Services;
+namespace Orchestra.Backend.Services;
 
 public class DeviceRepository : IDeviceRepository
 {
-    private readonly MudoSoftDbContext _context;
+    private readonly OrchestraDbContext _context;
 
-    public DeviceRepository(MudoSoftDbContext context)
+    public DeviceRepository(OrchestraDbContext context)
     {
         _context = context;
     }

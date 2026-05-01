@@ -2,10 +2,10 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.Http;
-using MudoSoft.Backend.Crypto;
-using Mudosoft.Shared.Dtos;
+using Orchestra.Backend.Crypto;
+using Orchestra.Shared.Dtos;
 
-namespace MudoSoft.Backend.Middleware;
+namespace Orchestra.Backend.Middleware;
 
 public class EncryptedPayloadMiddleware
 {

@@ -1,6 +1,6 @@
 using System.Collections.Generic;
 
-namespace Mudosoft.Shared.Dtos
+namespace Orchestra.Shared.Dtos
 {
     public class DeviceDetailDto
     {

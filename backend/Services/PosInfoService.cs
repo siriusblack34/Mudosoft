@@ -1,6 +1,6 @@
 using System.Text.RegularExpressions;
 
-namespace MudoSoft.Backend.Services
+namespace Orchestra.Backend.Services
 {
     public interface IPosInfoService
     {

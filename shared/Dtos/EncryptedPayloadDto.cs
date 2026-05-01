@@ -1,6 +1,6 @@
 using System;
 
-namespace Mudosoft.Shared.Dtos;
+namespace Orchestra.Shared.Dtos;
 
 // Agent'tan Backend'e gönderilecek yeni veri zarfı
 public class EncryptedPayloadDto

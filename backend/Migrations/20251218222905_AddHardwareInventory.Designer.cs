@@ -4,14 +4,14 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
-using MudoSoft.Backend.Data;
+using Orchestra.Backend.Data;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
 #nullable disable
 
-namespace MudoSoft.Backend.Migrations
+namespace Orchestra.Backend.Migrations
 {
-    [DbContext(typeof(MudoSoftDbContext))]
+    [DbContext(typeof(OrchestraDbContext))]
     [Migration("20251218222905_AddHardwareInventory")]
     partial class AddHardwareInventory
     {
@@ -25,7 +25,7 @@ namespace MudoSoft.Backend.Migrations
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
-            modelBuilder.Entity("MudoSoft.Backend.Models.ActionRecord", b =>
+            modelBuilder.Entity("Orchestra.Backend.Models.ActionRecord", b =>
                 {
                     b.Property<Guid>("RecordId")
                         .ValueGeneratedOnAdd()
@@ -58,7 +58,7 @@ namespace MudoSoft.Backend.Migrations
                     b.ToTable("ActionRecords");
                 });
 
-            modelBuilder.Entity("MudoSoft.Backend.Models.CommandResultRecord", b =>
+            modelBuilder.Entity("Orchestra.Backend.Models.CommandResultRecord", b =>
                 {
                     b.Property<long>("Id")
                         .ValueGeneratedOnAdd()
@@ -97,7 +97,7 @@ namespace MudoSoft.Backend.Migrations
                     b.ToTable("CommandResultRecords");
                 });
 
-            modelBuilder.Entity("MudoSoft.Backend.Models.Device", b =>
+            modelBuilder.Entity("Orchestra.Backend.Models.Device", b =>
                 {
                     b.Property<string>("Id")
                         .HasMaxLength(450)
@@ -181,7 +181,7 @@ namespace MudoSoft.Backend.Migrations
                     b.ToTable("Devices");
                 });
 
-            modelBuilder.Entity("MudoSoft.Backend.Models.DeviceMetric", b =>
+            modelBuilder.Entity("Orchestra.Backend.Models.DeviceMetric", b =>
                 {
                     b.Property<long>("Id")
                         .ValueGeneratedOnAdd()
@@ -219,7 +219,7 @@ namespace MudoSoft.Backend.Migrations
                     b.ToTable("DeviceMetrics");
                 });
 
-            modelBuilder.Entity("MudoSoft.Backend.Models.StoreDevice", b =>
+            modelBuilder.Entity("Orchestra.Backend.Models.StoreDevice", b =>
                 {
                     b.Property<string>("DeviceId")
                         .HasMaxLength(100)
@@ -264,9 +264,9 @@ namespace MudoSoft.Backend.Migrations
                     b.ToTable("StoreDevices");
                 });
 
-            modelBuilder.Entity("MudoSoft.Backend.Models.CommandResultRecord", b =>
+            modelBuilder.Entity("Orchestra.Backend.Models.CommandResultRecord", b =>
                 {
-                    b.HasOne("MudoSoft.Backend.Models.Device", "Device")
+                    b.HasOne("Orchestra.Backend.Models.Device", "Device")
                         .WithMany()
                         .HasForeignKey("DeviceId")
                         .OnDelete(DeleteBehavior.Cascade)
@@ -275,9 +275,9 @@ namespace MudoSoft.Backend.Migrations
                     b.Navigation("Device");
                 });
 
-            modelBuilder.Entity("MudoSoft.Backend.Models.DeviceMetric", b =>
+            modelBuilder.Entity("Orchestra.Backend.Models.DeviceMetric", b =>
                 {
-                    b.HasOne("MudoSoft.Backend.Models.Device", "Device")
+                    b.HasOne("Orchestra.Backend.Models.Device", "Device")
                         .WithMany("Metrics")
                         .HasForeignKey("DeviceId")
                         .OnDelete(DeleteBehavior.Cascade)
@@ -286,7 +286,7 @@ namespace MudoSoft.Backend.Migrations
                     b.Navigation("Device");
                 });
 
-            modelBuilder.Entity("MudoSoft.Backend.Models.Device", b =>
+            modelBuilder.Entity("Orchestra.Backend.Models.Device", b =>
                 {
                     b.Navigation("Metrics");
                 });

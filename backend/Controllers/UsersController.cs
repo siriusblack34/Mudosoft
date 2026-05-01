@@ -1,20 +1,20 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using MudoSoft.Backend.Data;
-using MudoSoft.Backend.Models;
+using Orchestra.Backend.Data;
+using Orchestra.Backend.Models;
 
-namespace MudoSoft.Backend.Controllers;
+namespace Orchestra.Backend.Controllers;
 
 [ApiController]
 [Authorize(Roles = "Admin")]
 [Route("api/users")]
 public class UsersController : ControllerBase
 {
-    private readonly MudoSoftDbContext _db;
+    private readonly OrchestraDbContext _db;
     private readonly ILogger<UsersController> _logger;
 
-    public UsersController(MudoSoftDbContext db, ILogger<UsersController> logger)
+    public UsersController(OrchestraDbContext db, ILogger<UsersController> logger)
     {
         _db = db;
         _logger = logger;

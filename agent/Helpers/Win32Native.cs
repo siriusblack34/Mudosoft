@@ -1,7 +1,7 @@
 using System;
 using System.Runtime.InteropServices;
 
-namespace Mudosoft.Agent.Native;
+namespace Orchestra.Agent.Native;
 
 internal static class Win32Native
 {

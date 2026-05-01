@@ -2,7 +2,7 @@ using System;
 using System.Runtime.InteropServices;
 using System.Security;
 
-namespace Mudosoft.Agent.Helpers;
+namespace Orchestra.Agent.Helpers;
 
 public static class SessionInterop
 {

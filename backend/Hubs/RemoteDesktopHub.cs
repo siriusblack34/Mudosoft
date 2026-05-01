@@ -1,9 +1,9 @@
 using Microsoft.AspNetCore.SignalR;
 using System.Collections.Concurrent;
 
-using Mudosoft.Shared.Dtos; // EKLENDİ
+using Orchestra.Shared.Dtos; // EKLENDİ
 
-namespace MudoSoft.Backend.Hubs;
+namespace Orchestra.Backend.Hubs;
 
 public class RemoteDesktopHub : Hub
 {

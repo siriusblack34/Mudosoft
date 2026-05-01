@@ -5,10 +5,10 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using MudoSoft.Backend.Data;
-using MudoSoft.Backend.Models;
+using Orchestra.Backend.Data;
+using Orchestra.Backend.Models;
 
-namespace MudoSoft.Backend.Services
+namespace Orchestra.Backend.Services
 {
     public class NetworkOutageAlarmWorker : BackgroundService
     {
@@ -60,7 +60,7 @@ namespace MudoSoft.Backend.Services
         private async Task CheckAndSendAlertsAsync(CancellationToken stoppingToken)
         {
             using var scope = _scopeFactory.CreateScope();
-            var db = scope.ServiceProvider.GetRequiredService<MudoSoftDbContext>();
+            var db = scope.ServiceProvider.GetRequiredService<OrchestraDbContext>();
             var fastCheck = scope.ServiceProvider.GetRequiredService<FastSqlReachabilityService>();
 
             var config = await LoadAlarmConfigAsync(db, stoppingToken);
@@ -117,7 +117,7 @@ namespace MudoSoft.Backend.Services
             }
         }
 
-        private static async Task<AlarmConfig?> LoadAlarmConfigAsync(MudoSoftDbContext db, CancellationToken stoppingToken)
+        private static async Task<AlarmConfig?> LoadAlarmConfigAsync(OrchestraDbContext db, CancellationToken stoppingToken)
         {
             var setting = await db.AppSettings
                 .AsNoTracking()
@@ -136,7 +136,7 @@ namespace MudoSoft.Backend.Services
         }
 
         private static async Task<List<StoreDeviceWithStatusDto>> LoadStoreDeviceStatusesAsync(
-            MudoSoftDbContext db,
+            OrchestraDbContext db,
             FastSqlReachabilityService fastCheck,
             CancellationToken stoppingToken)
         {

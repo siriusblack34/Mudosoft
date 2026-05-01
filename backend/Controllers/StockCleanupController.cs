@@ -1,20 +1,20 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
-using MudoSoft.Backend.Data;
-using MudoSoft.Backend.Services;
+using Orchestra.Backend.Data;
+using Orchestra.Backend.Services;
 using System.Collections.Concurrent;
 using System.Data;
 using System.Text.Json;
 
-namespace MudoSoft.Backend.Controllers
+namespace Orchestra.Backend.Controllers
 {
     [ApiController]
     [Authorize]
     [Route("api/stock-cleanup")]
     public class StockCleanupController : ControllerBase
     {
-        private readonly MudoSoftDbContext _db;
+        private readonly OrchestraDbContext _db;
         private readonly IRemoteSqlService _remoteSqlService;
         private readonly ILogger<StockCleanupController> _logger;
         private readonly FastSqlReachabilityService _fastCheck;
@@ -22,7 +22,7 @@ namespace MudoSoft.Backend.Controllers
         private static readonly ConcurrentDictionary<string, CleanAllJob> _cleanAllJobs = new();
 
         public StockCleanupController(
-            MudoSoftDbContext db,
+            OrchestraDbContext db,
             IRemoteSqlService remoteSqlService,
             FastSqlReachabilityService fastCheck,
             ILogger<StockCleanupController> logger)
@@ -258,7 +258,7 @@ namespace MudoSoft.Backend.Controllers
             try
             {
                 using var scope = scopeFactory.CreateScope();
-                var db = scope.ServiceProvider.GetRequiredService<MudoSoftDbContext>();
+                var db = scope.ServiceProvider.GetRequiredService<OrchestraDbContext>();
                 var remoteSql = scope.ServiceProvider.GetRequiredService<IRemoteSqlService>();
                 var fastCheck = scope.ServiceProvider.GetRequiredService<FastSqlReachabilityService>();
 

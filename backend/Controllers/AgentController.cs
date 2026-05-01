@@ -1,13 +1,13 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
-using Mudosoft.Shared.Dtos;
-using Mudosoft.Shared.Enums;
-using MudoSoft.Backend.Services;
-using MudoSoft.Backend.Data;
-using MudoSoft.Backend.Models;
+using Orchestra.Shared.Dtos;
+using Orchestra.Shared.Enums;
+using Orchestra.Backend.Services;
+using Orchestra.Backend.Data;
+using Orchestra.Backend.Models;
 
-namespace MudoSoft.Backend.Controllers;
+namespace Orchestra.Backend.Controllers;
 
 [ApiController]
 [Authorize] // 🔒 Authentication required by default
@@ -17,13 +17,13 @@ public class AgentController : ControllerBase
     private readonly IAgentService _service;
     private readonly CommandQueue _queue;
     private readonly ILogger<AgentController> _logger;
-    private readonly MudoSoftDbContext _dbContext;
+    private readonly OrchestraDbContext _dbContext;
 
     public AgentController(
         IAgentService service,
         CommandQueue queue,
         ILogger<AgentController> logger,
-        MudoSoftDbContext dbContext)
+        OrchestraDbContext dbContext)
     {
         _service = service;
         _queue = queue;

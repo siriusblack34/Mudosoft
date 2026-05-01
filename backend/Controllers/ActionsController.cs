@@ -1,13 +1,13 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using Mudosoft.Shared.Dtos;
-using Mudosoft.Shared.Enums;
-using MudoSoft.Backend.Data;
-using MudoSoft.Backend.Models;
+using Orchestra.Shared.Dtos;
+using Orchestra.Shared.Enums;
+using Orchestra.Backend.Data;
+using Orchestra.Backend.Models;
 using System.Text;
 
-namespace MudoSoft.Backend.Controllers;
+namespace Orchestra.Backend.Controllers;
 
 [ApiController]
 [Authorize]
@@ -17,7 +17,7 @@ public class ActionsController : ControllerBase
     private readonly CommandQueue _queue;
     private readonly ILogger<ActionsController> _logger;
     private readonly IWebHostEnvironment _env;
-    private readonly MudoSoftDbContext _dbContext;
+    private readonly OrchestraDbContext _dbContext;
     private readonly Dictionary<string, string> _batchTemplates;
     private const string ServiceInventoryScript = """
 $ErrorActionPreference = 'Stop'
@@ -38,12 +38,12 @@ try {
     }
 
     $json = $serializer.Serialize($services)
-    Write-Output "__MUDOSOFT_JSON_BEGIN__"
+    Write-Output "__ORCHESTRA_JSON_BEGIN__"
     Write-Output $json
-    Write-Output "__MUDOSOFT_JSON_END__"
+    Write-Output "__ORCHESTRA_JSON_END__"
 }
 catch {
-    Write-Output "__MUDOSOFT_ERROR__"
+    Write-Output "__ORCHESTRA_ERROR__"
     Write-Output $_.Exception.Message
     exit 1
 }
@@ -53,7 +53,7 @@ catch {
         CommandQueue queue,
         ILogger<ActionsController> logger,
         IWebHostEnvironment env,
-        MudoSoftDbContext dbContext)
+        OrchestraDbContext dbContext)
     {
         _queue = queue;
         _logger = logger;

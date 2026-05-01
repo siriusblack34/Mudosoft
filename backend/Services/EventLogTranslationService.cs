@@ -1,4 +1,4 @@
-namespace MudoSoft.Backend.Services;
+namespace Orchestra.Backend.Services;
 
 /// <summary>
 /// Yaygın Windows Event Log olaylarını Türkçe açıklama ve çözüm önerisi ile zenginleştirir.

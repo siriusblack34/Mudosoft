@@ -1,9 +1,9 @@
-using MudoSoft.Backend.Data;
+using Orchestra.Backend.Data;
 using Microsoft.EntityFrameworkCore;
 using System.Net.Sockets;
 using System.Collections.Concurrent;
 
-namespace MudoSoft.Backend.Services
+namespace Orchestra.Backend.Services
 {
     public class CleanResultItem
     {
@@ -46,7 +46,7 @@ namespace MudoSoft.Backend.Services
             CancellationToken ct = default)
         {
             using var scope = _scopeFactory.CreateScope();
-            var db = scope.ServiceProvider.GetRequiredService<MudoSoftDbContext>();
+            var db = scope.ServiceProvider.GetRequiredService<OrchestraDbContext>();
 
             var pcDevices = await db.StoreDevices
                 .AsNoTracking()

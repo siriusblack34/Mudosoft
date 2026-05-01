@@ -5,9 +5,9 @@ using System.Net.NetworkInformation;
 using System.Net.Sockets;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using Mudosoft.Shared.Dtos;
-using Mudosoft.Agent.Models;
-using Mudosoft.Agent.Interfaces;
+using Orchestra.Shared.Dtos;
+using Orchestra.Agent.Models;
+using Orchestra.Agent.Interfaces;
 using System.Text.Json; 
 using System.Net.Http;
 using System.Text; 
@@ -16,7 +16,7 @@ using System;
 using System.Threading; 
 using System.Threading.Tasks;
 
-namespace Mudosoft.Agent.Services;
+namespace Orchestra.Agent.Services;
 
 public sealed class HeartbeatService : IHeartbeatSender
 {

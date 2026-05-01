@@ -1,7 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Authorization;
 
-namespace MudoSoft.Backend.Controllers;
+namespace Orchestra.Backend.Controllers;
 
 [ApiController]
 [Authorize] // 🔒 Authentication required

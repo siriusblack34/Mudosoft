@@ -5,7 +5,7 @@ using Microsoft.Win32;
 using System.Diagnostics;
 using System.Net.NetworkInformation;
 
-namespace MudoSoft.Tray;
+namespace Orchestra.Tray;
 
 public class TrayApplicationContext : ApplicationContext
 {
@@ -37,7 +37,7 @@ public class TrayApplicationContext : ApplicationContext
         _trayIcon = new NotifyIcon
         {
             Icon = CreateStatusIcon(_currentStatus),
-            Text = "MudoSoft - Başlatılıyor...",
+            Text = "Orchestra - Başlatılıyor...",
             Visible = true,
             ContextMenuStrip = _contextMenu
         };
@@ -53,7 +53,7 @@ public class TrayApplicationContext : ApplicationContext
         _ = CheckAgentStatusAsync();
         
         // Show startup notification
-        _trayIcon.ShowBalloonTip(2000, "MudoSoft", "Endpoint koruması aktif", ToolTipIcon.Info);
+        _trayIcon.ShowBalloonTip(2000, "Orchestra", "Endpoint koruması aktif", ToolTipIcon.Info);
     }
     
     private async Task StartRemoteDesktopService()
@@ -290,7 +290,7 @@ public class TrayApplicationContext : ApplicationContext
         _currentStatus = status;
         
         _trayIcon.Icon = CreateStatusIcon(status);
-        _trayIcon.Text = $"MudoSoft - {statusText}";
+        _trayIcon.Text = $"Orchestra - {statusText}";
 
         // Update context menu
         if (_contextMenu.Items["statusItem"] is ToolStripMenuItem statusItem)
@@ -478,7 +478,7 @@ public class TrayApplicationContext : ApplicationContext
     {
         var version = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version?.ToString() ?? "1.0.0";
         MessageBox.Show(
-            $"MudoSoft Endpoint Tray\n\nVersiyon: {version}\n\n© 2025 MudoSoft\nTüm hakları saklıdır.",
+            $"Orchestra Endpoint Tray\n\nVersiyon: {version}\n\n© 2025 Orchestra\nTüm hakları saklıdır.",
             "Hakkında",
             MessageBoxButtons.OK,
             MessageBoxIcon.Information);

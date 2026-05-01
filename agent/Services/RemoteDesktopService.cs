@@ -2,17 +2,17 @@ using Microsoft.AspNetCore.SignalR.Client;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using Mudosoft.Agent.Interfaces;
-using Mudosoft.Agent.Models;
-using Mudosoft.Agent.Helpers;
-using Mudosoft.Shared.Dtos;
+using Orchestra.Agent.Interfaces;
+using Orchestra.Agent.Models;
+using Orchestra.Agent.Helpers;
+using Orchestra.Shared.Dtos;
 using System.Drawing;
 using System.Drawing.Imaging;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using System.Diagnostics; // Added for Process
 
-namespace Mudosoft.Agent.Services;
+namespace Orchestra.Agent.Services;
 
 [SupportedOSPlatform("windows")]
 public class RemoteDesktopService : BackgroundService

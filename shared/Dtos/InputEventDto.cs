@@ -1,6 +1,6 @@
-using Mudosoft.Shared.Enums;
+using Orchestra.Shared.Enums;
 
-namespace Mudosoft.Shared.Dtos;
+namespace Orchestra.Shared.Dtos;
 
 public class InputEventDto
 {

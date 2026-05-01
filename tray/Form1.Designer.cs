@@ -1,4 +1,4 @@
-﻿namespace MudoSoft.Tray;
+﻿namespace Orchestra.Tray;
 
 partial class Form1
 {

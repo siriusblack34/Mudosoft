@@ -1,6 +1,6 @@
-using Mudosoft.Agent.Interfaces;
+using Orchestra.Agent.Interfaces;
 
-namespace Mudosoft.Agent.Services;
+namespace Orchestra.Agent.Services;
 
 /// <summary>
 /// Wrapper for IDeviceIdentityProvider that can be injected as concrete type

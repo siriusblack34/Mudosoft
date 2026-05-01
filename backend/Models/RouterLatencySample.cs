@@ -1,6 +1,6 @@
 using System.ComponentModel.DataAnnotations;
 
-namespace MudoSoft.Backend.Models
+namespace Orchestra.Backend.Models
 {
     /// <summary>
     /// Router ping latency ornegi. DeviceStatusWorker her tarama dongusunde bir satir ekler.

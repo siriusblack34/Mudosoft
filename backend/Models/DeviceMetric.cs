@@ -1,7 +1,7 @@
 using System;
 using System.ComponentModel.DataAnnotations; // EKLENDİ!
 
-namespace MudoSoft.Backend.Models
+namespace Orchestra.Backend.Models
 {
     public class DeviceMetric
     {

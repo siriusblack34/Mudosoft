@@ -1,8 +1,8 @@
 using Microsoft.EntityFrameworkCore;
-using MudoSoft.Backend.Data;
-using MudoSoft.Backend.Models;
+using Orchestra.Backend.Data;
+using Orchestra.Backend.Models;
 
-namespace MudoSoft.Backend.Services
+namespace Orchestra.Backend.Services
 {
     public enum RouterLineClass
     {
@@ -42,7 +42,7 @@ namespace MudoSoft.Backend.Services
         public async Task<List<RouterClassificationDto>> ClassifyAllAsync(int windowMinutes = 10, CancellationToken ct = default)
         {
             using var scope = _scopeFactory.CreateScope();
-            var db = scope.ServiceProvider.GetRequiredService<MudoSoftDbContext>();
+            var db = scope.ServiceProvider.GetRequiredService<OrchestraDbContext>();
 
             var since = DateTime.UtcNow.AddMinutes(-windowMinutes);
 
@@ -179,7 +179,7 @@ namespace MudoSoft.Backend.Services
         public async Task<List<RouterLatencyPoint>> GetHistoryAsync(int storeCode, int hours = 24, CancellationToken ct = default)
         {
             using var scope = _scopeFactory.CreateScope();
-            var db = scope.ServiceProvider.GetRequiredService<MudoSoftDbContext>();
+            var db = scope.ServiceProvider.GetRequiredService<OrchestraDbContext>();
 
             var since = DateTime.UtcNow.AddHours(-hours);
             return await db.RouterLatencySamples
@@ -199,7 +199,7 @@ namespace MudoSoft.Backend.Services
         public async Task<int> PurgeOldSamplesAsync(int retainDays = 7, CancellationToken ct = default)
         {
             using var scope = _scopeFactory.CreateScope();
-            var db = scope.ServiceProvider.GetRequiredService<MudoSoftDbContext>();
+            var db = scope.ServiceProvider.GetRequiredService<OrchestraDbContext>();
 
             var cutoff = DateTime.UtcNow.AddDays(-retainDays);
             return await db.RouterLatencySamples

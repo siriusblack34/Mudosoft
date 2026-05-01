@@ -1,9 +1,9 @@
 using System.IO.Pipes;
 using System.Text;
 using System.Text.Json;
-using Mudosoft.Agent.Models;
+using Orchestra.Agent.Models;
 
-namespace Mudosoft.Agent.Services;
+namespace Orchestra.Agent.Services;
 
 /// <summary>
 /// Named Pipe server for communication with Tray application
@@ -119,7 +119,7 @@ public class PipeServer : IHostedService
             if (cmd?.Command == "status")
             {
                 // Get status info - use interfaces directly
-                var identityProvider = _services.GetService<Mudosoft.Agent.Interfaces.IDeviceIdentityProvider>();
+                var identityProvider = _services.GetService<Orchestra.Agent.Interfaces.IDeviceIdentityProvider>();
                 var heartbeatService = _services.GetService<HeartbeatService>();
                 var config = _services.GetService<IConfiguration>();
 

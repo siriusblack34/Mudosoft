@@ -9,9 +9,11 @@
     <Version>1.0.0.13</Version>
     <AssemblyVersion>1.0.0.13</AssemblyVersion>
     <FileVersion>1.0.0.13</FileVersion>
-    <Description>MudoSoft Endpoint Tray Application</Description>
+    <Description>Orchestra Endpoint Tray Application</Description>
     <Company>MudoSoft</Company>
-    <Product>MudoSoft Tray</Product>
+    <Product>Orchestra Tray</Product>
+    <RootNamespace>Orchestra.Tray</RootNamespace>
+    <AssemblyName>MudoSoft.Tray</AssemblyName>
   </PropertyGroup>
 
   <ItemGroup>
@@ -19,7 +21,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\shared\Mudosoft.Shared.csproj" />
+    <ProjectReference Include="..\shared\Orchestra.Shared.csproj" />
   </ItemGroup>
 
 </Project>

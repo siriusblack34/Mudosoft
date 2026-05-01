@@ -1,4 +1,4 @@
-namespace Mudosoft.Shared.Enums;
+namespace Orchestra.Shared.Enums;
 
 public enum InputEventType
 {

@@ -2,11 +2,11 @@ using Microsoft.AspNetCore.SignalR.Client;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using Mudosoft.Agent.Interfaces;
-using Mudosoft.Agent.Models;
+using Orchestra.Agent.Interfaces;
+using Orchestra.Agent.Models;
 using System.Diagnostics;
 
-namespace Mudosoft.Agent.Services
+namespace Orchestra.Agent.Services
 {
     public class TelemetryService : BackgroundService
     {

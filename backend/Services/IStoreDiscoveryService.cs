@@ -2,9 +2,9 @@
 
 using System.Collections.Generic;
 using System.Threading.Tasks;
-using MudoSoft.Backend.Models; 
+using Orchestra.Backend.Models; 
 
-namespace MudoSoft.Backend.Services
+namespace Orchestra.Backend.Services
 {
     public interface IStoreDiscoveryService
     {

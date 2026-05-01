@@ -1,4 +1,4 @@
-using MudoSoft.Backend.Models;
+using Orchestra.Backend.Models;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -10,7 +10,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.DependencyInjection; // 🔥 YENİ: IServiceScopeFactory için eklendi
 
-namespace MudoSoft.Backend.Services
+namespace Orchestra.Backend.Services
 {
     // BackgroundService olduğu için Singleton'dır
     public class DiscoveryWorker : BackgroundService

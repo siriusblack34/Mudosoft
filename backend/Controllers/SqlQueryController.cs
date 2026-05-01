@@ -2,12 +2,12 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
-using MudoSoft.Backend.Data;
-using MudoSoft.Backend.Models;
-using MudoSoft.Backend.Services;
+using Orchestra.Backend.Data;
+using Orchestra.Backend.Models;
+using Orchestra.Backend.Services;
 using System.Data;
 
-namespace MudoSoft.Backend.Controllers
+namespace Orchestra.Backend.Controllers
 {
     [ApiController]
     [Authorize] // 🔒 Authentication required
@@ -15,7 +15,7 @@ namespace MudoSoft.Backend.Controllers
     public class SqlQueryController : ControllerBase
     {
         private readonly IRemoteSqlService _remoteSqlService;
-        private readonly MudoSoftDbContext _db;
+        private readonly OrchestraDbContext _db;
         private readonly ILogger<SqlQueryController> _logger;
         private readonly FastSqlReachabilityService _fastCheck;
 
@@ -23,7 +23,7 @@ namespace MudoSoft.Backend.Controllers
 
         public SqlQueryController(
             IRemoteSqlService remoteSqlService,
-            MudoSoftDbContext db,
+            OrchestraDbContext db,
             FastSqlReachabilityService fastCheck,
             ILogger<SqlQueryController> logger)
         {

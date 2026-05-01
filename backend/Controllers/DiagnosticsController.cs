@@ -1,9 +1,9 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
-using MudoSoft.Backend.Services;
+using Orchestra.Backend.Services;
 
-namespace MudoSoft.Backend.Controllers
+namespace Orchestra.Backend.Controllers
 {
     [ApiController]
     [Authorize]
@@ -29,7 +29,7 @@ namespace MudoSoft.Backend.Controllers
         public async Task<IActionResult> GetActiveDiagnostics(
             [FromQuery] int windowMinutes = 30,
             [FromQuery] int flappingThreshold = 4,
-            [FromServices] Data.MudoSoftDbContext db = default!,
+            [FromServices] Data.OrchestraDbContext db = default!,
             [FromServices] FastSqlReachabilityService fastCheck = default!)
         {
             // En son cihaz durumunu al (cache varsa cache'den)
@@ -76,7 +76,7 @@ namespace MudoSoft.Backend.Controllers
 
         // ─── Helper: mevcut cihaz durumunu al (SqlQueryController cache) ───
         private static async Task<List<Models.StoreDeviceWithStatusDto>> GetCurrentDeviceStatusAsync(
-            Data.MudoSoftDbContext db,
+            Data.OrchestraDbContext db,
             FastSqlReachabilityService fastCheck)
         {
             // SqlQueryController'daki static cache'i oku

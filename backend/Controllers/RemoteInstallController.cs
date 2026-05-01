@@ -1,12 +1,12 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using MudoSoft.Backend.Data;
-using MudoSoft.Backend.Models;
+using Orchestra.Backend.Data;
+using Orchestra.Backend.Models;
 using System.Diagnostics;
 using System.Text.Json;
 
-namespace MudoSoft.Backend.Controllers;
+namespace Orchestra.Backend.Controllers;
 
 [ApiController]
 [Authorize]
@@ -15,7 +15,7 @@ public class RemoteInstallController : ControllerBase
 {
     private readonly ILogger<RemoteInstallController> _logger;
     private readonly IConfiguration _config;
-    private readonly MudoSoftDbContext _db;
+    private readonly OrchestraDbContext _db;
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly CommandQueue _commandQueue;
     private readonly string _updatesPath;
@@ -27,7 +27,7 @@ public class RemoteInstallController : ControllerBase
     public RemoteInstallController(
         ILogger<RemoteInstallController> logger,
         IConfiguration config,
-        MudoSoftDbContext db,
+        OrchestraDbContext db,
         IServiceScopeFactory scopeFactory,
         CommandQueue commandQueue,
         IWebHostEnvironment env)
@@ -154,11 +154,11 @@ public class RemoteInstallController : ControllerBase
             // Script'i run-script mekanizmasıyla gönder (kanıtlanmış çalışan yol)
             var script = BuildScanScript(subnet, startIp, endIp);
             var commandId = Guid.NewGuid();
-            _commandQueue.Enqueue(new Mudosoft.Shared.Dtos.CommandDto
+            _commandQueue.Enqueue(new Orchestra.Shared.Dtos.CommandDto
             {
                 Id = commandId,
                 DeviceId = request.DeviceId,
-                Type = Mudosoft.Shared.Enums.CommandType.ExecuteScript,
+                Type = Orchestra.Shared.Enums.CommandType.ExecuteScript,
                 Payload = script,
                 CreatedAtUtc = DateTime.UtcNow
             });
@@ -171,7 +171,7 @@ public class RemoteInstallController : ControllerBase
             {
                 await Task.Delay(1000);
                 using var scope = _scopeFactory.CreateScope();
-                var scopedDb = scope.ServiceProvider.GetRequiredService<MudoSoftDbContext>();
+                var scopedDb = scope.ServiceProvider.GetRequiredService<OrchestraDbContext>();
                 var result = await scopedDb.CommandResultRecords
                     .AsNoTracking()
                     .FirstOrDefaultAsync(r => r.CommandId == commandId);
@@ -893,17 +893,24 @@ try {
     # Registry: servis baslangic timeout'unu 120sn yap (yavas makineler icin)
     reg.exe add ""\\$ip\HKLM\SYSTEM\CurrentControlSet\Control"" /v ServicesPipeTimeout /t REG_DWORD /d 120000 /f 2>&1 | Out-Null
 
-    # Mevcut servisi durdur (process yoksa hata yutulur)
-    cmd /c ""sc.exe \\$ip stop $svcName"" 2>&1 | Out-Null
+    # Mevcut servisi durdur (process yoksa hata yutulur).
+    # PS 5.1'de native command stderr'i ErrorRecord'a sarilir ve $ErrorActionPreference='Stop' ile
+    # try/catch'i tetikler — bu yuzden bu komutlari Continue ile sariyoruz.
+    $prevEAP = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    cmd /c ""sc.exe \\$ip stop $svcName"" *>&1 | Out-Null
     Start-Sleep -Seconds 2
-    cmd /c ""taskkill /s $ip /f /im MudoSoft.Agent.exe /t"" 2>&1 | Out-Null
+    cmd /c ""taskkill /s $ip /f /im MudoSoft.Agent.exe /t"" *>&1 | Out-Null
+    $ErrorActionPreference = $prevEAP
 
-    # Servis var mi kontrol et
-    cmd /c ""sc.exe \\$ip query $svcName"" 2>&1 | Out-Null
+    # Servis var mi kontrol et — service yoksa sc 1060 + stderr basar, EAP'yi gecici dusur
+    $prevEAP = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
+    cmd /c ""sc.exe \\$ip query $svcName"" *>&1 | Out-Null
     $queryExit = $LASTEXITCODE
+    $ErrorActionPreference = $prevEAP
 
     # binPath= ""\""C:\Program Files\...\exe\"" --service"" -> cmd /c ile native quoting devre disi
-    $createCmd = 'sc.exe \\' + $ip + ' create ' + $svcName + ' binPath= ""\""C:\Program Files\MudoSoft\Agent\MudoSoft.Agent.exe\"" --service"" start= delayed-auto obj= LocalSystem DisplayName= ""MudoSoft Agent Service""'
+    $createCmd = 'sc.exe \\' + $ip + ' create ' + $svcName + ' binPath= ""\""C:\Program Files\MudoSoft\Agent\MudoSoft.Agent.exe\"" --service"" start= delayed-auto obj= LocalSystem DisplayName= ""Orchestra Agent Service""'
     $configCmd = 'sc.exe \\' + $ip + ' config ' + $svcName + ' binPath= ""\""C:\Program Files\MudoSoft\Agent\MudoSoft.Agent.exe\"" --service"" start= delayed-auto'
 
     if ($queryExit -ne 0) {
@@ -1121,7 +1128,7 @@ try {
             try
             {
                 using var scope = _scopeFactory.CreateScope();
-                var scopedDb = scope.ServiceProvider.GetRequiredService<MudoSoftDbContext>();
+                var scopedDb = scope.ServiceProvider.GetRequiredService<OrchestraDbContext>();
                 var device = await scopedDb.Devices
                     .AsNoTracking()
                     .FirstOrDefaultAsync(d => d.IpAddress == ip);
@@ -1268,7 +1275,7 @@ try {
                 try
                 {
                     using var scope = _scopeFactory.CreateScope();
-                    var scopedDb = scope.ServiceProvider.GetRequiredService<MudoSoftDbContext>();
+                    var scopedDb = scope.ServiceProvider.GetRequiredService<OrchestraDbContext>();
 
                     // Cihaz agent heartbeat atmadan önce DB'de olmayabilir — 60sn bekle
                     Device? device = null;

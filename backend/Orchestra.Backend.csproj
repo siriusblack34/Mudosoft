@@ -4,6 +4,8 @@
     <TargetFramework>net8.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>Orchestra.Backend</RootNamespace>
+    <AssemblyName>MudoSoft.Backend</AssemblyName>
   </PropertyGroup>
 
   <ItemGroup>
@@ -24,15 +26,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\shared\Mudosoft.Shared.csproj" />
+    <ProjectReference Include="..\shared\Orchestra.Shared.csproj" />
   </ItemGroup>
-
-  <!-- BU BLOK KALDIRILDI, ÇÜNKÜ .NET SDK BU DOSYALARI ZATEN OTOMATİK OLARAK DAHİL EDİYOR.
-  <ItemGroup>
-    <Compile Include="Models\Device.cs" />
-    <Compile Include="Models\DeviceMetric.cs" />
-    <Compile Include="Data\MudoSoftDbContext.cs" />
-  </ItemGroup>
-  -->
 
 </Project>

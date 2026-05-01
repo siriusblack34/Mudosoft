@@ -1,6 +1,6 @@
 using System;
 
-namespace MudoSoft.Backend.Models
+namespace Orchestra.Backend.Models
 {
     public class AgentReport
     {

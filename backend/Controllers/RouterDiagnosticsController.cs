@@ -1,11 +1,11 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using MudoSoft.Backend.Data;
-using MudoSoft.Backend.Models;
-using MudoSoft.Backend.Services;
+using Orchestra.Backend.Data;
+using Orchestra.Backend.Models;
+using Orchestra.Backend.Services;
 
-namespace MudoSoft.Backend.Controllers
+namespace Orchestra.Backend.Controllers
 {
     [ApiController]
     [Authorize]
@@ -13,9 +13,9 @@ namespace MudoSoft.Backend.Controllers
     public class RouterDiagnosticsController : ControllerBase
     {
         private readonly MobileLineDetectionService _detection;
-        private readonly MudoSoftDbContext _db;
+        private readonly OrchestraDbContext _db;
 
-        public RouterDiagnosticsController(MobileLineDetectionService detection, MudoSoftDbContext db)
+        public RouterDiagnosticsController(MobileLineDetectionService detection, OrchestraDbContext db)
         {
             _detection = detection;
             _db = db;

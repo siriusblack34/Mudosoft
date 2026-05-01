@@ -5,9 +5,9 @@ using System.Text.Json;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Microsoft.Win32;
-using Mudosoft.Agent.Interfaces;
+using Orchestra.Agent.Interfaces;
 
-namespace Mudosoft.Agent.Services;
+namespace Orchestra.Agent.Services;
 
 /// <summary>
 /// TightVNC silent installer & password manager.

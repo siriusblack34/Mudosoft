@@ -1,4 +1,4 @@
-# MudoSoft Agent + Tray Build Script
+# Orchestra Agent + Tray Build Script
 # Kullanim: .\build.ps1 -Zip
 
 param(
@@ -13,7 +13,7 @@ $AgentDir = Join-Path $RootDir "agent"
 $TrayDir = Join-Path $RootDir "tray"
 
 Write-Host "========================================"
-Write-Host "  MudoSoft Agent + Tray Builder"
+Write-Host "  Orchestra Agent + Tray Builder"
 Write-Host "========================================"
 Write-Host ""
 
@@ -64,16 +64,19 @@ $trayVersion = (Get-Item $trayExe).VersionInfo.FileVersion
 $buildDate = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
 
 $readme = @"
-MudoSoft Agent Package
-======================
+Orchestra Agent Package
+=======================
 Agent Version: $agentVersion
 Tray Version: $trayVersion
 Build Date: $buildDate
 
 Kurulum:
-1. Bu klasoru hedef makineye kopyalayin (orn: C:\MudoSoftAgent)
+1. Bu klasoru hedef makineye kopyalayin (orn: C:\OrchestraAgent)
 2. Yonetici olarak: MudoSoft.Agent.exe /Install
 3. Tray baslatmak icin: MudoSoft.Tray.exe (otomatik baslar)
+
+Not: Sahadaki cihazlarla geriye uyumluluk icin EXE adlari ve service ID
+"MudoSoft" ile baslar — uygulama markasi Orchestra'dir.
 "@
 $readme | Out-File (Join-Path $OutputDir "README.txt") -Encoding UTF8
 Write-Host "  README olusturuldu" -ForegroundColor Green
@@ -87,7 +90,7 @@ if ($Zip) {
         Remove-Item $_.FullName -Recurse -Force -ErrorAction SilentlyContinue
     }
     
-    $zipName = "MudoSoft-Agent-v$agentVersion.zip"
+    $zipName = "Orchestra-Agent-v$agentVersion.zip"
     $zipPath = Join-Path $RootDir $zipName
     
     if (Test-Path $zipPath) { Remove-Item $zipPath -Force }

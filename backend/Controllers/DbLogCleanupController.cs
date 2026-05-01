@@ -1,25 +1,25 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
-using MudoSoft.Backend.Data;
-using MudoSoft.Backend.Services;
+using Orchestra.Backend.Data;
+using Orchestra.Backend.Services;
 using System.Data;
 using System.Text.Json;
 
-namespace MudoSoft.Backend.Controllers
+namespace Orchestra.Backend.Controllers
 {
     [ApiController]
     [Authorize]
     [Route("api/db-log-cleanup")]
     public class DbLogCleanupController : ControllerBase
     {
-        private readonly MudoSoftDbContext _db;
+        private readonly OrchestraDbContext _db;
         private readonly IRemoteSqlService _remoteSqlService;
         private readonly ILogger<DbLogCleanupController> _logger;
         private readonly FastSqlReachabilityService _fastCheck;
 
         public DbLogCleanupController(
-            MudoSoftDbContext db,
+            OrchestraDbContext db,
             IRemoteSqlService remoteSqlService,
             FastSqlReachabilityService fastCheck,
             ILogger<DbLogCleanupController> logger)

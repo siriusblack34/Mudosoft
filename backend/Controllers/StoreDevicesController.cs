@@ -1,20 +1,20 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using MudoSoft.Backend.Data;
-using MudoSoft.Backend.Models;
+using Orchestra.Backend.Data;
+using Orchestra.Backend.Models;
 
-namespace MudoSoft.Backend.Controllers;
+namespace Orchestra.Backend.Controllers;
 
 [ApiController]
 [Authorize]
 [Route("api/store-devices")]
 public class StoreDevicesController : ControllerBase
 {
-    private readonly MudoSoftDbContext _db;
+    private readonly OrchestraDbContext _db;
     private readonly ILogger<StoreDevicesController> _logger;
 
-    public StoreDevicesController(MudoSoftDbContext db, ILogger<StoreDevicesController> logger)
+    public StoreDevicesController(OrchestraDbContext db, ILogger<StoreDevicesController> logger)
     {
         _db = db;
         _logger = logger;

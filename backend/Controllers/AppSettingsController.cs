@@ -1,21 +1,21 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using MudoSoft.Backend.Data;
-using MudoSoft.Backend.Models;
-using MudoSoft.Backend.Services;
+using Orchestra.Backend.Data;
+using Orchestra.Backend.Models;
+using Orchestra.Backend.Services;
 
-namespace MudoSoft.Backend.Controllers;
+namespace Orchestra.Backend.Controllers;
 
 [ApiController]
 [Route("api/app-settings")]
 [Authorize]
 public class AppSettingsController : ControllerBase
 {
-    private readonly MudoSoftDbContext _db;
+    private readonly OrchestraDbContext _db;
     private readonly IEmailService _emailService;
 
-    public AppSettingsController(MudoSoftDbContext db, IEmailService emailService)
+    public AppSettingsController(OrchestraDbContext db, IEmailService emailService)
     {
         _db = db;
         _emailService = emailService;

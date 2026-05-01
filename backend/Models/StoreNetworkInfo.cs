@@ -1,6 +1,6 @@
 using System.ComponentModel.DataAnnotations;
 
-namespace MudoSoft.Backend.Models
+namespace Orchestra.Backend.Models
 {
     /// <summary>
     /// Magazanin karasal hat (ISP) referans bilgisi.

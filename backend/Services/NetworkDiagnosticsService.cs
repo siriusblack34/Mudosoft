@@ -1,8 +1,8 @@
 using Microsoft.EntityFrameworkCore;
-using MudoSoft.Backend.Data;
-using MudoSoft.Backend.Models;
+using Orchestra.Backend.Data;
+using Orchestra.Backend.Models;
 
-namespace MudoSoft.Backend.Services
+namespace Orchestra.Backend.Services
 {
     // ─── Teshis Tipleri ───
     public enum DiagnosticType
@@ -43,9 +43,9 @@ namespace MudoSoft.Backend.Services
 
     public class NetworkDiagnosticsService
     {
-        private readonly MudoSoftDbContext _db;
+        private readonly OrchestraDbContext _db;
 
-        public NetworkDiagnosticsService(MudoSoftDbContext db)
+        public NetworkDiagnosticsService(OrchestraDbContext db)
         {
             _db = db;
         }

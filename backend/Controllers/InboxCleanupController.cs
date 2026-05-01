@@ -1,19 +1,19 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
-using MudoSoft.Backend.Data;
-using MudoSoft.Backend.Services;
+using Orchestra.Backend.Data;
+using Orchestra.Backend.Services;
 using System.Collections.Concurrent;
 using System.Net.Sockets;
 
-namespace MudoSoft.Backend.Controllers
+namespace Orchestra.Backend.Controllers
 {
     [ApiController]
     [Authorize]
     [Route("api/inbox-cleanup")]
     public class InboxCleanupController : ControllerBase
     {
-        private readonly MudoSoftDbContext _db;
+        private readonly OrchestraDbContext _db;
         private readonly ILogger<InboxCleanupController> _logger;
 
         private static readonly ConcurrentDictionary<string, CleanAllJob> _cleanAllJobs = new();
@@ -24,7 +24,7 @@ namespace MudoSoft.Backend.Controllers
         private const string SEQ_FOLDER = @"GeniusOpen\Inbox\000\Seq";
 
         public InboxCleanupController(
-            MudoSoftDbContext db,
+            OrchestraDbContext db,
             ILogger<InboxCleanupController> logger)
         {
             _db = db;
@@ -296,7 +296,7 @@ namespace MudoSoft.Backend.Controllers
         /// Tek cihazın inbox durumunu kontrol et (check-all ve check-single ortak kullanır)
         /// </summary>
         private async Task<InboxStatusDto> CheckDeviceAsync(
-            MudoSoft.Backend.Models.StoreDevice device, CancellationToken ct)
+            Orchestra.Backend.Models.StoreDevice device, CancellationToken ct)
         {
             var dto = new InboxStatusDto
             {

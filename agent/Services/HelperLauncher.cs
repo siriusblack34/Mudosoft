@@ -5,10 +5,10 @@ using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using Mudosoft.Agent.Core;
-using Mudosoft.Agent.Native;
+using Orchestra.Agent.Core;
+using Orchestra.Agent.Native;
 
-namespace Mudosoft.Agent.Services;
+namespace Orchestra.Agent.Services;
 
 /// <summary>
 /// HelperLauncher - Enterprise Level Remote UI Bootstrapper

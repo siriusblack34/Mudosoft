@@ -1,8 +1,8 @@
 @echo off
-title MudoSoft Agent Kurulumu
+title Orchestra Agent Kurulumu
 echo.
 echo ============================================
-echo   MudoSoft Agent Kurulumu
+echo   Orchestra Agent Kurulumu
 echo ============================================
 echo.
 
@@ -78,7 +78,7 @@ echo [4/5] Windows servisi olusturuluyor...
 reg add "HKLM\SYSTEM\CurrentControlSet\Control" /v ServicesPipeTimeout /t REG_DWORD /d 120000 /f >nul 2>&1
 
 :: Servisi sc create ile kur (MSI yerine - Win7 uyumlu)
-sc create MudosoftAgentService binPath= "\"C:\Program Files\MudoSoft\Agent\MudoSoft.Agent.exe\" --service" start= delayed-auto obj= LocalSystem DisplayName= "MudoSoft Agent Service"
+sc create MudosoftAgentService binPath= "\"C:\Program Files\MudoSoft\Agent\MudoSoft.Agent.exe\" --service" start= delayed-auto obj= LocalSystem DisplayName= "Orchestra Agent Service"
 sc description MudosoftAgentService "MudoSoft Remote Management Agent"
 sc failure MudosoftAgentService reset= 86400 actions= restart/5000/restart/10000/restart/30000
 

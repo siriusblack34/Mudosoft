@@ -3,10 +3,10 @@ using System.Text;
 using System.Text.Json;
 using MailKit.Net.Smtp;
 using MimeKit;
-using MudoSoft.Backend.Data;
+using Orchestra.Backend.Data;
 using Microsoft.EntityFrameworkCore;
 
-namespace MudoSoft.Backend.Services;
+namespace Orchestra.Backend.Services;
 
 public class EmailSendResult
 {
@@ -232,7 +232,7 @@ public class EmailService : IEmailService
     private async Task<SmtpConfig?> GetSmtpConfigAsync()
     {
         using var scope = _scopeFactory.CreateScope();
-        var db = scope.ServiceProvider.GetRequiredService<MudoSoftDbContext>();
+        var db = scope.ServiceProvider.GetRequiredService<OrchestraDbContext>();
 
         var keys = new[] { "smtp:host", "smtp:port", "smtp:username", "smtp:password", "smtp:useSsl", "smtp:fromAddress", "smtp:fromName" };
         var settings = await db.AppSettings

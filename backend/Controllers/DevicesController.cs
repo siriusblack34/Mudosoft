@@ -8,12 +8,12 @@ using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using MudoSoft.Backend.Data;
-using MudoSoft.Backend.Models;
-using MudoSoft.Backend.Services;
-using Mudosoft.Shared.Dtos;
+using Orchestra.Backend.Data;
+using Orchestra.Backend.Models;
+using Orchestra.Backend.Services;
+using Orchestra.Shared.Dtos;
 
-namespace MudoSoft.Backend.Controllers;
+namespace Orchestra.Backend.Controllers;
 
 [ApiController]
 [Authorize]
@@ -21,16 +21,16 @@ namespace MudoSoft.Backend.Controllers;
 public class DevicesController : ControllerBase
 {
     private const string AgentServiceName = "MudosoftAgentService";
-    private const string AgentServiceDisplayName = "MudoSoft Agent Service";
+    private const string AgentServiceDisplayName = "Orchestra Agent Service";
     private const string AgentExecutablePath = @"C:\Program Files\MudoSoft\Agent\MudoSoft.Agent.exe";
     private readonly IDeviceRepository _repo;
-    private readonly MudoSoftDbContext _dbContext;
+    private readonly OrchestraDbContext _dbContext;
     private readonly ILogger<DevicesController> _logger;
     private static readonly ConcurrentDictionary<string, OfflineServiceStartJob> _startJobs = new();
 
     public DevicesController(
         IDeviceRepository repo,
-        MudoSoftDbContext dbContext,
+        OrchestraDbContext dbContext,
         ILogger<DevicesController> logger)
     {
         _repo = repo;

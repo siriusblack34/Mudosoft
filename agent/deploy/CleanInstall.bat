@@ -1,5 +1,5 @@
 @echo off
-title MudoSoft Agent - Temiz Kurulum
+title Orchestra Agent - Temiz Kurulum
 color 0C
 setlocal enabledelayedexpansion
 
@@ -15,7 +15,7 @@ if %errorLevel% neq 0 (
 
 echo.
 echo  ==========================================
-echo   MudoSoft Agent - TEMIZ KURULUM
+echo   Orchestra Agent - TEMIZ KURULUM
 echo   Tum MudoSoft dosyalari silinip
 echo   sifirdan kurulum yapilacak.
 echo  ==========================================
@@ -156,7 +156,7 @@ echo }
 ) > "%INSTALL_DIR%\appsettings.json"
 
 reg add "HKLM\SYSTEM\CurrentControlSet\Control" /v ServicesPipeTimeout /t REG_DWORD /d 120000 /f >nul 2>&1
-sc create %SERVICE_NAME% binPath= "\"%INSTALL_DIR%\MudoSoft.Agent.exe\" --service" start= delayed-auto DisplayName= "MudoSoft Agent Service" >nul 2>&1
+sc create %SERVICE_NAME% binPath= "\"%INSTALL_DIR%\MudoSoft.Agent.exe\" --service" start= delayed-auto DisplayName= "Orchestra Agent Service" >nul 2>&1
 sc description %SERVICE_NAME% "MudoSoft RMM Agent" >nul 2>&1
 sc failure %SERVICE_NAME% reset= 60 actions= restart/5000/restart/10000/restart/30000 >nul 2>&1
 sc start %SERVICE_NAME% >nul 2>&1

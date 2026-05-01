@@ -3,9 +3,9 @@ using System.IO;
 using System.Diagnostics;
 using System.Management;
 using Microsoft.Extensions.Logging;
-using Mudosoft.Agent.Interfaces;
+using Orchestra.Agent.Interfaces;
 
-namespace Mudosoft.Agent.Services
+namespace Orchestra.Agent.Services
 {
     public class SystemInfoService : ISystemInfoService, IDisposable
     {

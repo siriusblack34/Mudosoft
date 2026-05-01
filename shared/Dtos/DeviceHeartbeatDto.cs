@@ -1,6 +1,6 @@
-using Mudosoft.Shared.Models;
+using Orchestra.Shared.Models;
 
-namespace Mudosoft.Shared.Dtos;
+namespace Orchestra.Shared.Dtos;
 
 public sealed class DeviceHeartbeatDto
 {

@@ -1,6 +1,6 @@
 using System.Text.Json.Serialization;
 
-namespace Mudosoft.Shared.Enums;
+namespace Orchestra.Shared.Enums;
 
 [JsonConverter(typeof(JsonStringEnumConverter))]
 public enum CommandType

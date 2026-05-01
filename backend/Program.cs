@@ -1,9 +1,9 @@
 using Microsoft.EntityFrameworkCore;
-using MudoSoft.Backend.Data;
-using MudoSoft.Backend.Models;
-using MudoSoft.Backend.Services;
-using MudoSoft.Backend.Crypto;
-using MudoSoft.Backend.Middleware;
+using Orchestra.Backend.Data;
+using Orchestra.Backend.Models;
+using Orchestra.Backend.Services;
+using Orchestra.Backend.Crypto;
+using Orchestra.Backend.Middleware;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
@@ -111,8 +111,13 @@ if (!string.IsNullOrEmpty(jwtKeyFromConfig) && jwtKeyFromConfig.StartsWith("${")
 
 var jwtKey = jwtKeyFromEnv ?? jwtKeyFromConfig
     ?? throw new InvalidOperationException("JWT_SECRET_KEY is not configured. Set it in .env or as environment variable.");
-var jwtIssuer = builder.Configuration["Jwt:Issuer"] ?? "MudoSoft";
-var jwtAudience = builder.Configuration["Jwt:Audience"] ?? "MudoSoftUsers";
+var jwtIssuer = builder.Configuration["Jwt:Issuer"] ?? "Orchestra";
+var jwtAudience = builder.Configuration["Jwt:Audience"] ?? "OrchestraUsers";
+
+// Geçiş dönemi: eski "MudoSoft" issuer/audience ile imzalı agent token'ları (30g ömürlü)
+// hâlâ geçerli sayılmalı. Tüm agent'lar yeni token aldıktan sonra eski değerler kaldırılır.
+var validIssuers = new[] { jwtIssuer, "MudoSoft", "Orchestra" }.Distinct().ToArray();
+var validAudiences = new[] { jwtAudience, "MudoSoftUsers", "MudoSoftAgents", "OrchestraUsers", "OrchestraAgents" }.Distinct().ToArray();
 
 builder.Services.AddAuthentication(options =>
 {
@@ -127,10 +132,10 @@ builder.Services.AddAuthentication(options =>
         ValidateAudience = true,
         ValidateLifetime = true,
         ValidateIssuerSigningKey = true,
-        ValidIssuer = jwtIssuer,
-        ValidAudience = jwtAudience,
+        ValidIssuers = validIssuers,
+        ValidAudiences = validAudiences,
         IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey)),
-        ClockSkew = TimeSpan.Zero // Token expiry anında geçersiz olsun
+        ClockSkew = TimeSpan.Zero
     };
     
     // SignalR için token desteği
@@ -191,7 +196,7 @@ var connectionString = builder.Configuration.GetConnectionString("DefaultConnect
 
 Console.WriteLine($"🗄️ Database connection configured (password length: {dbPassword.Length} chars)");
 
-builder.Services.AddDbContext<MudoSoftDbContext>(options =>
+builder.Services.AddDbContext<OrchestraDbContext>(options =>
 {
     options.UseNpgsql(connectionString);
 });
@@ -208,7 +213,7 @@ builder.Services.AddSwaggerGen();
 // IDeviceRepository Scoped, ancak Worker'lar Factory ile çekecek
 builder.Services.AddScoped<IRemoteSqlService, RemoteSqlService>();
 builder.Services.AddScoped<IDeviceRepository, DeviceRepository>();
-builder.Services.AddSingleton<MudoSoft.Backend.Services.EventLogTranslationService>(); 
+builder.Services.AddSingleton<Orchestra.Backend.Services.EventLogTranslationService>(); 
 
 // 1. RsaKeyProvider (Gerektiği gibi Scoped)
 builder.Services.AddScoped<RsaKeyProvider>(); 
@@ -242,12 +247,12 @@ builder.Services.AddScoped<AesEncryption>();
 builder.Services.AddSingleton<IEmailService, EmailService>();
 
 // 7. Worker'lar (Singleton/HostedService olarak doğru şekilde kaydedildi)
-builder.Services.AddHostedService<MudoSoft.Backend.Services.HeartbeatCheckerWorker>();
-builder.Services.AddHostedService<MudoSoft.Backend.Services.NetworkOutageAlarmWorker>();
-builder.Services.AddHostedService<MudoSoft.Backend.Services.SchedulerBackgroundService>();
-builder.Services.AddHostedService<MudoSoft.Backend.Services.DeviceStatusWorker>();
-builder.Services.AddHostedService<MudoSoft.Backend.Services.RouterLatencyPurgeWorker>();
-//builder.Services.AddHostedService<MudoSoft.Backend.Services.DiscoveryWorker>();
+builder.Services.AddHostedService<Orchestra.Backend.Services.HeartbeatCheckerWorker>();
+builder.Services.AddHostedService<Orchestra.Backend.Services.NetworkOutageAlarmWorker>();
+builder.Services.AddHostedService<Orchestra.Backend.Services.SchedulerBackgroundService>();
+builder.Services.AddHostedService<Orchestra.Backend.Services.DeviceStatusWorker>();
+builder.Services.AddHostedService<Orchestra.Backend.Services.RouterLatencyPurgeWorker>();
+//builder.Services.AddHostedService<Orchestra.Backend.Services.DiscoveryWorker>();
 
 // 7. SignalR
 builder.Services.AddSignalR(hubOptions =>
@@ -302,13 +307,13 @@ app.UseVncWebSocket("/ws/vnc");
 
 app.MapControllers();
 // Hub Mapping
-app.MapHub<MudoSoft.Backend.Hubs.DashboardHub>("/hubs/dashboard");
+app.MapHub<Orchestra.Backend.Hubs.DashboardHub>("/hubs/dashboard");
 
 // ================== SEED (SADECE DEVELOPMENT) ==================
 if (app.Environment.IsDevelopment())
 {
     using var scope = app.Services.CreateScope();
-    var db = scope.ServiceProvider.GetRequiredService<MudoSoftDbContext>();
+    var db = scope.ServiceProvider.GetRequiredService<OrchestraDbContext>();
     db.Database.Migrate();
 
     // 🔒 SECURITY: Get DB credentials from environment
@@ -611,7 +616,7 @@ if (app.Environment.IsDevelopment())
         if (adminUsername.StartsWith("${")) adminUsername = "admin";
         if (adminPassword.StartsWith("${")) adminPassword = "admin";
 
-        db.Users.Add(new MudoSoft.Backend.Models.User
+        db.Users.Add(new Orchestra.Backend.Models.User
         {
             Username = adminUsername.ToLower(),
             PasswordHash = BCrypt.Net.BCrypt.HashPassword(adminPassword),

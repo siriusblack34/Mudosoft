@@ -2,7 +2,7 @@ using System;
 using System.ComponentModel.DataAnnotations;
 using System.Collections.Generic;
 
-namespace MudoSoft.Backend.Models
+namespace Orchestra.Backend.Models
 {
     public enum DeviceType
     {

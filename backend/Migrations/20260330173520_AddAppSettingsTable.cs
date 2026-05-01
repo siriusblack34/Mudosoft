@@ -3,7 +3,7 @@ using Microsoft.EntityFrameworkCore.Migrations;
 
 #nullable disable
 
-namespace MudoSoft.Backend.Migrations
+namespace Orchestra.Backend.Migrations
 {
     /// <inheritdoc />
     public partial class AddAppSettingsTable : Migration

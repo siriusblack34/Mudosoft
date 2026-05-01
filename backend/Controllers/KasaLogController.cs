@@ -1,23 +1,23 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
-using MudoSoft.Backend.Data;
-using MudoSoft.Backend.Services;
+using Orchestra.Backend.Data;
+using Orchestra.Backend.Services;
 using System.IO.Compression;
 using System.Security.Claims;
 
-namespace MudoSoft.Backend.Controllers
+namespace Orchestra.Backend.Controllers
 {
     [ApiController]
     [Authorize]
     [Route("api/kasa-log")]
     public class KasaLogController : ControllerBase
     {
-        private readonly MudoSoftDbContext _db;
+        private readonly OrchestraDbContext _db;
         private readonly IEmailService _emailService;
         private readonly ILogger<KasaLogController> _logger;
 
-        public KasaLogController(MudoSoftDbContext db, IEmailService emailService, ILogger<KasaLogController> logger)
+        public KasaLogController(OrchestraDbContext db, IEmailService emailService, ILogger<KasaLogController> logger)
         {
             _db = db;
             _emailService = emailService;

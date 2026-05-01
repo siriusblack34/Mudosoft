@@ -1,4 +1,4 @@
-namespace MudoSoft.Backend.Dtos;
+namespace Orchestra.Backend.Dtos;
 
 public class DashboardResponseDto
 {

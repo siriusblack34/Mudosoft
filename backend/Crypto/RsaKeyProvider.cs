@@ -3,7 +3,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.AspNetCore.Hosting;
 using System.IO;
 
-namespace MudoSoft.Backend.Crypto;
+namespace Orchestra.Backend.Crypto;
 
 public class RsaKeyProvider
 {

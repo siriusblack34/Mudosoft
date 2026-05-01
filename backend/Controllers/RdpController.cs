@@ -2,10 +2,10 @@ using System.Net.Sockets;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using MudoSoft.Backend.Data;
-using MudoSoft.Backend.Services;
+using Orchestra.Backend.Data;
+using Orchestra.Backend.Services;
 
-namespace MudoSoft.Backend.Controllers;
+namespace Orchestra.Backend.Controllers;
 
 [ApiController]
 [Authorize]
@@ -13,11 +13,11 @@ namespace MudoSoft.Backend.Controllers;
 public class RdpController : ControllerBase
 {
     private readonly VncSessionManager _sessionManager;
-    private readonly MudoSoftDbContext _db;
+    private readonly OrchestraDbContext _db;
 
     public RdpController(
         VncSessionManager sessionManager,
-        MudoSoftDbContext db)
+        OrchestraDbContext db)
     {
         _sessionManager = sessionManager;
         _db = db;
@@ -110,7 +110,7 @@ public class RdpController : ControllerBase
         var query = _db.VncSessionLogs.AsNoTracking()
             .OrderByDescending(l => l.StartedAtUtc);
 
-        IQueryable<MudoSoft.Backend.Models.VncSessionLog> filtered = string.IsNullOrEmpty(deviceId)
+        IQueryable<Orchestra.Backend.Models.VncSessionLog> filtered = string.IsNullOrEmpty(deviceId)
             ? query
             : query.Where(l => l.DeviceId == deviceId);
 

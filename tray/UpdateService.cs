@@ -2,7 +2,7 @@ using System.Diagnostics;
 using System.IO.Compression;
 using System.Net.Http;
 
-namespace MudoSoft.Tray;
+namespace Orchestra.Tray;
 
 /// <summary>
 /// Handles Agent and Tray updates

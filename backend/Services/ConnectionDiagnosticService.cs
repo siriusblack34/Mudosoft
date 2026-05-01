@@ -2,7 +2,7 @@ using System.Net.NetworkInformation;
 using System.Net.Sockets;
 using System.Threading.Tasks;
 
-namespace MudoSoft.Backend.Services
+namespace Orchestra.Backend.Services
 {
     public class ConnectionDiagnosticService
     {

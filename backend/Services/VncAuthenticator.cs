@@ -2,7 +2,7 @@ using System.Net.Sockets;
 using System.Security.Cryptography;
 using System.Text;
 
-namespace MudoSoft.Backend.Services;
+namespace Orchestra.Backend.Services;
 
 /// <summary>
 /// Performs VNC/RFB authentication server-side over an already-open TCP stream.

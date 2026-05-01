@@ -4,10 +4,10 @@ using System.Text;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
-using MudoSoft.Backend.Data;
-using MudoSoft.Backend.Models;
+using Orchestra.Backend.Data;
+using Orchestra.Backend.Models;
 
-namespace MudoSoft.Backend.Controllers;
+namespace Orchestra.Backend.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
@@ -15,14 +15,14 @@ public class AuthController : ControllerBase
 {
     private readonly IConfiguration _configuration;
     private readonly ILogger<AuthController> _logger;
-    private readonly MudoSoftDbContext _db;
+    private readonly OrchestraDbContext _db;
 
     // Account lockout: IP bazlı başarısız giriş takibi
     private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, (int count, DateTime lastAttempt)> _failedAttempts = new();
     private const int MaxFailedAttempts = 5;
     private static readonly TimeSpan LockoutDuration = TimeSpan.FromMinutes(15);
 
-    public AuthController(IConfiguration configuration, ILogger<AuthController> logger, MudoSoftDbContext db)
+    public AuthController(IConfiguration configuration, ILogger<AuthController> logger, OrchestraDbContext db)
     {
         _configuration = configuration;
         _logger = logger;
@@ -226,8 +226,8 @@ public class AuthController : ControllerBase
             claims.Add(new Claim("UserId", userId.Value.ToString()));
 
         var token = new JwtSecurityToken(
-            issuer: _configuration["Jwt:Issuer"] ?? "MudoSoft",
-            audience: _configuration["Jwt:Audience"] ?? "MudoSoftUsers",
+            issuer: _configuration["Jwt:Issuer"] ?? "Orchestra",
+            audience: _configuration["Jwt:Audience"] ?? "OrchestraUsers",
             claims: claims,
             expires: DateTime.UtcNow.AddHours(8),
             signingCredentials: credentials
@@ -256,8 +256,8 @@ public class AuthController : ControllerBase
         };
 
         var token = new JwtSecurityToken(
-            issuer: _configuration["Jwt:Issuer"] ?? "MudoSoft",
-            audience: _configuration["Jwt:Audience"] ?? "MudoSoftAgents",
+            issuer: _configuration["Jwt:Issuer"] ?? "Orchestra",
+            audience: "OrchestraAgents",
             claims: claims,
             expires: DateTime.UtcNow.AddDays(30),
             signingCredentials: credentials

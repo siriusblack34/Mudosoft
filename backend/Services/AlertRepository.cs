@@ -1,6 +1,6 @@
-using MudoSoft.Backend.Models;
+using Orchestra.Backend.Models;
 
-namespace MudoSoft.Backend.Services;
+namespace Orchestra.Backend.Services;
 
 public interface IAlertRepository
 {

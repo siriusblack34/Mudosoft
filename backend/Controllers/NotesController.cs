@@ -1,11 +1,11 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
-using MudoSoft.Backend.Data;
-using MudoSoft.Backend.Models;
+using Orchestra.Backend.Data;
+using Orchestra.Backend.Models;
 using System.Security.Claims;
 
-namespace MudoSoft.Backend.Controllers
+namespace Orchestra.Backend.Controllers
 {
     public class NoteDto
     {
@@ -19,9 +19,9 @@ namespace MudoSoft.Backend.Controllers
     [Route("api/notes")]
     public class NotesController : ControllerBase
     {
-        private readonly MudoSoftDbContext _db;
+        private readonly OrchestraDbContext _db;
 
-        public NotesController(MudoSoftDbContext db)
+        public NotesController(OrchestraDbContext db)
         {
             _db = db;
         }

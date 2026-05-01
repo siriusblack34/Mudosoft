@@ -1,10 +1,14 @@
-; MudoSoft Agent + Tray Installer Script
+; Orchestra Agent + Tray Installer Script
 ; Inno Setup 6.x required
-; Build with: ISCC.exe MudoSoftAgentSetup.iss
+; Build with: ISCC.exe OrchestraAgentSetup.iss
+;
+; NOT: Sahadaki 60 cihazda kayıtlı teknik ID'ler korunuyor (geriye uyumluluk):
+;   Service ID: MudosoftAgentService, Install klasörü: {autopf}\MudoSoft\Agent,
+;   EXE adları: MudoSoft.Agent.exe / MudoSoft.Tray.exe, Task: MudoSoftRDHelper
 
-#define MyAppName "MudoSoft Agent"
+#define MyAppName "Orchestra Agent"
 #define MyAppVersion "1.0.3.0"
-#define MyAppPublisher "MudoSoft"
+#define MyAppPublisher "Orchestra"
 #define MyAppExeName "MudoSoft.Agent.exe"
 #define TrayExeName "MudoSoft.Tray.exe"
 #define OldHelperExeName "MudoSoft.RDHelper.exe"
@@ -20,7 +24,7 @@ DefaultDirName={autopf}\MudoSoft\Agent
 DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=yes
 OutputDir=.\installer_output
-OutputBaseFilename=MudoSoftAgentSetup_{#MyAppVersion}
+OutputBaseFilename=OrchestraAgentSetup_{#MyAppVersion}
 Compression=lzma2/ultra64
 SolidCompression=yes
 PrivilegesRequired=admin
@@ -45,8 +49,8 @@ Source: "C:\AgentDeploy_v31\appsettings.Development.json"; DestDir: "{app}"; Fla
 
 [Icons]
 ; Start Menu shortcut for Tray
-Name: "{group}\MudoSoft Tray"; Filename: "{app}\{#TrayExeName}"
-Name: "{group}\Uninstall MudoSoft Agent"; Filename: "{uninstallexe}"
+Name: "{group}\Orchestra Tray"; Filename: "{app}\{#TrayExeName}"
+Name: "{group}\Uninstall Orchestra Agent"; Filename: "{uninstallexe}"
 
 [Registry]
 ; Auto-start Tray on Windows login (current user)
@@ -58,7 +62,7 @@ Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: 
 ; Install and start the service after installation
 Filename: "{app}\{#MyAppExeName}"; Parameters: "/Install"; Flags: runhidden waituntilterminated; StatusMsg: "Windows Servisi kuruluyor..."
 ; Start Tray after installation
-Filename: "{app}\{#TrayExeName}"; Flags: nowait postinstall skipifsilent; Description: "MudoSoft Tray'ı başlat"
+Filename: "{app}\{#TrayExeName}"; Flags: nowait postinstall skipifsilent; Description: "Orchestra Tray'ı başlat"
 
 [UninstallRun]
 ; Delete RDHelper scheduled task
@@ -100,7 +104,7 @@ begin
   TaskXml := '<?xml version="1.0" encoding="UTF-16"?>' + #13#10 +
     '<Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">' + #13#10 +
     '  <RegistrationInfo>' + #13#10 +
-    '    <Description>MudoSoft RDHelper - Remote Desktop Screen Capture</Description>' + #13#10 +
+    '    <Description>Orchestra RDHelper - Remote Desktop Screen Capture</Description>' + #13#10 +
     '  </RegistrationInfo>' + #13#10 +
     '  <Triggers>' + #13#10 +
     '    <LogonTrigger>' + #13#10 +

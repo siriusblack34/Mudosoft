@@ -1,8 +1,8 @@
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using Mudosoft.Agent.Interfaces;
+using Orchestra.Agent.Interfaces;
 
-namespace Mudosoft.Agent.Services.Collectors;
+namespace Orchestra.Agent.Services.Collectors;
 
 /// <summary>
 /// Tüm ICollector implementasyonlarını yöneten BackgroundService.

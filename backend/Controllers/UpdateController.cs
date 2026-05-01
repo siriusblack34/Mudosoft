@@ -1,10 +1,10 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using MudoSoft.Backend.Services;
+using Orchestra.Backend.Services;
 using System.IO.Compression;
 
-namespace MudoSoft.Backend.Controllers;
+namespace Orchestra.Backend.Controllers;
 
 [ApiController]
 [Authorize]
@@ -181,7 +181,7 @@ public class UpdateController : ControllerBase
     public IActionResult TriggerUpdate(
         [FromQuery] string deviceId,
         [FromQuery] string? backendUrl,
-        [FromServices] MudoSoft.Backend.Data.CommandQueue queue)
+        [FromServices] Orchestra.Backend.Data.CommandQueue queue)
     {
         if (string.IsNullOrEmpty(deviceId))
             return BadRequest("deviceId required");
@@ -193,11 +193,11 @@ public class UpdateController : ControllerBase
         var commandId = Guid.NewGuid();
         var updatePayload = System.Text.Json.JsonSerializer.Serialize(new { backendUrl = url.TrimEnd('/') });
 
-        queue.Enqueue(new Mudosoft.Shared.Dtos.CommandDto
+        queue.Enqueue(new Orchestra.Shared.Dtos.CommandDto
         {
             Id = commandId,
             DeviceId = deviceId,
-            Type = Mudosoft.Shared.Enums.CommandType.UpdateAgent,
+            Type = Orchestra.Shared.Enums.CommandType.UpdateAgent,
             Payload = updatePayload,
             CreatedAtUtc = DateTime.UtcNow
         });
@@ -227,7 +227,7 @@ set EXTRACTDIR=C:\Users\Public\MudoSoftUpdate\extracted
 set INSTALLDIR=C:\Program Files\MudoSoft\Agent
 set SERVICENAME=MudosoftAgentService
 
-echo [%date% %time%] === MudoSoft Agent Updater v3 === > %LOG%
+echo [%date% %time%] === Orchestra Agent Updater v3 === > %LOG%
 
 echo [%date% %time%] Step 1: Stopping service... >> %LOG%
 net stop %SERVICENAME% >> %LOG% 2>&1
@@ -300,7 +300,7 @@ echo [%date% %time%] === UPDATE COMPLETE === >> %LOG%
     public IActionResult ForceUpdate(
         [FromQuery] string deviceId,
         [FromQuery] string? backendUrl,
-        [FromServices] MudoSoft.Backend.Data.CommandQueue queue)
+        [FromServices] Orchestra.Backend.Data.CommandQueue queue)
     {
         if (string.IsNullOrEmpty(deviceId))
             return BadRequest("deviceId required");
@@ -312,11 +312,11 @@ echo [%date% %time%] === UPDATE COMPLETE === >> %LOG%
         var commandId = Guid.NewGuid();
         var updatePayload = System.Text.Json.JsonSerializer.Serialize(new { backendUrl = url.TrimEnd('/') });
 
-        queue.Enqueue(new Mudosoft.Shared.Dtos.CommandDto
+        queue.Enqueue(new Orchestra.Shared.Dtos.CommandDto
         {
             Id = commandId,
             DeviceId = deviceId,
-            Type = Mudosoft.Shared.Enums.CommandType.UpdateAgent,
+            Type = Orchestra.Shared.Enums.CommandType.UpdateAgent,
             Payload = updatePayload,
             CreatedAtUtc = DateTime.UtcNow
         });
@@ -332,8 +332,8 @@ echo [%date% %time%] === UPDATE COMPLETE === >> %LOG%
     [HttpPost("trigger-all")]
     public async Task<IActionResult> TriggerUpdateAll(
         [FromQuery] string? backendUrl,
-        [FromServices] MudoSoft.Backend.Data.CommandQueue queue, 
-        [FromServices] MudoSoft.Backend.Data.MudoSoftDbContext dbContext)
+        [FromServices] Orchestra.Backend.Data.CommandQueue queue, 
+        [FromServices] Orchestra.Backend.Data.OrchestraDbContext dbContext)
     {
         var url = !string.IsNullOrEmpty(backendUrl)
             ? backendUrl
@@ -349,11 +349,11 @@ echo [%date% %time%] === UPDATE COMPLETE === >> %LOG%
 
         foreach (var device in targetDevices)
         {
-            queue.Enqueue(new Mudosoft.Shared.Dtos.CommandDto
+            queue.Enqueue(new Orchestra.Shared.Dtos.CommandDto
             {
                 Id = Guid.NewGuid(),
                 DeviceId = device.Id,
-                Type = Mudosoft.Shared.Enums.CommandType.UpdateAgent,
+                Type = Orchestra.Shared.Enums.CommandType.UpdateAgent,
                 Payload = updatePayload,
                 CreatedAtUtc = DateTime.UtcNow
             });
@@ -386,7 +386,7 @@ echo [%date% %time%] === UPDATE COMPLETE === >> %LOG%
     /// </summary>
     [HttpGet("device-versions")]
     public async Task<IActionResult> GetDeviceVersions(
-        [FromServices] MudoSoft.Backend.Data.MudoSoftDbContext dbContext)
+        [FromServices] Orchestra.Backend.Data.OrchestraDbContext dbContext)
     {
         var devices = await dbContext.Devices
             .Select(d => new
@@ -414,7 +414,7 @@ echo [%date% %time%] === UPDATE COMPLETE === >> %LOG%
         if (_isBuilding) return BadRequest("Build already in progress");
 
         var projectRoot = @"E:\Mudosoft";
-        var csprojPath = Path.Combine(projectRoot, "agent", "MudoSoft.Agent.csproj");
+        var csprojPath = Path.Combine(projectRoot, "agent", "Orchestra.Agent.csproj");
 
         if (!System.IO.File.Exists(csprojPath))
             return BadRequest($"Agent projesi bulunamadı: {csprojPath}");

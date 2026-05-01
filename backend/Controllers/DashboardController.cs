@@ -1,10 +1,10 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Authorization;
-using MudoSoft.Backend.Models;
-using MudoSoft.Backend.Services;
-using MudoSoft.Backend.Dtos;
+using Orchestra.Backend.Models;
+using Orchestra.Backend.Services;
+using Orchestra.Backend.Dtos;
 
-namespace MudoSoft.Backend.Controllers;
+namespace Orchestra.Backend.Controllers;
 
 [ApiController]
 [Authorize]

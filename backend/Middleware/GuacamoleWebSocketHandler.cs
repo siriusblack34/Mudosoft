@@ -3,11 +3,11 @@ using System.Net.WebSockets;
 using System.Text;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
-using MudoSoft.Backend.Data;
-using MudoSoft.Backend.Models;
-using MudoSoft.Backend.Services;
+using Orchestra.Backend.Data;
+using Orchestra.Backend.Models;
+using Orchestra.Backend.Services;
 
-namespace MudoSoft.Backend.Middleware;
+namespace Orchestra.Backend.Middleware;
 
 public static class VncWebSocketExtensions
 {
@@ -73,7 +73,7 @@ internal static class VncWebSocketHandler
         }
 
         // 3. Look up device from database
-        var db = context.RequestServices.GetRequiredService<MudoSoftDbContext>();
+        var db = context.RequestServices.GetRequiredService<OrchestraDbContext>();
         var device = await db.Devices.AsNoTracking()
             .Where(d => d.Id == deviceId)
             .Select(d => new { d.IpAddress, d.Hostname, d.Online, d.VncInstalled, d.VncPassword, d.VncPort })
@@ -333,7 +333,7 @@ internal static class VncWebSocketHandler
         {
             var scopeFactory = context.RequestServices.GetRequiredService<IServiceScopeFactory>();
             using var scope = scopeFactory.CreateScope();
-            var db = scope.ServiceProvider.GetRequiredService<MudoSoftDbContext>();
+            var db = scope.ServiceProvider.GetRequiredService<OrchestraDbContext>();
             db.VncSessionLogs.Add(new VncSessionLog
             {
                 SessionId    = sessionId,
@@ -354,7 +354,7 @@ internal static class VncWebSocketHandler
         {
             var scopeFactory = context.RequestServices.GetRequiredService<IServiceScopeFactory>();
             using var scope = scopeFactory.CreateScope();
-            var db = scope.ServiceProvider.GetRequiredService<MudoSoftDbContext>();
+            var db = scope.ServiceProvider.GetRequiredService<OrchestraDbContext>();
             var log = await db.VncSessionLogs.FirstOrDefaultAsync(l => l.SessionId == sessionId);
             if (log != null)
             {
@@ -380,9 +380,10 @@ internal static class VncWebSocketHandler
             var jwtKey = jwtKeyFromEnv ?? jwtKeyFromConfig;
             if (string.IsNullOrEmpty(jwtKey)) return null;
 
-            var jwtIssuer = config["Jwt:Issuer"] ?? "MudoSoft";
-            var jwtAudience = config["Jwt:Audience"] ?? "MudoSoftUsers";
+            var jwtIssuer = config["Jwt:Issuer"] ?? "Orchestra";
+            var jwtAudience = config["Jwt:Audience"] ?? "OrchestraUsers";
 
+            // Geçiş dönemi: hem eski (MudoSoft*) hem yeni (Orchestra*) token'ları kabul et
             var handler = new JwtSecurityTokenHandler();
             var principal = handler.ValidateToken(token, new TokenValidationParameters
             {
@@ -390,8 +391,8 @@ internal static class VncWebSocketHandler
                 ValidateAudience = true,
                 ValidateLifetime = true,
                 ValidateIssuerSigningKey = true,
-                ValidIssuer = jwtIssuer,
-                ValidAudience = jwtAudience,
+                ValidIssuers = new[] { jwtIssuer, "MudoSoft", "Orchestra" }.Distinct().ToArray(),
+                ValidAudiences = new[] { jwtAudience, "MudoSoftUsers", "MudoSoftAgents", "OrchestraUsers", "OrchestraAgents" }.Distinct().ToArray(),
                 IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey)),
                 ClockSkew = TimeSpan.Zero
             }, out _);

@@ -1,6 +1,6 @@
 using System.ComponentModel.DataAnnotations;
 
-namespace MudoSoft.Backend.Models;
+namespace Orchestra.Backend.Models;
 
 /// <summary>
 /// Collector verilerini saklayan ana tablo.

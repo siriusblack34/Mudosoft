@@ -1,7 +1,7 @@
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.AspNetCore.Authorization;
 
-namespace MudoSoft.Backend.Hubs
+namespace Orchestra.Backend.Hubs
 {
     [AllowAnonymous] // Allow Agents to connect without JWT
     public class DashboardHub : Hub

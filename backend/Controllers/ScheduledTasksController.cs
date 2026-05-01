@@ -1,20 +1,20 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
-using MudoSoft.Backend.Data;
-using MudoSoft.Backend.Models;
+using Orchestra.Backend.Data;
+using Orchestra.Backend.Models;
 
-namespace MudoSoft.Backend.Controllers
+namespace Orchestra.Backend.Controllers
 {
     [ApiController]
     [Authorize]
     [Route("api/scheduled-tasks")]
     public class ScheduledTasksController : ControllerBase
     {
-        private readonly MudoSoftDbContext _db;
+        private readonly OrchestraDbContext _db;
         private readonly ILogger<ScheduledTasksController> _logger;
 
-        public ScheduledTasksController(MudoSoftDbContext db, ILogger<ScheduledTasksController> logger)
+        public ScheduledTasksController(OrchestraDbContext db, ILogger<ScheduledTasksController> logger)
         {
             _db = db;
             _logger = logger;

@@ -1,19 +1,19 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using MudoSoft.Backend.Data;
-using MudoSoft.Backend.Models;
+using Orchestra.Backend.Data;
+using Orchestra.Backend.Models;
 
-namespace MudoSoft.Backend.Controllers
+namespace Orchestra.Backend.Controllers
 {
     [ApiController]
     [Authorize]
     [Route("api/[controller]")]
     public class StoreManagersController : ControllerBase
     {
-        private readonly MudoSoftDbContext _context;
+        private readonly OrchestraDbContext _context;
 
-        public StoreManagersController(MudoSoftDbContext context)
+        public StoreManagersController(OrchestraDbContext context)
         {
             _context = context;
         }

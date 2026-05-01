@@ -2,6 +2,8 @@
 **/bin/
 **/obj/
 **/publish/
+**/publish_out/
+**/publish_sc/
 /frontend/dist/
 
 # Release and publish artifacts
@@ -15,6 +17,12 @@
 /quick-release/
 /agent_v22/
 /m/
+
+# Sunum ve geçici asset'ler (root)
+*.pptx
+/generate_presentation.py
+/logo.png
+/orchestra_logo2.png
 
 # Deployment archives & installers
 *.zip

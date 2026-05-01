@@ -13,6 +13,7 @@ import {
     WifiOff,
 } from "lucide-react";
 import AgendaTopicsPanel from "../components/dashboard/AgendaTopicsPanel";
+import TurkeyStoreMap from "../components/dashboard/TurkeyStoreMap";
 import { useTheme } from "../contexts/ThemeContext";
 import { apiClient, SqlDeviceWithStatus, RouterClassification } from "../lib/apiClient";
 
@@ -179,6 +180,7 @@ const DashboardPage: React.FC = () => {
     const [dashboardError, setDashboardError] = useState<string | null>(null);
     const [sqlError, setSqlError] = useState<string | null>(null);
     const [mobileRouters, setMobileRouters] = useState<RouterClassification[]>([]);
+    const [connectionView, setConnectionView] = useState<"grid" | "map">("grid");
     const [, setTick] = useState(0);
 
     // Süre gösterimi için 30 saniyede bir güncelle (her saniye değil — gereksiz re-render önlenir)
@@ -465,7 +467,7 @@ const DashboardPage: React.FC = () => {
                 <div className="space-y-5">
                     {/* Connection status grid — full width */}
                     <GlassCard c={c}>
-                        <div className="mb-4 flex items-center justify-between">
+                        <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                             <div className="flex items-center gap-3">
                                 <Globe className="h-4 w-4" style={{ color: c.sky }} />
                                 <div>
@@ -473,7 +475,7 @@ const DashboardPage: React.FC = () => {
                                     <p className="text-xs" style={{ color: c.muted }}>{totalActive} aktif cihaz izleniyor</p>
                                 </div>
                             </div>
-                            <div className="flex items-center gap-4">
+                            <div className="flex flex-wrap items-center gap-3 lg:justify-end">
                                 {/* Durum */}
                                 <div className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full" style={{ background: c.emerald }} /><span className="text-[10px]" style={{ color: c.muted }}>Online</span></div>
                                 <div className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full" style={{ background: c.rose }} /><span className="text-[10px]" style={{ color: c.muted }}>Offline</span></div>
@@ -484,8 +486,30 @@ const DashboardPage: React.FC = () => {
                                 <div className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-[3px] border" style={{ borderColor: c.sky + "60", background: c.sky + "25" }} /><span className="text-[10px]" style={{ color: c.muted }}>PC</span></div>
                                 <div className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-md border" style={{ borderColor: c.violet + "60", background: c.violet + "25" }} /><span className="text-[10px]" style={{ color: c.muted }}>Geçici</span></div>
                                 <div className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-[1px] border" style={{ borderColor: c.emerald + "60", background: c.emerald + "25" }} /><span className="text-[10px]" style={{ color: c.muted }}>POS</span></div>
+                                <div className="flex rounded-lg border p-1" style={{ background: c.cardSoft, borderColor: c.border }}>
+                                    <button
+                                        type="button"
+                                        onClick={() => setConnectionView("grid")}
+                                        className="rounded-md px-2.5 py-1 text-[10px] font-bold transition-colors"
+                                        style={{ background: connectionView === "grid" ? c.skySoft : "transparent", color: connectionView === "grid" ? c.sky : c.muted }}
+                                    >
+                                        Matris
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => setConnectionView("map")}
+                                        className="rounded-md px-2.5 py-1 text-[10px] font-bold transition-colors"
+                                        style={{ background: connectionView === "map" ? c.skySoft : "transparent", color: connectionView === "map" ? c.sky : c.muted }}
+                                    >
+                                        Harita
+                                    </button>
+                                </div>
                             </div>
                         </div>
+                        {connectionView === "map" ? (
+                            <TurkeyStoreMap c={c} stores={stores} />
+                        ) : (
+                            <>
                         {/* Router row */}
                         <div className="mb-3">
                             <div className="mb-2 flex items-center gap-2">
@@ -516,9 +540,22 @@ const DashboardPage: React.FC = () => {
                                 )) : <span className="text-xs" style={{ color: c.muted }}>PC verisi yok</span>}
                             </div>
                         </div>
+                        {/* POS row */}
+                        <div className={geciciPcs.length > 0 ? "mb-3" : ""}>
+                            <div className="mb-2 flex items-center gap-2">
+                                <MonitorSmartphone className="h-3.5 w-3.5" style={{ color: c.emerald }} />
+                                <span className="text-xs font-semibold" style={{ color: c.text }}>POS / Kasa</span>
+                                <span className="text-[10px]" style={{ color: c.muted }}>({posOnline}/{activePos.length} online{closedPos > 0 ? `, ${closedPos} kapalı` : ""})</span>
+                            </div>
+                            <div className="flex flex-wrap gap-1.5">
+                                {posDevices.length > 0 ? [...posDevices].sort((a, b) => (a.storeCode ?? 0) - (b.storeCode ?? 0)).map((d) => (
+                                    <ConnectionDot key={d.deviceId} c={c} device={d} />
+                                )) : <span className="text-xs" style={{ color: c.muted }}>POS verisi yok</span>}
+                            </div>
+                        </div>
                         {/* Geçici PC row */}
                         {geciciPcs.length > 0 && (
-                        <div className="mb-3">
+                        <div>
                             <div className="mb-2 flex items-center gap-2">
                                 <Monitor className="h-3.5 w-3.5" style={{ color: c.violet }} />
                                 <span className="text-xs font-semibold" style={{ color: c.text }}>Geçici PC</span>
@@ -533,19 +570,8 @@ const DashboardPage: React.FC = () => {
                             </div>
                         </div>
                         )}
-                        {/* POS row */}
-                        <div>
-                            <div className="mb-2 flex items-center gap-2">
-                                <MonitorSmartphone className="h-3.5 w-3.5" style={{ color: c.emerald }} />
-                                <span className="text-xs font-semibold" style={{ color: c.text }}>POS / Kasa</span>
-                                <span className="text-[10px]" style={{ color: c.muted }}>({posOnline}/{activePos.length} online{closedPos > 0 ? `, ${closedPos} kapalı` : ""})</span>
-                            </div>
-                            <div className="flex flex-wrap gap-1.5">
-                                {posDevices.length > 0 ? [...posDevices].sort((a, b) => (a.storeCode ?? 0) - (b.storeCode ?? 0)).map((d) => (
-                                    <ConnectionDot key={d.deviceId} c={c} device={d} />
-                                )) : <span className="text-xs" style={{ color: c.muted }}>POS verisi yok</span>}
-                            </div>
-                        </div>
+                            </>
+                        )}
                     </GlassCard>
 
                     <GlassCard c={c}>

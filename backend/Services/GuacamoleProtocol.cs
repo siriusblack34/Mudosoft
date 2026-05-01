@@ -1,7 +1,7 @@
 using System.Net.Sockets;
 using System.Text;
 
-namespace MudoSoft.Backend.Services;
+namespace Orchestra.Backend.Services;
 
 /// <summary>
 /// Guacamole protocol encoder/decoder.

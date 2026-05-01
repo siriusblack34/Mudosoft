@@ -1,4 +1,4 @@
-namespace MudoSoft.Tray;
+namespace Orchestra.Tray;
 
 public class StatusForm : Form
 {
@@ -20,7 +20,7 @@ public class StatusForm : Form
 
     private void InitializeForm()
     {
-        Text = "MudoSoft Durum";
+        Text = "Orchestra Durum";
         Size = new Size(320, 280);
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MaximizeBox = false;
@@ -58,7 +58,7 @@ public class StatusForm : Form
 
         var titleLabel = new Label
         {
-            Text = "MudoSoft",
+            Text = "Orchestra",
             Font = new Font("Segoe UI Semibold", 14),
             ForeColor = Color.White,
             AutoSize = true,

@@ -1,7 +1,7 @@
-using MudoSoft.Backend.Models;
+using Orchestra.Backend.Models;
 using System.Collections.Generic;
 
-namespace MudoSoft.Backend.Services;
+namespace Orchestra.Backend.Services;
 
 public interface IDeviceRepository
 {

@@ -1,12 +1,12 @@
 using System.Diagnostics;
 using Microsoft.Extensions.Logging;
-using Mudosoft.Agent.Interfaces;
-using Mudosoft.Shared.Dtos;
-using Mudosoft.Shared.Enums;
+using Orchestra.Agent.Interfaces;
+using Orchestra.Shared.Dtos;
+using Orchestra.Shared.Enums;
 using System.Management;
 using System.Runtime.InteropServices;
 
-namespace Mudosoft.Agent.Services;
+namespace Orchestra.Agent.Services;
 
 public sealed class CommandExecutor : ICommandExecutor
 {

@@ -1,7 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using System.Net.NetworkInformation;
 
-namespace MudoSoft.Backend.Controllers
+namespace Orchestra.Backend.Controllers
 {
     [ApiController]
     [Route("api/[controller]")]

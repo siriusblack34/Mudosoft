@@ -1,5 +1,5 @@
 # ============================================
-#  MudoSoft Agent Installer
+#  Orchestra Agent Installer
 #  Admin olarak calistirin!
 # ============================================
 param(
@@ -18,7 +18,7 @@ $ScriptDir = $PSScriptRoot
 
 Write-Host ""
 Write-Host "============================================" -ForegroundColor Cyan
-Write-Host "  MudoSoft Agent Installer" -ForegroundColor Cyan
+Write-Host "  Orchestra Agent Installer" -ForegroundColor Cyan
 Write-Host "============================================" -ForegroundColor Cyan
 Write-Host "  Backend  : $BackendUrl" -ForegroundColor Gray
 Write-Host "  StoreCode: $StoreCode" -ForegroundColor Gray
@@ -97,7 +97,7 @@ Write-Host "[4/5] Windows servisi olusturuluyor..." -ForegroundColor Yellow
 reg.exe add "HKLM\SYSTEM\CurrentControlSet\Control" /v ServicesPipeTimeout /t REG_DWORD /d 120000 /f 2>&1 | Out-Null
 
 # Reboot sirasindaki yarisi azaltmak icin delayed-auto kullan
-sc.exe create $ServiceName binPath= "`"$ExePath`" --service" start= delayed-auto obj= "LocalSystem" DisplayName= "MudosoftAgentService" 2>&1 | Out-Null
+sc.exe create $ServiceName binPath= "`"$ExePath`" --service" start= delayed-auto obj= "LocalSystem" DisplayName= "Orchestra Agent Service" 2>&1 | Out-Null
 if ($LASTEXITCODE -ne 0) {
     Write-Host "  HATA: Servis olusturulamadi!" -ForegroundColor Red
     exit 1

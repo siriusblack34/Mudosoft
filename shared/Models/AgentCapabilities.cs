@@ -1,4 +1,4 @@
-namespace Mudosoft.Shared.Models;
+namespace Orchestra.Shared.Models;
 
 public sealed class AgentCapabilities
 {

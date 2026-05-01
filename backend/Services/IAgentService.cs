@@ -1,6 +1,6 @@
-using Mudosoft.Shared.Dtos;
+using Orchestra.Shared.Dtos;
 
-namespace MudoSoft.Backend.Services;
+namespace Orchestra.Backend.Services;
 
 public interface IAgentService
 {

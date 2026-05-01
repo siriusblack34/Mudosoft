@@ -5,7 +5,7 @@ $AgentFilesDir = "E:\AgentDeploy"
 $OutputMsi = Join-Path $RootDir "MudoSoftAgent.msi"
 
 Write-Host "============================================" -ForegroundColor Cyan  
-Write-Host "  MudoSoft Agent MSI Builder" -ForegroundColor Cyan
+Write-Host "  Orchestra Agent MSI Builder" -ForegroundColor Cyan
 Write-Host "============================================" -ForegroundColor Cyan
 Write-Host ""
 

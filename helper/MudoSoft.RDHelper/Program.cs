@@ -1,9 +1,9 @@
 ﻿using System.Drawing;
 using System.Text.Json;
 using System.Windows.Forms;
-using MudoSoft.RDHelper.Services;
+using Orchestra.RDHelper.Services;
 
-namespace MudoSoft.RDHelper;
+namespace Orchestra.RDHelper;
 
 internal static class Program
 {

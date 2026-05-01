@@ -1,8 +1,8 @@
 using Microsoft.Extensions.Configuration;
-using MudoSoft.Backend.Models;
+using Orchestra.Backend.Models;
 using System.Threading.Tasks;
 
-namespace MudoSoft.Backend.Services
+namespace Orchestra.Backend.Services
 {
     public class WmiSystemInfoService : IWmiSystemInfoService
     {

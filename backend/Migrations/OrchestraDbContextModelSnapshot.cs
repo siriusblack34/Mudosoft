@@ -3,15 +3,15 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
-using MudoSoft.Backend.Data;
+using Orchestra.Backend.Data;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
 #nullable disable
 
-namespace MudoSoft.Backend.Migrations
+namespace Orchestra.Backend.Migrations
 {
-    [DbContext(typeof(MudoSoftDbContext))]
-    partial class MudoSoftDbContextModelSnapshot : ModelSnapshot
+    [DbContext(typeof(OrchestraDbContext))]
+    partial class OrchestraDbContextModelSnapshot : ModelSnapshot
     {
         protected override void BuildModel(ModelBuilder modelBuilder)
         {
@@ -22,7 +22,7 @@ namespace MudoSoft.Backend.Migrations
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
-            modelBuilder.Entity("MudoSoft.Backend.Models.ActionRecord", b =>
+            modelBuilder.Entity("Orchestra.Backend.Models.ActionRecord", b =>
                 {
                     b.Property<Guid>("RecordId")
                         .ValueGeneratedOnAdd()
@@ -55,7 +55,7 @@ namespace MudoSoft.Backend.Migrations
                     b.ToTable("ActionRecords");
                 });
 
-            modelBuilder.Entity("MudoSoft.Backend.Models.AppSetting", b =>
+            modelBuilder.Entity("Orchestra.Backend.Models.AppSetting", b =>
                 {
                     b.Property<string>("Key")
                         .HasMaxLength(100)
@@ -73,7 +73,7 @@ namespace MudoSoft.Backend.Migrations
                     b.ToTable("AppSettings");
                 });
 
-            modelBuilder.Entity("MudoSoft.Backend.Models.AgendaItem", b =>
+            modelBuilder.Entity("Orchestra.Backend.Models.AgendaItem", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
@@ -130,7 +130,7 @@ namespace MudoSoft.Backend.Migrations
                     b.ToTable("AgendaItems");
                 });
 
-            modelBuilder.Entity("MudoSoft.Backend.Models.CollectorReport", b =>
+            modelBuilder.Entity("Orchestra.Backend.Models.CollectorReport", b =>
                 {
                     b.Property<long>("Id")
                         .ValueGeneratedOnAdd()
@@ -180,7 +180,7 @@ namespace MudoSoft.Backend.Migrations
                     b.ToTable("CollectorReports");
                 });
 
-            modelBuilder.Entity("MudoSoft.Backend.Models.CommandResultRecord", b =>
+            modelBuilder.Entity("Orchestra.Backend.Models.CommandResultRecord", b =>
                 {
                     b.Property<long>("Id")
                         .ValueGeneratedOnAdd()
@@ -219,7 +219,7 @@ namespace MudoSoft.Backend.Migrations
                     b.ToTable("CommandResultRecords");
                 });
 
-            modelBuilder.Entity("MudoSoft.Backend.Models.Device", b =>
+            modelBuilder.Entity("Orchestra.Backend.Models.Device", b =>
                 {
                     b.Property<string>("Id")
                         .HasMaxLength(450)
@@ -333,7 +333,7 @@ namespace MudoSoft.Backend.Migrations
                     b.ToTable("Devices");
                 });
 
-            modelBuilder.Entity("MudoSoft.Backend.Models.DeviceMetric", b =>
+            modelBuilder.Entity("Orchestra.Backend.Models.DeviceMetric", b =>
                 {
                     b.Property<long>("Id")
                         .ValueGeneratedOnAdd()
@@ -373,7 +373,7 @@ namespace MudoSoft.Backend.Migrations
                     b.ToTable("DeviceMetrics");
                 });
 
-            modelBuilder.Entity("MudoSoft.Backend.Models.DeviceStatusChange", b =>
+            modelBuilder.Entity("Orchestra.Backend.Models.DeviceStatusChange", b =>
                 {
                     b.Property<long>("Id")
                         .ValueGeneratedOnAdd()
@@ -415,7 +415,7 @@ namespace MudoSoft.Backend.Migrations
                     b.ToTable("DeviceStatusChanges");
                 });
 
-            modelBuilder.Entity("MudoSoft.Backend.Models.LoginHistory", b =>
+            modelBuilder.Entity("Orchestra.Backend.Models.LoginHistory", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -450,7 +450,7 @@ namespace MudoSoft.Backend.Migrations
                     b.ToTable("LoginHistories");
                 });
 
-            modelBuilder.Entity("MudoSoft.Backend.Models.Note", b =>
+            modelBuilder.Entity("Orchestra.Backend.Models.Note", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
@@ -488,7 +488,7 @@ namespace MudoSoft.Backend.Migrations
                     b.ToTable("Notes");
                 });
 
-            modelBuilder.Entity("MudoSoft.Backend.Models.ScheduledTask", b =>
+            modelBuilder.Entity("Orchestra.Backend.Models.ScheduledTask", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -530,7 +530,7 @@ namespace MudoSoft.Backend.Migrations
                     b.ToTable("ScheduledTasks");
                 });
 
-            modelBuilder.Entity("MudoSoft.Backend.Models.StoreDevice", b =>
+            modelBuilder.Entity("Orchestra.Backend.Models.StoreDevice", b =>
                 {
                     b.Property<string>("DeviceId")
                         .HasMaxLength(100)
@@ -587,7 +587,7 @@ namespace MudoSoft.Backend.Migrations
                     b.ToTable("StoreDevices");
                 });
 
-            modelBuilder.Entity("MudoSoft.Backend.Models.StoreManager", b =>
+            modelBuilder.Entity("Orchestra.Backend.Models.StoreManager", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -618,7 +618,7 @@ namespace MudoSoft.Backend.Migrations
                     b.ToTable("StoreManagers");
                 });
 
-            modelBuilder.Entity("MudoSoft.Backend.Models.StoreOfflineLog", b =>
+            modelBuilder.Entity("Orchestra.Backend.Models.StoreOfflineLog", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -657,7 +657,7 @@ namespace MudoSoft.Backend.Migrations
                     b.ToTable("StoreOfflineLogs");
                 });
 
-            modelBuilder.Entity("MudoSoft.Backend.Models.User", b =>
+            modelBuilder.Entity("Orchestra.Backend.Models.User", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -705,7 +705,7 @@ namespace MudoSoft.Backend.Migrations
                     b.ToTable("Users");
                 });
 
-            modelBuilder.Entity("MudoSoft.Backend.Models.VncSessionLog", b =>
+            modelBuilder.Entity("Orchestra.Backend.Models.VncSessionLog", b =>
                 {
                     b.Property<long>("Id")
                         .ValueGeneratedOnAdd()
@@ -756,7 +756,7 @@ namespace MudoSoft.Backend.Migrations
                     b.ToTable("VncSessionLogs");
                 });
 
-            modelBuilder.Entity("MudoSoft.Backend.Models.RouterLatencySample", b =>
+            modelBuilder.Entity("Orchestra.Backend.Models.RouterLatencySample", b =>
                 {
                     b.Property<long>("Id")
                         .ValueGeneratedOnAdd()
@@ -799,7 +799,7 @@ namespace MudoSoft.Backend.Migrations
                     b.ToTable("RouterLatencySamples");
                 });
 
-            modelBuilder.Entity("MudoSoft.Backend.Models.StoreNetworkInfo", b =>
+            modelBuilder.Entity("Orchestra.Backend.Models.StoreNetworkInfo", b =>
                 {
                     b.Property<int>("StoreCode")
                         .HasColumnType("integer");
@@ -823,9 +823,9 @@ namespace MudoSoft.Backend.Migrations
                     b.ToTable("StoreNetworkInfos");
                 });
 
-            modelBuilder.Entity("MudoSoft.Backend.Models.CommandResultRecord", b =>
+            modelBuilder.Entity("Orchestra.Backend.Models.CommandResultRecord", b =>
                 {
-                    b.HasOne("MudoSoft.Backend.Models.Device", "Device")
+                    b.HasOne("Orchestra.Backend.Models.Device", "Device")
                         .WithMany()
                         .HasForeignKey("DeviceId")
                         .OnDelete(DeleteBehavior.Cascade)
@@ -834,9 +834,9 @@ namespace MudoSoft.Backend.Migrations
                     b.Navigation("Device");
                 });
 
-            modelBuilder.Entity("MudoSoft.Backend.Models.DeviceMetric", b =>
+            modelBuilder.Entity("Orchestra.Backend.Models.DeviceMetric", b =>
                 {
-                    b.HasOne("MudoSoft.Backend.Models.Device", "Device")
+                    b.HasOne("Orchestra.Backend.Models.Device", "Device")
                         .WithMany("Metrics")
                         .HasForeignKey("DeviceId")
                         .OnDelete(DeleteBehavior.Cascade)
@@ -845,7 +845,7 @@ namespace MudoSoft.Backend.Migrations
                     b.Navigation("Device");
                 });
 
-            modelBuilder.Entity("MudoSoft.Backend.Models.Device", b =>
+            modelBuilder.Entity("Orchestra.Backend.Models.Device", b =>
                 {
                     b.Navigation("Metrics");
                 });

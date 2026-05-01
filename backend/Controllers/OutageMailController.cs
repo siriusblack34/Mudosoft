@@ -1,12 +1,12 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using MudoSoft.Backend.Data;
-using MudoSoft.Backend.Services;
+using Orchestra.Backend.Data;
+using Orchestra.Backend.Services;
 using System.Security.Claims;
 using System.Text;
 
-namespace MudoSoft.Backend.Controllers;
+namespace Orchestra.Backend.Controllers;
 
 // ── Request / Response DTO'ları ────────────────────────────────────────────
 
@@ -126,7 +126,7 @@ public static class OutageMailTemplates
 [Authorize]
 public class OutageMailController : ControllerBase
 {
-    private readonly MudoSoftDbContext _db;
+    private readonly OrchestraDbContext _db;
     private readonly IEmailService _email;
     private readonly ILogger<OutageMailController> _logger;
 
@@ -135,7 +135,7 @@ public class OutageMailController : ControllerBase
     private const string FixedCcRecipient = "MudoBTDestek@mudo.com.tr";
     private const string LiveGreeting = "Zafer Bey";
 
-    public OutageMailController(MudoSoftDbContext db, IEmailService email, ILogger<OutageMailController> logger)
+    public OutageMailController(OrchestraDbContext db, IEmailService email, ILogger<OutageMailController> logger)
     {
         _db = db;
         _email = email;

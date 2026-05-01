@@ -137,7 +137,7 @@ const StatusBand: React.FC<StatusBandProps> = ({ devices }) => {
           onClick={() => navigate('/')}
           className="flex items-center gap-2 hover:opacity-80 transition-opacity"
         >
-          <Logo size={30} idSuffix="statusband" />
+          <Logo size={40} idSuffix="statusband" />
         </button>
 
         {/* System phrase */}

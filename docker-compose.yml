@@ -3,7 +3,7 @@ version: "3.8"
 services:
   guacd:
     image: guacamole/guacd:1.5.5
-    container_name: mudosoft-guacd
+    container_name: orchestra-guacd
     restart: unless-stopped
     ports:
       - "127.0.0.1:4822:4822"

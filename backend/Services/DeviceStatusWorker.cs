@@ -2,10 +2,10 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using MudoSoft.Backend.Data;
-using MudoSoft.Backend.Models;
+using Orchestra.Backend.Data;
+using Orchestra.Backend.Models;
 
-namespace MudoSoft.Backend.Services
+namespace Orchestra.Backend.Services
 {
     /// <summary>
     /// Arka planda periyodik olarak tüm cihazların online/offline durumunu tarar.
@@ -123,7 +123,7 @@ namespace MudoSoft.Backend.Services
             var sw = System.Diagnostics.Stopwatch.StartNew();
 
             using var scope = _scopeFactory.CreateScope();
-            var db = scope.ServiceProvider.GetRequiredService<MudoSoftDbContext>();
+            var db = scope.ServiceProvider.GetRequiredService<OrchestraDbContext>();
 
             // 1) DB'den tüm cihazları al
             var devices = await db.StoreDevices
@@ -241,7 +241,7 @@ namespace MudoSoft.Backend.Services
             {
                 // Tracking ile yeni scope (AsNoTracking yukarıda kullanıldı)
                 using var writeScope = _scopeFactory.CreateScope();
-                var writeDb = writeScope.ServiceProvider.GetRequiredService<MudoSoftDbContext>();
+                var writeDb = writeScope.ServiceProvider.GetRequiredService<OrchestraDbContext>();
 
                 var now = DateTime.UtcNow;
                 var toUpdate = await writeDb.StoreDevices
@@ -297,7 +297,7 @@ namespace MudoSoft.Backend.Services
                 try
                 {
                     using var sampleScope = _scopeFactory.CreateScope();
-                    var sampleDb = sampleScope.ServiceProvider.GetRequiredService<MudoSoftDbContext>();
+                    var sampleDb = sampleScope.ServiceProvider.GetRequiredService<OrchestraDbContext>();
                     sampleDb.RouterLatencySamples.AddRange(routerSamples);
                     await sampleDb.SaveChangesAsync(ct);
                 }
@@ -325,7 +325,7 @@ namespace MudoSoft.Backend.Services
                 devices.Count, sw.ElapsedMilliseconds, onlineIds.Count, routerPendingFails);
         }
 
-        private static async Task UpdateOfflineLogsAsync(MudoSoftDbContext db, List<StoreDeviceWithStatusDto> devices, DateTime now)
+        private static async Task UpdateOfflineLogsAsync(OrchestraDbContext db, List<StoreDeviceWithStatusDto> devices, DateTime now)
         {
             var storeStatus = devices
                 .Where(d => !string.Equals(d.DeviceType, "PC", StringComparison.OrdinalIgnoreCase)

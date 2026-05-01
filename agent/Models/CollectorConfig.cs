@@ -1,4 +1,4 @@
-namespace Mudosoft.Agent.Models;
+namespace Orchestra.Agent.Models;
 
 public sealed class CollectorsConfig
 {

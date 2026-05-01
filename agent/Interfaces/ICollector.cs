@@ -1,4 +1,4 @@
-namespace Mudosoft.Agent.Interfaces;
+namespace Orchestra.Agent.Interfaces;
 
 /// <summary>
 /// Periyodik veri toplayan tüm collector servislerin ortak arayüzü.

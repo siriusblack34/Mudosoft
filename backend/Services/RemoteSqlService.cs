@@ -6,7 +6,7 @@ using System.Collections.Generic;
 using System.Text.RegularExpressions;
 using Microsoft.Data.SqlClient;
 
-namespace MudoSoft.Backend.Services
+namespace Orchestra.Backend.Services
 {
     public class RemoteSqlService : IRemoteSqlService
     {

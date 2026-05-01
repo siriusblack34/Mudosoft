@@ -6,14 +6,14 @@ using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
-using MudoSoft.Backend.Data;
-using MudoSoft.Backend.Models;
+using Orchestra.Backend.Data;
+using Orchestra.Backend.Models;
 
-namespace MudoSoft.Backend.Services
+namespace Orchestra.Backend.Services
 {
     public class StoreDiscoveryService : IStoreDiscoveryService
     {
-        private readonly MudoSoftDbContext _dbContext;
+        private readonly OrchestraDbContext _dbContext;
         private readonly IConfiguration _configuration;
 
         // 🔒 Credentials from environment variables
@@ -23,7 +23,7 @@ namespace MudoSoft.Backend.Services
             Environment.GetEnvironmentVariable("GENIUS_DB_PASSWORD") ?? 
             throw new InvalidOperationException("GENIUS_DB_PASSWORD environment variable is not set");
 
-        public StoreDiscoveryService(MudoSoftDbContext dbContext, IConfiguration configuration)
+        public StoreDiscoveryService(OrchestraDbContext dbContext, IConfiguration configuration)
         {
             _dbContext = dbContext;
             _configuration = configuration;

@@ -1,9 +1,9 @@
 using System.Drawing;
 using System.Drawing.Imaging;
 using Microsoft.AspNetCore.SignalR.Client;
-using Mudosoft.Shared.Dtos;
+using Orchestra.Shared.Dtos;
 
-namespace MudoSoft.Tray;
+namespace Orchestra.Tray;
 
 /// <summary>
 /// Remote Desktop Service - Runs in Tray (User Session)
@@ -248,28 +248,28 @@ public class RemoteDesktopService : IDisposable
             
             switch (input.Type)
             {
-                case Mudosoft.Shared.Enums.InputEventType.MouseMove:
+                case Orchestra.Shared.Enums.InputEventType.MouseMove:
                     SetCursorPos(scaledX, scaledY);
                     break;
                     
-                case Mudosoft.Shared.Enums.InputEventType.MouseDown:
+                case Orchestra.Shared.Enums.InputEventType.MouseDown:
                     SetCursorPos(scaledX, scaledY);
                     mouse_event(input.Button == 0 ? MOUSEEVENTF_LEFTDOWN : MOUSEEVENTF_RIGHTDOWN, 0, 0, 0, 0);
                     break;
                     
-                case Mudosoft.Shared.Enums.InputEventType.MouseUp:
+                case Orchestra.Shared.Enums.InputEventType.MouseUp:
                     SetCursorPos(scaledX, scaledY);
                     mouse_event(input.Button == 0 ? MOUSEEVENTF_LEFTUP : MOUSEEVENTF_RIGHTUP, 0, 0, 0, 0);
                     break;
                     
-                case Mudosoft.Shared.Enums.InputEventType.KeyDown:
-                case Mudosoft.Shared.Enums.InputEventType.KeyUp:
+                case Orchestra.Shared.Enums.InputEventType.KeyDown:
+                case Orchestra.Shared.Enums.InputEventType.KeyUp:
                     if (!string.IsNullOrEmpty(input.Key))
                     {
                         var vk = KeyCodeToVirtualKey(input.Key);
                         if (vk != 0)
                         {
-                            keybd_event((byte)vk, 0, input.Type == Mudosoft.Shared.Enums.InputEventType.KeyUp ? KEYEVENTF_KEYUP : 0, 0);
+                            keybd_event((byte)vk, 0, input.Type == Orchestra.Shared.Enums.InputEventType.KeyUp ? KEYEVENTF_KEYUP : 0, 0);
                         }
                     }
                     break;

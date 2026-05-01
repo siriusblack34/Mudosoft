@@ -11,7 +11,7 @@ if (-not $LatestZip) { Write-Host "HATA: AgentDeploy_v*.zip bulunamadi!" -Foregr
 $Version = $LatestZip.BaseName -replace "AgentDeploy_", ""
 Write-Host ""
 Write-Host "================================================" -ForegroundColor Cyan
-Write-Host "  MudoSoft Agent Deploy - $Version -> $RemoteHost" -ForegroundColor Cyan
+Write-Host "  Orchestra Agent Deploy - $Version -> $RemoteHost" -ForegroundColor Cyan
 Write-Host "================================================" -ForegroundColor Cyan
 Write-Host "  ZIP: $($LatestZip.Name)" -ForegroundColor Gray
 Write-Host ""

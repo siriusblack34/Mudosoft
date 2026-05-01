@@ -1,5 +1,5 @@
 # ============================================
-#  MudoSoft Agent Uninstaller
+#  Orchestra Agent Uninstaller
 #  Admin olarak calistirin!
 # ============================================
 $ErrorActionPreference = "Stop"
@@ -8,7 +8,7 @@ $InstallDir = "C:\Program Files\MudoSoft\Agent"
 
 Write-Host ""
 Write-Host "============================================" -ForegroundColor Cyan
-Write-Host "  MudoSoft Agent Uninstaller" -ForegroundColor Cyan
+Write-Host "  Orchestra Agent Uninstaller" -ForegroundColor Cyan
 Write-Host "============================================" -ForegroundColor Cyan
 Write-Host ""
 

@@ -4,13 +4,13 @@ using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.SignalR.Client;
-using Mudosoft.Shared.Dtos;
-using Mudosoft.Shared.Enums;
+using Orchestra.Shared.Dtos;
+using Orchestra.Shared.Enums;
 using SIPSorcery.Net;
 using SIPSorceryMedia.Abstractions;
 using SIPSorceryMedia.Encoders;
 
-namespace MudoSoft.RDHelper.Services;
+namespace Orchestra.RDHelper.Services;
 
 /// <summary>
 /// WebRTC Service for P2P screen streaming with VP8 encoding

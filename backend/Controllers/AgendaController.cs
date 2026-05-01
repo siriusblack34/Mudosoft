@@ -2,10 +2,10 @@ using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using MudoSoft.Backend.Data;
-using MudoSoft.Backend.Models;
+using Orchestra.Backend.Data;
+using Orchestra.Backend.Models;
 
-namespace MudoSoft.Backend.Controllers;
+namespace Orchestra.Backend.Controllers;
 
 [ApiController]
 [Authorize]
@@ -16,9 +16,9 @@ public class AgendaController : ControllerBase
     private static readonly string[] AllowedPriorities = ["Yuksek", "Orta", "Dusuk"];
     private static readonly string[] AllowedCategories = ["Duyuru", "Altyapi", "Guvenlik", "Magaza Talebi", "Bakim", "Proje"];
 
-    private readonly MudoSoftDbContext _db;
+    private readonly OrchestraDbContext _db;
 
-    public AgendaController(MudoSoftDbContext db)
+    public AgendaController(OrchestraDbContext db)
     {
         _db = db;
     }

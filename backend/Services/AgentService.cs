@@ -1,22 +1,22 @@
-using Mudosoft.Shared.Dtos;
-using MudoSoft.Backend.Data;
-using MudoSoft.Backend.Models;
+using Orchestra.Shared.Dtos;
+using Orchestra.Backend.Data;
+using Orchestra.Backend.Models;
 using Microsoft.EntityFrameworkCore;
 using System.Globalization;
-using Mudosoft.Shared.Enums;
+using Orchestra.Shared.Enums;
 
-namespace MudoSoft.Backend.Services;
+namespace Orchestra.Backend.Services;
 
 public class AgentService : IAgentService
 {
     private readonly CommandQueue _queue;
     private readonly ILogger<AgentService> _logger;
-    private readonly MudoSoftDbContext _dbContext;
+    private readonly OrchestraDbContext _dbContext;
 
     public AgentService(
         CommandQueue queue,
         ILogger<AgentService> logger,
-        MudoSoftDbContext dbContext)
+        OrchestraDbContext dbContext)
     {
         _queue = queue;
         _logger = logger;
@@ -138,7 +138,7 @@ public class AgentService : IAgentService
         _dbContext.CommandResultRecords.Add(record);
 
         // Extract VNC password from InstallVnc command result (sent via SignalR)
-        if (record.CommandType == Mudosoft.Shared.Enums.CommandType.InstallVnc
+        if (record.CommandType == Orchestra.Shared.Enums.CommandType.InstallVnc
             && result.Success
             && result.Output?.Contains("VNC_PWD=") == true)
         {

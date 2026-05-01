@@ -1,14 +1,14 @@
-using Mudosoft.Agent.Models;
-using Mudosoft.Shared.Dtos;
+using Orchestra.Agent.Models;
+using Orchestra.Shared.Dtos;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using System.Net.Http;
 using System.Net.Http.Json;
-using Mudosoft.Agent.Interfaces; // ⬅️ YENİ USING DİREKTİFİ
+using Orchestra.Agent.Interfaces; // ⬅️ YENİ USING DİREKTİFİ
 using System.Collections.Generic;
 using System.Threading;
 
-namespace Mudosoft.Agent.Services;
+namespace Orchestra.Agent.Services;
 
 public sealed class CommandPoller : ICommandPoller
 {

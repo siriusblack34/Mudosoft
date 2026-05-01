@@ -1,4 +1,4 @@
-namespace Mudosoft.Shared.Dtos;
+namespace Orchestra.Shared.Dtos;
 
 /// <summary>
 /// Agent'tan backend'e gönderilen toplu collector raporu.

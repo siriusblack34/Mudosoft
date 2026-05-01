@@ -4,9 +4,9 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Management;
 using Microsoft.Extensions.Logging;
-using Mudosoft.Agent.Interfaces;
+using Orchestra.Agent.Interfaces;
 
-namespace Mudosoft.Agent.Services
+namespace Orchestra.Agent.Services
 {
     public sealed class DeviceIdentityProvider : IDeviceIdentityProvider
     {

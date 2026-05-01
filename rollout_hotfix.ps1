@@ -67,7 +67,7 @@ if ($filesToCopy.Count -eq 0) {
 
 Write-Host ""
 Write-Host "================================================" -ForegroundColor Cyan
-Write-Host "  MudoSoft Agent Emergency Hotfix Rollout" -ForegroundColor Cyan
+Write-Host "  Orchestra Agent Emergency Hotfix Rollout" -ForegroundColor Cyan
 Write-Host "================================================" -ForegroundColor Cyan
 Write-Host "  Source : $sourceRoot" -ForegroundColor Gray
 Write-Host "  Targets: $($Targets -join ', ')" -ForegroundColor Gray
@@ -140,7 +140,7 @@ foreach ($target in $Targets) {
 
         sc.exe "\\$hostName" query $ServiceName | Out-Null
         if ($LASTEXITCODE -ne 0) {
-            sc.exe "\\$hostName" create $ServiceName binPath= "\"$remoteExePath\" --service" start= delayed-auto DisplayName= "MudoSoft Agent Service" | Out-Null
+            sc.exe "\\$hostName" create $ServiceName binPath= "\"$remoteExePath\" --service" start= delayed-auto DisplayName= "Orchestra Agent Service" | Out-Null
         }
         else {
             sc.exe "\\$hostName" config $ServiceName binPath= "\"$remoteExePath\" --service" start= delayed-auto | Out-Null

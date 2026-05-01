@@ -1,7 +1,7 @@
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 
-namespace MudoSoft.Backend.Models
+namespace Orchestra.Backend.Models
 {
     public class StoreManager
     {

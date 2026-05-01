@@ -1,13 +1,13 @@
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using Mudosoft.Agent.Interfaces;
-using Mudosoft.Agent.Models;
-using Mudosoft.Shared.Dtos;
+using Orchestra.Agent.Interfaces;
+using Orchestra.Agent.Models;
+using Orchestra.Shared.Dtos;
 using System.Diagnostics;
 using System.Management;
 using System.Text.Json;
 
-namespace Mudosoft.Agent.Services.Collectors;
+namespace Orchestra.Agent.Services.Collectors;
 
 /// <summary>
 /// Sistem uptime bilgisini toplar: boot zamanı, uptime süresi, son kapanma nedeni.

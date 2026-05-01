@@ -3,13 +3,13 @@
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using Mudosoft.Agent.Models;
-using Mudosoft.Agent.Services;
-using Mudosoft.Agent.Interfaces;
+using Orchestra.Agent.Models;
+using Orchestra.Agent.Services;
+using Orchestra.Agent.Interfaces;
 using System;
 using System.Threading.Tasks;
 
-namespace Mudosoft.Agent;
+namespace Orchestra.Agent;
 
 public sealed class AgentWorker : BackgroundService
 {

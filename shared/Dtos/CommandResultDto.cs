@@ -1,7 +1,7 @@
 using System;
-using Mudosoft.Shared.Enums;
+using Orchestra.Shared.Enums;
 
-namespace Mudosoft.Shared.Dtos; // Namespace eklendi (Gerekiyorsa)
+namespace Orchestra.Shared.Dtos; // Namespace eklendi (Gerekiyorsa)
 
 public class CommandResultDto
 {

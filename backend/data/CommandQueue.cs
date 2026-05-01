@@ -1,7 +1,7 @@
-using Mudosoft.Shared.Dtos;
+using Orchestra.Shared.Dtos;
 using System.Collections.Concurrent;
 
-namespace MudoSoft.Backend.Data;
+namespace Orchestra.Backend.Data;
 
 public class CommandQueue
 {

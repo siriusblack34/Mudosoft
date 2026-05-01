@@ -1,13 +1,13 @@
 using System;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
-using MudoSoft.Backend.Data;
+using Orchestra.Backend.Data;
 
 #nullable disable
 
-namespace MudoSoft.Backend.Migrations
+namespace Orchestra.Backend.Migrations
 {
-    [DbContext(typeof(MudoSoftDbContext))]
+    [DbContext(typeof(OrchestraDbContext))]
     [Migration("20260411111000_AddAgendaItems")]
     public partial class AddAgendaItems : Migration
     {

@@ -1,6 +1,6 @@
-using Mudosoft.Shared.Models;
+using Orchestra.Shared.Models;
 
-namespace Mudosoft.Agent.Models;
+namespace Orchestra.Agent.Models;
 
 public class HeartbeatRequest
 {

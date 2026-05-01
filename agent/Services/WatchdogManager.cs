@@ -1,6 +1,6 @@
 using Microsoft.Extensions.Logging;
 
-namespace Mudosoft.Agent.Services;
+namespace Orchestra.Agent.Services;
 
 public sealed class WatchdogManager : IWatchdogManager
 {

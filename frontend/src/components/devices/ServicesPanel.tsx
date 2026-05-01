@@ -13,9 +13,9 @@ interface ServicesPanelProps {
     deviceId: string;
 }
 
-const JSON_BEGIN_MARKER = '__MUDOSOFT_JSON_BEGIN__';
-const JSON_END_MARKER = '__MUDOSOFT_JSON_END__';
-const ERROR_MARKER = '__MUDOSOFT_ERROR__';
+const JSON_BEGIN_MARKER = '__ORCHESTRA_JSON_BEGIN__';
+const JSON_END_MARKER = '__ORCHESTRA_JSON_END__';
+const ERROR_MARKER = '__ORCHESTRA_ERROR__';
 
 const ServicesPanel: React.FC<ServicesPanelProps> = ({ deviceId }) => {
     const [services, setServices] = useState<ServiceItem[]>([]);

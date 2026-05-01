@@ -1,9 +1,9 @@
 using System;
 using System.ComponentModel.DataAnnotations; // EKLENDİ!
-using Mudosoft.Shared.Enums;
-using MudoSoft.Backend.Data; // Gerekli değilse silinebilir.
+using Orchestra.Shared.Enums;
+using Orchestra.Backend.Data; // Gerekli değilse silinebilir.
 
-namespace MudoSoft.Backend.Models
+namespace Orchestra.Backend.Models
 {
     public class CommandResultRecord
     {

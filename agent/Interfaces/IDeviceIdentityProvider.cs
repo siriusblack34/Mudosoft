@@ -1,4 +1,4 @@
-namespace Mudosoft.Agent.Interfaces
+namespace Orchestra.Agent.Interfaces
 {
     public interface IDeviceIdentityProvider
     {

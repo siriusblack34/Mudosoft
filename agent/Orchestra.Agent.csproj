@@ -5,19 +5,20 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <OutputType>WinExe</OutputType>
-    <RootNamespace>Mudosoft.Agent</RootNamespace>
+    <RootNamespace>Orchestra.Agent</RootNamespace>
+    <AssemblyName>MudoSoft.Agent</AssemblyName>
     <PublishReadyToRun>true</PublishReadyToRun>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <SelfContained>true</SelfContained>
     <!-- Her zaman yönetici olarak çalışması için manifest -->
     <ApplicationManifest>app.manifest</ApplicationManifest>
-    <UserSecretsId>mudosoft-agent-dev</UserSecretsId>
-    <Description>Mudosoft Level 3 Retail POS Agent</Description>
+    <UserSecretsId>orchestra-agent-dev</UserSecretsId>
+    <Description>Orchestra Retail POS Agent</Description>
     
     <!-- Agent Version - Önemli: Her güncellemede artır! -->
-    <Version>1.0.0.66</Version>
-    <AssemblyVersion>1.0.0.66</AssemblyVersion>
-    <FileVersion>1.0.0.66</FileVersion>
+    <Version>1.0.0.67</Version>
+    <AssemblyVersion>1.0.0.67</AssemblyVersion>
+    <FileVersion>1.0.0.67</FileVersion>
 
     <GenerateEmbeddedFilesManifest>false</GenerateEmbeddedFilesManifest>
   </PropertyGroup>
@@ -37,7 +38,7 @@
     <PackageReference Include="Microsoft.AspNetCore.SignalR.Client" Version="8.0.0" />
     <PackageReference Include="System.Drawing.Common" Version="8.0.0" />
 
-    <ProjectReference Include="..\shared\Mudosoft.Shared.csproj" />
+    <ProjectReference Include="..\shared\Orchestra.Shared.csproj" />
   </ItemGroup>
 
   <ItemGroup>

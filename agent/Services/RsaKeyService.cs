@@ -3,11 +3,11 @@ using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using Mudosoft.Agent.Interfaces;
-using Mudosoft.Agent.Models;
+using Orchestra.Agent.Interfaces;
+using Orchestra.Agent.Models;
 using System;
 
-namespace Mudosoft.Agent.Services
+namespace Orchestra.Agent.Services
 {
     // Arayüz tanımınızın olası yapısını varsayarak oluşturulmuştur.
     public interface IRsaKeyService // (Projenizde bu zaten tanımlı olmalıdır)

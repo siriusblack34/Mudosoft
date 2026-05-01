@@ -1,11 +1,11 @@
 using Microsoft.EntityFrameworkCore;
-using MudoSoft.Backend.Models;
+using Orchestra.Backend.Models;
 
-namespace MudoSoft.Backend.Data
+namespace Orchestra.Backend.Data
 {
-    public class MudoSoftDbContext : DbContext
+    public class OrchestraDbContext : DbContext
     {
-        public MudoSoftDbContext(DbContextOptions<MudoSoftDbContext> options)
+        public OrchestraDbContext(DbContextOptions<OrchestraDbContext> options)
             : base(options)
         {
         }

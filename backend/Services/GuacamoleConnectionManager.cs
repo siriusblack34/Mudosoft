@@ -1,7 +1,7 @@
 using System.Collections.Concurrent;
 using System.Net.Sockets;
 
-namespace MudoSoft.Backend.Services;
+namespace Orchestra.Backend.Services;
 
 /// <summary>
 /// Manages VNC proxy sessions (raw TCP connections to VNC servers).

@@ -1,9 +1,9 @@
 using System.Runtime.InteropServices;
-using Mudosoft.Shared.Dtos;
-using Mudosoft.Shared.Enums;
+using Orchestra.Shared.Dtos;
+using Orchestra.Shared.Enums;
 using System.Drawing;
 
-namespace Mudosoft.Agent.Helpers;
+namespace Orchestra.Agent.Helpers;
 
 public class InputSimulator
 {

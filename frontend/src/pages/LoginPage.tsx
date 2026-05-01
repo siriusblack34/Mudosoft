@@ -93,8 +93,8 @@ const LoginPage: React.FC = () => {
       <div className="relative w-full max-w-sm mx-4">
         {/* Logo */}
         <div className="flex flex-col items-center mb-8">
-          <Logo size={64} idSuffix="login" className="mb-4" />
-          <h1 className="text-xl font-bold text-ms-text tracking-tight">MudoSoft RMM</h1>
+          <Logo size={150} idSuffix="login" className="mb-4" />
+          <h1 className="text-xl font-bold text-ms-text tracking-tight">Orchestra</h1>
           <p className="text-ms-text-muted text-sm mt-1">Yönetim Portalına Giriş</p>
         </div>
 
@@ -166,7 +166,7 @@ const LoginPage: React.FC = () => {
         </div>
 
         <p className="text-center text-zinc-600 text-xs mt-6">
-          &copy; {new Date().getFullYear()} MudoSoft. Tüm hakları saklıdır.
+          &copy; {new Date().getFullYear()} Orchestra. Tüm hakları saklıdır.
         </p>
       </div>
     </div>

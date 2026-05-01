@@ -1,21 +1,21 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using MudoSoft.Backend.Data;
-using MudoSoft.Backend.Models;
-using MudoSoft.Backend.Services;
+using Orchestra.Backend.Data;
+using Orchestra.Backend.Models;
+using Orchestra.Backend.Services;
 
-namespace MudoSoft.Backend.Controllers;
+namespace Orchestra.Backend.Controllers;
 
 [ApiController]
 [Authorize]
 [Route("api/reports")]
 public class ReportsController : ControllerBase
 {
-    private readonly MudoSoftDbContext _db;
+    private readonly OrchestraDbContext _db;
     private readonly IDeviceRepository _deviceRepository;
 
-    public ReportsController(MudoSoftDbContext db, IDeviceRepository deviceRepository)
+    public ReportsController(OrchestraDbContext db, IDeviceRepository deviceRepository)
     {
         _db = db;
         _deviceRepository = deviceRepository;

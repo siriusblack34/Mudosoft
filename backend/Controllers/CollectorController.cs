@@ -1,23 +1,23 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using MudoSoft.Backend.Data;
-using MudoSoft.Backend.Models;
-using MudoSoft.Backend.Services;
-using Mudosoft.Shared.Dtos;
+using Orchestra.Backend.Data;
+using Orchestra.Backend.Models;
+using Orchestra.Backend.Services;
+using Orchestra.Shared.Dtos;
 using System.Text.Json;
 
-namespace MudoSoft.Backend.Controllers;
+namespace Orchestra.Backend.Controllers;
 
 [ApiController]
 [Route("api/agent")]
 public class CollectorController : ControllerBase
 {
-    private readonly MudoSoftDbContext _db;
+    private readonly OrchestraDbContext _db;
     private readonly ILogger<CollectorController> _logger;
     private readonly EventLogTranslationService _translator;
 
-    public CollectorController(MudoSoftDbContext db, ILogger<CollectorController> logger, EventLogTranslationService translator)
+    public CollectorController(OrchestraDbContext db, ILogger<CollectorController> logger, EventLogTranslationService translator)
     {
         _db = db;
         _logger = logger;

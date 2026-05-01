@@ -1,11 +1,11 @@
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using Mudosoft.Agent.Interfaces;
-using Mudosoft.Agent.Models;
-using Mudosoft.Shared.Dtos;
+using Orchestra.Agent.Interfaces;
+using Orchestra.Agent.Models;
+using Orchestra.Shared.Dtos;
 using System.Net.Http.Json;
 
-namespace Mudosoft.Agent.Services.Collectors;
+namespace Orchestra.Agent.Services.Collectors;
 
 /// <summary>
 /// Collector sonuçlarını toplu olarak backend'e POST eder.

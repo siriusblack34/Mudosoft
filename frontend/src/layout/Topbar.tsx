@@ -43,7 +43,7 @@ const Topbar: React.FC = () => {
 
   const title =
     PAGE_TITLES[location.pathname] ||
-    (location.pathname.startsWith('/devices/') ? 'Cihaz Detayı' : 'MudoSoft RMM');
+    (location.pathname.startsWith('/devices/') ? 'Cihaz Detayı' : 'Orchestra');
 
   const initials = (fullName || 'AD').split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
   const roleName = role === 'Admin' ? 'Admin' : role === 'Teknisyen' ? 'Teknisyen' : 'Mudo IT';

@@ -2,7 +2,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json; 
 
-namespace MudoSoft.Backend.Crypto;
+namespace Orchestra.Backend.Crypto;
 
 public class AesEncryption // 'static' anahtar kelimesi yok
 {
