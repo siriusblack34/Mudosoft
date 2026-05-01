@@ -97,3 +97,13 @@ rsa_private.xml
 !.env.example
 appsettings.local.json
 secrets.json
+
+# Publish output
+agent/publish_out/
+agent/publish_sc/
+
+# Sunum/taslak dosyalari
+*.pptx
+generate_presentation.py
+/logo.png
+/orchestra_logo2.png
