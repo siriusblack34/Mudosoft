@@ -36,6 +36,28 @@ dotnet build orchestra.sln
 - DB access: Direct DbContext in controllers (repository pattern only for DeviceRepository)
 - API client: `frontend/src/lib/apiClient.ts` — includes JWT header, 30s timeout, 401 redirect
 
+## İki Cihaz Tablosu (önemli — karıştırma)
+- **Devices** — agent çalıştıran cihazlar. PK string hex hash. AgentService.HandleHeartbeatAsync besler.
+- **StoreDevices** — tüm envanter (PC + Kasa-1/2/3 + ROUTER), agent olsun olmasın. PK "{store}-{slot}" (örn. "5-K1"). DeviceType: "PC", "Kasa-1/2/3", "ROUTER", "GECICI".
+- İki tablo IP üzerinden eşleşir (StoreDevice.CalculatedIpAddress = Device.IpAddress).
+- `DevicesController` → Devices, `SqlQueryController` → StoreDevices.
+
+## Background Services (Program.cs'de register'lı)
+- `HeartbeatCheckerWorker`, `NetworkOutageAlarmWorker`, `CriticalServiceMonitorWorker`
+- `SchedulerBackgroundService` + `ScheduledTaskSeeder` — kullanıcı task'ları
+- `DeviceStatusWorker` — dashboard cache
+- `RouterLatencyPurgeWorker`
+- `SerialNumberSyncService` — ayda 1 wmic /node: ile BIOS seri (Devices + StoreDevices)
+- `PrinterSerialSyncService` — ayda 1 GENIUS DB'den OKC yazıcı sicil (StoreDevices)
+- `UserInstallWatcherService` (Windows-only)
+
+## Endpoint Aileleri
+- `/api/agent/*` — agent heartbeat, command queue, file transfer
+- `/api/devices/*` — agent'lı cihazlar (Devices tablosu)
+- `/api/sqlquery/devices/{id}/*` — kasa/PC envanter (StoreDevices), system-info, manual-info partial update, printer-serial refresh
+- `/api/rdp/*` — VNC proxy, oturum logları
+- `/api/inventory/*`, `/api/activity-log/*`, `/api/store-openings/*`, `/api/ad-directory/*`, `/api/batch-execution/*`, `/api/service-monitor/*` — modül endpoint'leri
+
 ## Rules
 - Do NOT commit `.env` files or secrets
 - Stop backend process before rebuilding (DLL lock issue)
@@ -43,3 +65,5 @@ dotnet build orchestra.sln
 - Frontend API calls must go through `apiClient.ts`, not raw fetch/axios
 - Avoid adding unnecessary abstractions — keep it simple
 - Do not create README or documentation files unless explicitly asked
+- EF migration eklerken: `Database.Migrate()` startup'ta otomatik çalışır ama bazen `__EFMigrationsHistory`'ye yazmadan kolonu eklediği görüldü. Yeni migration eklerken manuel doğrula (psql).
+- Saha PC'lerinde WSMan (port 5985) **kapalı**, RPC/DCOM (port 135) **açık** — remote WMI için `wmic /node:` veya `Get-CimInstance -Protocol DCOM` kullan, `Get-CimInstance -ComputerName` (varsayılan WSMan) çalışmaz.
