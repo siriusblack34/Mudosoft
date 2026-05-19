@@ -98,9 +98,22 @@ rsa_private.xml
 appsettings.local.json
 secrets.json
 
-# Publish output
+# Publish output (her turden numbered/timestamped publish klasoru)
 agent/publish_out/
 agent/publish_sc/
+agent/publish_*/
+
+# .lscache (Roslyn analyzer cache)
+**/*.lscache
+
+# Agent deploy / rollout artifacts
+agent/deploy_results.csv
+agent/deploy_targets.csv
+agent/deploy_fix_to_offline.ps1
+
+# Storyboard ve envanter veri dosyalari (repoya konulmaz)
+storyboard/
+envanter.xlsx
 
 # Sunum/taslak dosyalari
 *.pptx
