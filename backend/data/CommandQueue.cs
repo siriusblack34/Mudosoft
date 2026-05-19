@@ -1,4 +1,5 @@
 using Orchestra.Shared.Dtos;
+using Orchestra.Shared.Enums;
 using System.Collections.Concurrent;
 
 namespace Orchestra.Backend.Data;
@@ -23,5 +24,10 @@ public class CommandQueue
             cmds.Add(cmd);
 
         return cmds;
+    }
+
+    public bool HasPendingCommand(string deviceId, CommandType type)
+    {
+        return _queues.TryGetValue(deviceId, out var queue) && queue.Any(c => c.Type == type);
     }
 }

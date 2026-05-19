@@ -42,6 +42,24 @@ export default function RemoteInstallPage() {
     const [installing, setInstalling] = useState(false);
     const [manualIp, setManualIp] = useState("");
     const [manualStore, setManualStore] = useState("");
+    const [manualError, setManualError] = useState("");
+
+    const parseIpv4 = (value: string): string | null => {
+        const parts = value.trim().split(".");
+        if (parts.length !== 4) return null;
+
+        const normalized = parts.map(part => {
+            if (!/^\d{1,3}$/.test(part)) return null;
+            const octet = Number(part);
+            if (octet < 0 || octet > 255) return null;
+            return String(octet);
+        });
+
+        return normalized.every(Boolean) ? normalized.join(".") : null;
+    };
+
+    const normalizeIp = (value: string) => parseIpv4(value) ?? value.trim();
+    const normalizeStoreCode = (value?: string) => (value ?? "").replace(/\D/g, "");
 
     // Cihaz listesini yükle — SQL Query endpoint (tüm mağaza envanteri)
     useEffect(() => {
@@ -53,7 +71,7 @@ export default function RemoteInstallPage() {
                 ]);
                 setDevices(sqlDevices);
                 // Agent kurulu IP'leri set'e al
-                const ips = new Set(agentDevices.map((d: any) => d.ipAddress).filter(Boolean));
+                const ips = new Set(agentDevices.map((d: any) => d.ipAddress ? normalizeIp(d.ipAddress) : "").filter(Boolean));
                 setAgentDeviceIps(ips);
             } catch (err) {
                 console.error("Cihaz listesi yuklenemedi", err);
@@ -63,7 +81,7 @@ export default function RemoteInstallPage() {
         })();
     }, []);
 
-    const hasAgent = (d: SqlDeviceWithStatus) => agentDeviceIps.has(d.calculatedIpAddress);
+    const hasAgent = (d: SqlDeviceWithStatus) => agentDeviceIps.has(normalizeIp(d.calculatedIpAddress));
 
     const noAgentCount = devices.filter(d => !hasAgent(d)).length;
     const withAgentCount = devices.filter(d => hasAgent(d)).length;
@@ -82,7 +100,7 @@ export default function RemoteInstallPage() {
         return true;
     });
 
-    const isSelected = (ip: string) => targets.some(t => t.ip === ip);
+    const isSelected = (ip: string) => targets.some(t => t.ip === normalizeIp(ip));
 
     const toggleDevice = (d: SqlDeviceWithStatus) => {
         const ip = d.calculatedIpAddress;
@@ -113,27 +131,57 @@ export default function RemoteInstallPage() {
     };
 
     const addManualTarget = () => {
-        if (!manualIp.trim() || isSelected(manualIp.trim())) return;
-        setTargets(prev => [...prev, { ip: manualIp.trim(), storeCode: manualStore.trim() }]);
+        const ip = parseIpv4(manualIp);
+        if (!manualIp.trim()) return;
+        if (!ip) {
+            setManualError("Gecerli bir IPv4 adresi girin");
+            return;
+        }
+        if (isSelected(ip)) {
+            setManualError("Bu IP zaten secili");
+            return;
+        }
+
+        const matchedDevice = devices.find(d => normalizeIp(d.calculatedIpAddress) === ip);
+        setTargets(prev => [...prev, {
+            ip,
+            storeCode: normalizeStoreCode(manualStore) || matchedDevice?.storeCode.toString() || "",
+            hostname: matchedDevice?.deviceName,
+            deviceType: matchedDevice?.deviceType,
+        }]);
         setManualIp("");
         setManualStore("");
+        setManualError("");
     };
 
-    const pollStatus = useCallback(async (ip: string, idx: number) => {
+    const pollStatus = useCallback(async (ip: string) => {
         const poll = async () => {
             try {
                 const status = await apiClient.get<InstallStatus>(
                     `/api/agent/remote-install/status?ip=${encodeURIComponent(ip)}`
                 );
-                setTargets(prev => prev.map((t, i) =>
-                    i === idx ? { ...t, status, polling: status.phase === "running" } : t
+                setTargets(prev => prev.map(t =>
+                    t.ip === ip ? { ...t, status, polling: status.phase === "running" } : t
                 ));
                 if (status.phase === "running") {
                     setTimeout(poll, 1500);
                 }
-            } catch {
-                setTargets(prev => prev.map((t, i) =>
-                    i === idx ? { ...t, polling: false } : t
+            } catch (err: any) {
+                const msg = err?.message || "Kurulum durumu okunamadi";
+                setTargets(prev => prev.map(t =>
+                    t.ip === ip ? {
+                        ...t,
+                        polling: false,
+                        status: {
+                            id: "",
+                            ipAddress: ip,
+                            storeCode: t.storeCode,
+                            phase: "error",
+                            error: msg,
+                            steps: [],
+                            startedAt: new Date().toISOString()
+                        }
+                    } : t
                 ));
             }
         };
@@ -142,23 +190,42 @@ export default function RemoteInstallPage() {
 
     const startInstall = async (idx: number) => {
         const target = targets[idx];
-        if (!target.ip.trim()) return;
-        setTargets(prev => prev.map((t, i) =>
-            i === idx ? { ...t, status: undefined, polling: true } : t
+        if (!target) return;
+        const ip = normalizeIp(target.ip);
+        if (!ip) return;
+        setTargets(prev => prev.map(t =>
+            t.ip === ip ? { ...t, status: undefined, polling: true } : t
         ));
         try {
             await apiClient.post("/api/agent/remote-install", {
-                ipAddress: target.ip.trim(),
-                storeCode: target.storeCode.trim() || undefined,
-            });
-            pollStatus(target.ip.trim(), idx);
+                ipAddress: ip,
+                storeCode: normalizeStoreCode(target.storeCode) || undefined,
+            }, 300000);
+            pollStatus(ip);
         } catch (err: any) {
-            const msg = err?.response?.data?.error || err?.message || "Kurulum baslatilamadi";
-            setTargets(prev => prev.map((t, i) =>
-                i === idx ? {
+            // POST timeout/abort durumunda backend kurulumu zaten arka planda baslatmis olabilir.
+            // Status'u sorgulamayi dene; bulunursa polling ile takip et, yoksa gercek hatayi goster.
+            const isAbort = err?.name === "AbortError" || /aborted/i.test(err?.message || "");
+            try {
+                const status = await apiClient.get<InstallStatus>(
+                    `/api/agent/remote-install/status?ip=${encodeURIComponent(ip)}`
+                );
+                setTargets(prev => prev.map(t =>
+                    t.ip === ip ? { ...t, status, polling: status.phase === "running" } : t
+                ));
+                if (status.phase === "running") pollStatus(ip);
+                return;
+            } catch {
+                // Status yoksa POST gercekten basarisiz olmus
+            }
+            const msg = isAbort
+                ? "Sunucu yanit vermedi (zaman asimi). Kurulum baslatilmadi."
+                : err?.response?.data?.error || err?.message || "Kurulum baslatilamadi";
+            setTargets(prev => prev.map(t =>
+                t.ip === ip ? {
                     ...t, polling: false,
                     status: {
-                        id: "", ipAddress: target.ip, storeCode: target.storeCode,
+                        id: "", ipAddress: ip, storeCode: target.storeCode,
                         phase: "error", error: msg, steps: [], startedAt: new Date().toISOString()
                     }
                 } : t
@@ -169,7 +236,7 @@ export default function RemoteInstallPage() {
     const startAll = async () => {
         setInstalling(true);
         for (let i = 0; i < targets.length; i++) {
-            if (targets[i].ip.trim() && !targets[i].status) {
+            if (normalizeIp(targets[i].ip) && !targets[i].status) {
                 await startInstall(i);
                 await new Promise(r => setTimeout(r, 300));
             }
@@ -382,11 +449,11 @@ export default function RemoteInstallPage() {
                         <div className="flex items-center gap-2 mt-1.5">
                             <Wifi className="w-3.5 h-3.5 text-gray-500 shrink-0" />
                             <input type="text" placeholder="IP Adresi" value={manualIp}
-                                onChange={e => setManualIp(e.target.value)}
+                                onChange={e => { setManualIp(e.target.value); setManualError(""); }}
                                 onKeyDown={e => e.key === "Enter" && addManualTarget()}
                                 className="flex-1 bg-ms-bg border border-ms-border rounded-lg px-2.5 py-1.5 text-xs text-ms-text placeholder:text-ms-text-muted/50 focus:outline-none focus:border-violet-500" />
                             <input type="text" placeholder="Magaza" value={manualStore}
-                                onChange={e => setManualStore(e.target.value)}
+                                onChange={e => { setManualStore(normalizeStoreCode(e.target.value)); setManualError(""); }}
                                 onKeyDown={e => e.key === "Enter" && addManualTarget()}
                                 className="w-20 bg-ms-bg border border-ms-border rounded-lg px-2.5 py-1.5 text-xs text-ms-text placeholder:text-ms-text-muted/50 focus:outline-none focus:border-violet-500" />
                             <button onClick={addManualTarget} disabled={!manualIp.trim()}
@@ -394,6 +461,9 @@ export default function RemoteInstallPage() {
                                 <Plus className="w-3.5 h-3.5" />
                             </button>
                         </div>
+                        {manualError && (
+                            <p className="mt-1.5 pl-5 text-[10px] text-red-400">{manualError}</p>
+                        )}
                     </div>
                 </div>
 

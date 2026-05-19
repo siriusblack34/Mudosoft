@@ -10,6 +10,7 @@ public enum CommandType
     Shutdown = 2,
     ExecuteScript = 3,
     ListServices = 4,
+    ExecuteBatch = 5,
 
     // File Operations
     FileList = 10,
@@ -21,5 +22,6 @@ public enum CommandType
 
     // Agent Management
     UpdateAgent = 20,
-    InstallVnc = 21
+    InstallVnc = 21,
+    UninstallAgent = 22
 }

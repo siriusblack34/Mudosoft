@@ -8,13 +8,17 @@ import {
   Activity,
   Archive,
   BarChart3,
+  Boxes,
   Building2,
   CalendarDays,
   Cast,
+  ClipboardList,
   Contact,
   Database,
   Download,
+  FileSearch,
   FileBarChart2,
+  FileCode,
   HardDrive,
   History,
   KeyRound,
@@ -45,6 +49,8 @@ export interface NavItem {
   shortcut?: string;
   /** Extra paths that should mark this item active (e.g. sub-pages accessed via tabs) */
   matchPaths?: string[];
+  /** Sadece Admin rolünde görünür */
+  requiresAdmin?: boolean;
 }
 
 export interface NavGroup {
@@ -64,55 +70,38 @@ export const navGroups: NavGroup[] = [
     ],
   },
   {
-    title: 'Mağazalar',
+    title: 'Mağazalar ve Envanter',
     shortLabel: 'Mağaza',
     icon: <Building2 className="h-5 w-5" />,
     items: [
       { to: '/magazalar', label: 'Mağaza Listesi', icon: <Building2 className="h-4 w-4" />, shortcut: 'Alt+2' },
+      { to: '/store-openings', label: 'Mağaza Açılışları', icon: <ClipboardList className="h-4 w-4" />, matchPaths: ['/store-openings'] },
       { to: '/bilgisayarlar', label: 'Bilgisayarlar', icon: <Monitor className="h-4 w-4" /> },
       { to: '/kasa', label: 'Kasalar', icon: <Archive className="h-4 w-4" /> },
       { to: '/routerlar', label: 'Routerlar', icon: <Activity className="h-4 w-4" /> },
-      { to: '/ag-teshis', label: 'Ağ Teşhis', icon: <Activity className="h-4 w-4" />, shortcut: 'Alt+4' },
       { to: '/store-managers', label: 'Mağaza Müdürleri', icon: <Users className="h-4 w-4" /> },
     ],
   },
   {
-    title: 'Cihazlar',
-    shortLabel: 'Cihaz',
-    icon: <Monitor className="h-5 w-5" />,
-    items: [
-      { to: '/reports/hardware-inventory', label: 'Donanım Envanteri', icon: <HardDrive className="h-4 w-4" /> },
-      { to: '/printer-licenses', label: 'Yazıcı Lisansları', icon: <KeyRound className="h-4 w-4" /> },
-    ],
-  },
-  {
-    title: 'Uzaktan Erişim',
+    title: 'Uzak',
     shortLabel: 'Uzak',
     icon: <Cast className="h-5 w-5" />,
     items: [
       { to: '/devices', label: 'Agent', icon: <Monitor className="h-4 w-4" />, shortcut: 'Alt+3' },
       { to: '/remote/sessions', label: 'Aktif Oturumlar', icon: <Radio className="h-4 w-4" /> },
       { to: '/remote/history', label: 'Oturum Geçmişi', icon: <History className="h-4 w-4" /> },
-      { to: '/remote-install', label: 'Uzaktan Kurulum', icon: <Download className="h-4 w-4" /> },
+      { to: '/cleanup', label: 'Temizlik Merkezi', icon: <Sparkles className="h-4 w-4" />, shortcut: 'Alt+T' },
     ],
   },
   {
-    title: 'Talepler',
-    shortLabel: 'Talep',
-    icon: <Mail className="h-5 w-5" />,
-    items: [
-      { to: '/ariza-bildirim', label: 'Arıza Bildirimi', icon: <Mail className="h-4 w-4" /> },
-      { to: '/notes', label: 'Notlar', icon: <StickyNote className="h-4 w-4" /> },
-      { to: '/actions', label: 'İşlem Geçmişi', icon: <History className="h-4 w-4" /> },
-    ],
-  },
-  {
-    title: 'Bakım',
-    shortLabel: 'Bakım',
+    title: 'IT Operasyon',
+    shortLabel: 'Operasyon',
     icon: <Wrench className="h-5 w-5" />,
     items: [
-      { to: '/cleanup', label: 'Temizlik Merkezi', icon: <Sparkles className="h-4 w-4" />, shortcut: 'Alt+T' },
-      { to: '/agent-update', label: 'Agent Güncelleme', icon: <RefreshCw className="h-4 w-4" /> },
+      { to: '/ariza-bildirim', label: 'Arıza Bildirimleri', icon: <Mail className="h-4 w-4" /> },
+      { to: '/ag-teshis', label: 'Ağ Teşhis', icon: <Activity className="h-4 w-4" />, shortcut: 'Alt+4' },
+      { to: '/actions', label: 'İşlem Geçmişi', icon: <History className="h-4 w-4" /> },
+      { to: '/notes', label: 'Notlar', icon: <StickyNote className="h-4 w-4" /> },
     ],
   },
   {
@@ -121,9 +110,13 @@ export const navGroups: NavGroup[] = [
     icon: <Database className="h-5 w-5" />,
     items: [
       { to: '/sql-query', label: 'SQL Sorgu', icon: <Database className="h-4 w-4" />, shortcut: 'Alt+Q' },
+      { to: '/event-log-diagnostics', label: 'Event Log Teşhis', icon: <FileSearch className="h-4 w-4" /> },
       { to: '/pos-log-analyzer', label: 'Kasa Log Analizi', icon: <FileBarChart2 className="h-4 w-4" /> },
       { to: '/fiscal-errors', label: 'Mali Hata Kodları', icon: <Printer className="h-4 w-4" /> },
-      { to: '/holidays', label: 'Resmi Tatiller', icon: <CalendarDays className="h-4 w-4" /> },
+      { to: '/agent-update', label: 'Agent Güncelleme', icon: <RefreshCw className="h-4 w-4" /> },
+      { to: '/remote-install', label: 'Uzaktan Kurulum', icon: <Download className="h-4 w-4" /> },
+      { to: '/active-directory', label: 'Active Directory', icon: <Building2 className="h-4 w-4" />, requiresAdmin: true },
+      { to: '/batch-scripts', label: 'Acil Bat Çalıştır', icon: <FileCode className="h-4 w-4" /> },
     ],
   },
   {
@@ -132,18 +125,29 @@ export const navGroups: NavGroup[] = [
     icon: <BarChart3 className="h-5 w-5" />,
     items: [
       { to: '/offline-logs', label: 'Offline Geçmişi', icon: <WifiOff className="h-4 w-4" /> },
-      { to: '/reports/store-outages', label: 'Mağaza Kesintisi', icon: <WifiOff className="h-4 w-4" /> },
+      { to: '/reports/store-outages', label: 'Mağaza Kesintileri', icon: <WifiOff className="h-4 w-4" /> },
       { to: '/reports/fault-density', label: 'Arıza Yoğunluğu', icon: <Activity className="h-4 w-4" /> },
     ],
   },
   {
-    title: 'Ekip',
-    shortLabel: 'Ekip',
+    title: 'Envanter',
+    shortLabel: 'Envanter',
+    icon: <Boxes className="h-5 w-5" />,
+    items: [
+      { to: '/inventory', label: 'Envanter (SDP)', icon: <Boxes className="h-4 w-4" /> },
+      { to: '/reports/hardware-inventory', label: 'Donanım Envanteri', icon: <HardDrive className="h-4 w-4" /> },
+      { to: '/printer-licenses', label: 'Yazıcı Lisansları', icon: <KeyRound className="h-4 w-4" /> },
+    ],
+  },
+  {
+    title: 'Kurumsal',
+    shortLabel: 'Kurumsal',
     icon: <Users2 className="h-5 w-5" />,
     items: [
+      { to: '/team', label: 'BT Ekibi', icon: <Users2 className="h-4 w-4" /> },
       { to: '/personel', label: 'Personel', icon: <Contact className="h-4 w-4" /> },
       { to: '/gundem', label: 'IT Gündemi', icon: <Megaphone className="h-4 w-4" /> },
-      { to: '/team', label: 'BT Ekibi', icon: <Users2 className="h-4 w-4" /> },
+      { to: '/holidays', label: 'Resmi Tatiller', icon: <CalendarDays className="h-4 w-4" /> },
     ],
   },
   {
@@ -285,7 +289,9 @@ const Sidebar: React.FC = () => {
   const visibleGroups = useMemo(() => {
     return navGroups
       .map((group) => {
-        const items = isAdmin ? group.items : group.items.filter((item) => !hiddenMenus.includes(item.to));
+        const items = isAdmin
+          ? group.items
+          : group.items.filter((item) => !item.requiresAdmin && !hiddenMenus.includes(item.to));
         return { ...group, items };
       })
       .filter((group) => group.items.length > 0);

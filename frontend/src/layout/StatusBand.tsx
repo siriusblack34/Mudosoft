@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { apiClient } from '../lib/apiClient';
 import { Device } from '../types';
@@ -66,10 +66,17 @@ const StatusBand: React.FC<StatusBandProps> = ({ devices }) => {
     return () => clearInterval(t);
   }, []);
 
-  // Backend health check
+  // Backend health check — tek bir aşımı ciddiye almıyoruz; en az 2 ardışık fail sonrası kırmızı
+  const failureCountRef = useRef(0);
   const checkBackend = useCallback(async () => {
     const ok = await apiClient.checkBackendHealth();
-    setBackendOk(ok);
+    if (ok) {
+      failureCountRef.current = 0;
+      setBackendOk(true);
+    } else {
+      failureCountRef.current += 1;
+      if (failureCountRef.current >= 2) setBackendOk(false);
+    }
   }, []);
 
   useEffect(() => {
@@ -158,17 +165,6 @@ const StatusBand: React.FC<StatusBandProps> = ({ devices }) => {
           </span>
         </div>
 
-        <div className="w-px h-4" style={{ background: 'var(--ms-border)' }} />
-
-        {/* Entity counters */}
-        <div className="flex items-center gap-1">
-          <Chip label="PC" count={pcOnline} onClick={() => navigate('/devices')} />
-          <Chip label="Kasa" count={kasaOnline} onClick={() => navigate('/kasa')} />
-          {offline > 0 && (
-            <Chip label="sessiz" count={offline} onClick={() => navigate('/offline-logs')} muted />
-          )}
-        </div>
-
         {!backendOk && (
           <>
             <div className="w-px h-4" style={{ background: 'var(--ms-border)' }} />
@@ -180,35 +176,9 @@ const StatusBand: React.FC<StatusBandProps> = ({ devices }) => {
       {/* Center: spacer or dashboard live status */}
       <div className="min-w-0 flex-1" />
 
-      {/* Right: dashboard topbar pills + theme toggle */}
-      <div className="flex items-center gap-2 shrink-0">
-        {location.pathname === '/' && dashboardTopbar.enabled && (
-          <div className="flex items-center gap-2">
-            <TopbarPill label="Saat" value={time} />
-            <TopbarPill label="Agent" value={dashboardTopbar.agentTime || '--'} status={dashboardTopbar.agentState} />
-            <TopbarPill label="SQL" value={dashboardTopbar.sqlTime || '--'} status={dashboardTopbar.sqlState} />
-            <button
-              onClick={() => {
-                setRefreshAnim(true);
-                window.dispatchEvent(new CustomEvent('ms-dashboard-refresh'));
-                setTimeout(() => setRefreshAnim(false), 1200);
-              }}
-              className="flex h-9 items-center gap-1.5 rounded-xl px-3 text-xs font-semibold transition-all hover:bg-white/[0.06]"
-              style={{ color: '#e2e8f0' }}
-              title="Yenile"
-            >
-              <RefreshCw
-                className="h-3.5 w-3.5 transition-transform"
-                style={{
-                  animation: refreshAnim || dashboardTopbar.isRefreshing ? 'spin 0.8s ease-in-out' : 'none',
-                }}
-              />
-              <span>Yenile</span>
-            </button>
-          </div>
-        )}
-
-        <div className="w-px h-4" style={{ background: 'var(--ms-border)' }} />
+      {/* Right: clock + theme toggle */}
+      <div className="flex items-center gap-3 shrink-0">
+        <span className="font-mono text-[13px] tracking-wide" style={{ color: '#94a3b8' }}>{time}</span>
 
         <button
           onClick={toggleTheme}

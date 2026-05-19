@@ -3,8 +3,8 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
-using Orchestra.Backend.Data;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
+using Orchestra.Backend.Data;
 
 #nullable disable
 
@@ -55,22 +55,56 @@ namespace Orchestra.Backend.Migrations
                     b.ToTable("ActionRecords");
                 });
 
-            modelBuilder.Entity("Orchestra.Backend.Models.AppSetting", b =>
+            modelBuilder.Entity("Orchestra.Backend.Models.ActivityLog", b =>
                 {
-                    b.Property<string>("Key")
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("Action")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)");
+
+                    b.Property<string>("Category")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Details")
+                        .HasColumnType("text");
+
+                    b.Property<string>("ErrorMessage")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
+
+                    b.Property<bool>("Success")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("Target")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("Username")
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)");
 
-                    b.Property<DateTime>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
+                    b.HasKey("Id");
 
-                    b.Property<string>("Value")
-                        .IsRequired()
-                        .HasColumnType("text");
+                    b.HasIndex("Category");
 
-                    b.HasKey("Key");
+                    b.HasIndex("CreatedAt");
 
-                    b.ToTable("AppSettings");
+                    b.HasIndex("Username");
+
+                    b.HasIndex("Category", "CreatedAt");
+
+                    b.ToTable("ActivityLogs");
                 });
 
             modelBuilder.Entity("Orchestra.Backend.Models.AgendaItem", b =>
@@ -128,6 +162,24 @@ namespace Orchestra.Backend.Migrations
                     b.HasIndex("UpdatedAt");
 
                     b.ToTable("AgendaItems");
+                });
+
+            modelBuilder.Entity("Orchestra.Backend.Models.AppSetting", b =>
+                {
+                    b.Property<string>("Key")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Value")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.HasKey("Key");
+
+                    b.ToTable("AppSettings");
                 });
 
             modelBuilder.Entity("Orchestra.Backend.Models.CollectorReport", b =>
@@ -219,6 +271,23 @@ namespace Orchestra.Backend.Migrations
                     b.ToTable("CommandResultRecords");
                 });
 
+            modelBuilder.Entity("Orchestra.Backend.Models.DcLogCursor", b =>
+                {
+                    b.Property<string>("DcName")
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)");
+
+                    b.Property<long>("LastRecordId")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("DcName");
+
+                    b.ToTable("DcLogCursors");
+                });
+
             modelBuilder.Entity("Orchestra.Backend.Models.Device", b =>
                 {
                     b.Property<string>("Id")
@@ -259,6 +328,9 @@ namespace Orchestra.Backend.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
+                    b.Property<bool>("HiddenForNonAdmins")
+                        .HasColumnType("boolean");
+
                     b.Property<string>("Hostname")
                         .IsRequired()
                         .HasColumnType("text");
@@ -284,6 +356,9 @@ namespace Orchestra.Backend.Migrations
                         .HasColumnType("text");
 
                     b.Property<string>("PosVersion")
+                        .HasColumnType("text");
+
+                    b.Property<string>("SerialNumber")
                         .HasColumnType("text");
 
                     b.Property<string>("SqlVersion")
@@ -415,6 +490,187 @@ namespace Orchestra.Backend.Migrations
                     b.ToTable("DeviceStatusChanges");
                 });
 
+            modelBuilder.Entity("Orchestra.Backend.Models.InventoryAsset", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime?>("AcquisitionDate")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("AssetName")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("AssetState")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.Property<string>("AssetTag")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<string>("BaseSeriNo")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("ComputerName")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Department")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<DateTime?>("ExpiryDate")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("ExtraJson")
+                        .HasColumnType("text");
+
+                    b.Property<string>("FaturaNo")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("FizikselDurum")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.Property<string>("IkinciMonitorSeriNo")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<int?>("ImportBatchId")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime>("ImportedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("IpAddress")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.Property<string>("MacAddress")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.Property<string>("OrgSerialNumber")
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)");
+
+                    b.Property<string>("PrinterSeriNo")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("Product")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("ProductCode")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("ProductType")
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)");
+
+                    b.Property<decimal?>("PurchaseCost")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)");
+
+                    b.Property<int?>("StoreCode")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("StoreNameRaw")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("TalepNo")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("YazarkasaSicilNo")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AssetName")
+                        .IsUnique();
+
+                    b.HasIndex("AssetState");
+
+                    b.HasIndex("ImportBatchId");
+
+                    b.HasIndex("ProductType");
+
+                    b.HasIndex("StoreCode");
+
+                    b.ToTable("InventoryAssets");
+                });
+
+            modelBuilder.Entity("Orchestra.Backend.Models.InventoryImportBatch", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("ErrorMessage")
+                        .HasColumnType("text");
+
+                    b.Property<string>("FileName")
+                        .HasMaxLength(255)
+                        .HasColumnType("character varying(255)");
+
+                    b.Property<long>("FileSizeBytes")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateTime>("ImportedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("ImportedBy")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<int>("InsertedCount")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("SkippedCount")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<int>("TotalRows")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("UnmatchedStoreCount")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("UpdatedCount")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ImportedAt");
+
+                    b.ToTable("InventoryImportBatches");
+                });
+
             modelBuilder.Entity("Orchestra.Backend.Models.LoginHistory", b =>
                 {
                     b.Property<int>("Id")
@@ -486,6 +742,114 @@ namespace Orchestra.Backend.Migrations
                     b.HasIndex("OwnerUsername");
 
                     b.ToTable("Notes");
+                });
+
+            modelBuilder.Entity("Orchestra.Backend.Models.PendingUserInstall", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("DisplayName")
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)");
+
+                    b.Property<DateTime>("ExpiresAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("InstallId")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("LastError")
+                        .HasMaxLength(1024)
+                        .HasColumnType("character varying(1024)");
+
+                    b.Property<DateTime?>("MatchedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("MatchedComputer")
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)");
+
+                    b.Property<string>("MatchedIp")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<DateTime>("RequestedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("RequestedBy")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("SamAccountName")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ExpiresAt");
+
+                    b.HasIndex("SamAccountName");
+
+                    b.HasIndex("Status");
+
+                    b.HasIndex("Status", "SamAccountName");
+
+                    b.ToTable("PendingUserInstalls");
+                });
+
+            modelBuilder.Entity("Orchestra.Backend.Models.RouterLatencySample", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("DeviceId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("Ip")
+                        .IsRequired()
+                        .HasMaxLength(15)
+                        .HasColumnType("character varying(15)");
+
+                    b.Property<int?>("RttMs")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime>("SampledAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("StoreCode")
+                        .HasColumnType("integer");
+
+                    b.Property<bool>("Success")
+                        .HasColumnType("boolean");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("SampledAt");
+
+                    b.HasIndex("StoreCode");
+
+                    b.HasIndex("DeviceId", "SampledAt");
+
+                    b.HasIndex("StoreCode", "SampledAt");
+
+                    b.ToTable("RouterLatencySamples");
                 });
 
             modelBuilder.Entity("Orchestra.Backend.Models.ScheduledTask", b =>
@@ -568,6 +932,18 @@ namespace Orchestra.Backend.Migrations
                     b.Property<DateTimeOffset>("LastSyncDate")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<string>("SerialNumber")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
+                    b.Property<string>("PrinterSerialNumber")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("Hostname")
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)");
+
                     b.Property<int>("StoreCode")
                         .HasColumnType("integer");
 
@@ -595,6 +971,10 @@ namespace Orchestra.Backend.Migrations
 
                     NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
 
+                    b.Property<string>("Address")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
                     b.Property<string>("FullName")
                         .IsRequired()
                         .HasMaxLength(100)
@@ -616,6 +996,68 @@ namespace Orchestra.Backend.Migrations
                     b.HasKey("Id");
 
                     b.ToTable("StoreManagers");
+                });
+
+            modelBuilder.Entity("Orchestra.Backend.Models.StoreNameMapping", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<bool>("AutoMatched")
+                        .HasColumnType("boolean");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("RawName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<int?>("StoreCode")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("RawName")
+                        .IsUnique();
+
+                    b.HasIndex("StoreCode");
+
+                    b.ToTable("StoreNameMappings");
+                });
+
+            modelBuilder.Entity("Orchestra.Backend.Models.StoreNetworkInfo", b =>
+                {
+                    b.Property<int>("StoreCode")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("StoreCode"));
+
+                    b.Property<string>("LineType")
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)");
+
+                    b.Property<string>("Notes")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<int>("TerrestrialMbps")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("StoreCode");
+
+                    b.ToTable("StoreNetworkInfos");
                 });
 
             modelBuilder.Entity("Orchestra.Backend.Models.StoreOfflineLog", b =>
@@ -657,6 +1099,377 @@ namespace Orchestra.Backend.Migrations
                     b.ToTable("StoreOfflineLogs");
                 });
 
+            modelBuilder.Entity("Orchestra.Backend.Models.StoreOpening", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime?>("ActualOpeningDate")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Address")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<string>("City")
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)");
+
+                    b.Property<DateTime?>("CompletedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("CompletedBy")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("CreatedBy")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("Notes")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
+
+                    b.Property<string>("RoleAssignmentsJson")
+                        .HasColumnType("text");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<int>("StoreCode")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("StoreName")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)");
+
+                    b.Property<DateTime>("TargetOpeningDate")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int?>("TemplateId")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Status");
+
+                    b.HasIndex("StoreCode");
+
+                    b.HasIndex("TargetOpeningDate");
+
+                    b.ToTable("StoreOpenings");
+                });
+
+            modelBuilder.Entity("Orchestra.Backend.Models.StoreOpeningActivity", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("Action")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Details")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<int>("StoreOpeningId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Username")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CreatedAt");
+
+                    b.HasIndex("StoreOpeningId");
+
+                    b.ToTable("StoreOpeningActivities");
+                });
+
+            modelBuilder.Entity("Orchestra.Backend.Models.StoreOpeningItem", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("AssetNumber")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("AssignedRole")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.Property<string>("CategoryName")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<DateTime?>("CompletedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("CompletedBy")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<bool>("HasAssetNumber")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("HasSerialNumber")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("ItemName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("Notes")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<string>("ParentName")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("PhotoUrl")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<string>("SerialNumber")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<int>("SortOrder")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<int>("StoreOpeningId")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AssignedRole");
+
+                    b.HasIndex("Status");
+
+                    b.HasIndex("StoreOpeningId");
+
+                    b.HasIndex("StoreOpeningId", "CategoryName");
+
+                    b.ToTable("StoreOpeningItems");
+                });
+
+            modelBuilder.Entity("Orchestra.Backend.Models.StoreOpeningTemplate", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("CreatedBy")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<bool>("IsDefault")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("IsDefault");
+
+                    b.ToTable("StoreOpeningTemplates");
+                });
+
+            modelBuilder.Entity("Orchestra.Backend.Models.StoreOpeningTemplateItem", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("AssignedRole")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.Property<string>("CategoryName")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<bool>("HasAssetNumber")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("HasSerialNumber")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("ItemName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("ParentName")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<int>("SortOrder")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("TemplateId")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TemplateId");
+
+                    b.ToTable("StoreOpeningTemplateItems");
+                });
+
+            modelBuilder.Entity("Orchestra.Backend.Models.StoreServiceIncident", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("ConsecutiveFailures")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("DeviceId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("DeviceName")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.Property<string>("DisplayName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<DateTime>("FirstDetectedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("IpAddress")
+                        .IsRequired()
+                        .HasMaxLength(15)
+                        .HasColumnType("character varying(15)");
+
+                    b.Property<DateTime>("LastDetectedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("LastError")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<string>("LastStartMode")
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)");
+
+                    b.Property<string>("Message")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<DateTime?>("ResolvedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("ServiceName")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)");
+
+                    b.Property<string>("Severity")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)");
+
+                    b.Property<int>("StoreCode")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("StoreName")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("DeviceId");
+
+                    b.HasIndex("LastDetectedAt");
+
+                    b.HasIndex("ResolvedAt");
+
+                    b.HasIndex("ServiceName");
+
+                    b.HasIndex("StoreCode");
+
+                    b.HasIndex("DeviceId", "ServiceName")
+                        .IsUnique()
+                        .HasFilter("\"ResolvedAt\" IS NULL");
+
+                    b.HasIndex("StoreCode", "ResolvedAt");
+
+                    b.HasIndex("DeviceId", "ServiceName", "ResolvedAt");
+
+                    b.ToTable("StoreServiceIncidents");
+                });
+
             modelBuilder.Entity("Orchestra.Backend.Models.User", b =>
                 {
                     b.Property<int>("Id")
@@ -678,6 +1491,9 @@ namespace Orchestra.Backend.Migrations
                         .HasColumnType("character varying(100)");
 
                     b.Property<bool>("IsActive")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("IsLdapUser")
                         .HasColumnType("boolean");
 
                     b.Property<DateTime?>("LastLoginAt")
@@ -756,73 +1572,6 @@ namespace Orchestra.Backend.Migrations
                     b.ToTable("VncSessionLogs");
                 });
 
-            modelBuilder.Entity("Orchestra.Backend.Models.RouterLatencySample", b =>
-                {
-                    b.Property<long>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("bigint");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
-
-                    b.Property<string>("DeviceId")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)");
-
-                    b.Property<string>("Ip")
-                        .IsRequired()
-                        .HasMaxLength(15)
-                        .HasColumnType("character varying(15)");
-
-                    b.Property<int?>("RttMs")
-                        .HasColumnType("integer");
-
-                    b.Property<DateTime>("SampledAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<int>("StoreCode")
-                        .HasColumnType("integer");
-
-                    b.Property<bool>("Success")
-                        .HasColumnType("boolean");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("SampledAt");
-
-                    b.HasIndex("StoreCode");
-
-                    b.HasIndex("DeviceId", "SampledAt");
-
-                    b.HasIndex("StoreCode", "SampledAt");
-
-                    b.ToTable("RouterLatencySamples");
-                });
-
-            modelBuilder.Entity("Orchestra.Backend.Models.StoreNetworkInfo", b =>
-                {
-                    b.Property<int>("StoreCode")
-                        .HasColumnType("integer");
-
-                    b.Property<string>("LineType")
-                        .HasMaxLength(30)
-                        .HasColumnType("character varying(30)");
-
-                    b.Property<string>("Notes")
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)");
-
-                    b.Property<int>("TerrestrialMbps")
-                        .HasColumnType("integer");
-
-                    b.Property<DateTime>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.HasKey("StoreCode");
-
-                    b.ToTable("StoreNetworkInfos");
-                });
-
             modelBuilder.Entity("Orchestra.Backend.Models.CommandResultRecord", b =>
                 {
                     b.HasOne("Orchestra.Backend.Models.Device", "Device")
@@ -845,9 +1594,51 @@ namespace Orchestra.Backend.Migrations
                     b.Navigation("Device");
                 });
 
+            modelBuilder.Entity("Orchestra.Backend.Models.InventoryAsset", b =>
+                {
+                    b.HasOne("Orchestra.Backend.Models.InventoryImportBatch", "ImportBatch")
+                        .WithMany()
+                        .HasForeignKey("ImportBatchId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("ImportBatch");
+                });
+
+            modelBuilder.Entity("Orchestra.Backend.Models.StoreOpeningItem", b =>
+                {
+                    b.HasOne("Orchestra.Backend.Models.StoreOpening", "StoreOpening")
+                        .WithMany("Items")
+                        .HasForeignKey("StoreOpeningId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("StoreOpening");
+                });
+
+            modelBuilder.Entity("Orchestra.Backend.Models.StoreOpeningTemplateItem", b =>
+                {
+                    b.HasOne("Orchestra.Backend.Models.StoreOpeningTemplate", "Template")
+                        .WithMany("Items")
+                        .HasForeignKey("TemplateId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Template");
+                });
+
             modelBuilder.Entity("Orchestra.Backend.Models.Device", b =>
                 {
                     b.Navigation("Metrics");
+                });
+
+            modelBuilder.Entity("Orchestra.Backend.Models.StoreOpening", b =>
+                {
+                    b.Navigation("Items");
+                });
+
+            modelBuilder.Entity("Orchestra.Backend.Models.StoreOpeningTemplate", b =>
+                {
+                    b.Navigation("Items");
                 });
 #pragma warning restore 612, 618
         }

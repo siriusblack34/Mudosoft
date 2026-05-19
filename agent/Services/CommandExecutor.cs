@@ -13,10 +13,50 @@ public sealed class CommandExecutor : ICommandExecutor
     private readonly ILogger<CommandExecutor> _logger;
     private readonly VncInstallerService _vncInstaller;
 
+    // Birden fazla yerden self-update tetiklendiginde (backend command + checker) ikinci tetik atlanir.
+    private static int _selfUpdateRunning = 0;
+
     public CommandExecutor(ILogger<CommandExecutor> logger, VncInstallerService vncInstaller)
     {
         _logger = logger;
         _vncInstaller = vncInstaller;
+    }
+
+    public void TriggerSelfUpdate(string backendUrl)
+    {
+        if (string.IsNullOrWhiteSpace(backendUrl))
+        {
+            _logger.LogWarning("TriggerSelfUpdate cagrildi ama backendUrl bos.");
+            return;
+        }
+
+        if (Interlocked.Exchange(ref _selfUpdateRunning, 1) == 1)
+        {
+            _logger.LogInformation("Self-update zaten calisiyor, ikinci tetik atlandi.");
+            return;
+        }
+
+        _logger.LogInformation("Self-update tetiklendi (agent kendi check etti). BackendUrl={Url}", backendUrl);
+
+        // Mevcut ExecuteAgentUpdate akisini ayni payload formatiyla yeniden kullan.
+        // ExecuteAgentUpdate sync (download + extract + batch start) — background'a at, checker thread'ini bloklama.
+        _ = Task.Run(() =>
+        {
+            try
+            {
+                var payload = System.Text.Json.JsonSerializer.Serialize(new { backendUrl = backendUrl.TrimEnd('/') });
+                var result = new CommandResultDto();
+                ExecuteAgentUpdate(payload, result);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Self-update calistirma hatasi.");
+            }
+            finally
+            {
+                Interlocked.Exchange(ref _selfUpdateRunning, 0);
+            }
+        });
     }
 
     // HATA ÇÖZÜMÜ: CancellationToken token parametresi eklendi
@@ -44,6 +84,11 @@ public sealed class CommandExecutor : ICommandExecutor
                 case CommandType.ExecuteScript:
                     _logger.LogInformation("ExecuteScript komutu alındı.");
                     result = ExecuteShellScript(command, result, token);
+                    break;
+
+                case CommandType.ExecuteBatch:
+                    _logger.LogInformation("ExecuteBatch komutu alındı.");
+                    result = ExecuteBatchScript(command, result, token);
                     break;
 
                 case CommandType.Shutdown:
@@ -94,6 +139,11 @@ public sealed class CommandExecutor : ICommandExecutor
                     var vncResult = _vncInstaller.InstallAndConfigureAsync(token).GetAwaiter().GetResult();
                     result.Success = vncResult.Success;
                     result.Output = vncResult.Output;
+                    break;
+
+                case CommandType.UninstallAgent:
+                    _logger.LogWarning("UninstallAgent komutu alındı — agent kendini kaldıracak.");
+                    result = ExecuteAgentUninstall(result);
                     break;
 
                 default:
@@ -179,6 +229,109 @@ public sealed class CommandExecutor : ICommandExecutor
         finally
         {
             // Cleanup temp file
+            if (tempFile != null && File.Exists(tempFile))
+            {
+                try { File.Delete(tempFile); } catch { }
+            }
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// .bat icerigini gecici dosyaya yazip cmd.exe /c ile calistirir.
+    /// Eger bat shutdown/restart komutu iceriyorsa fire-and-forget moduna gecer
+    /// (sonuc yakalanamaz cunku makine kapanir, agent backend'e yazma sansi bulamaz).
+    /// Sadece Windows. Linux'ta hata doner.
+    /// </summary>
+    private CommandResultDto ExecuteBatchScript(CommandDto command, CommandResultDto result, CancellationToken token)
+    {
+        if (string.IsNullOrWhiteSpace(command.Payload))
+        {
+            result.Output = "Payload bos oldugu icin bat calistirilamadi.";
+            return result;
+        }
+
+        if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+        {
+            result.Output = "ExecuteBatch sadece Windows'ta calisir.";
+            return result;
+        }
+
+        // shutdown / restart / logoff icerikli bat'lar makineyi kapatir, sonuc yakalanamaz.
+        // 'shutdown' (/r /s /h /l) veya 'restart-computer' / 'stop-computer' algilanirsa
+        // bat'i fire-and-forget calistirip success ile hemen don.
+        var shutdownPattern = new System.Text.RegularExpressions.Regex(
+            @"(?i)\b(shutdown\s+/[rshl]|restart-computer|stop-computer)\b");
+        var hasShutdown = shutdownPattern.IsMatch(command.Payload);
+
+        string? tempFile = null;
+        try
+        {
+            // Fire-and-forget modunda bat gecici dizinde kalmali (silinmemeli) — yoksa cmd.exe silinmis dosyayi okumaya calisir.
+            // Normal modda finally'de silinir.
+            tempFile = Path.Combine(Path.GetTempPath(), $"orchestra_batch_{Guid.NewGuid():N}.bat");
+            File.WriteAllText(tempFile, command.Payload, System.Text.Encoding.ASCII);
+
+            if (hasShutdown)
+            {
+                _logger.LogWarning("Bat shutdown/restart komutu iceriyor — fire-and-forget moduna geciliyor: {Path}", tempFile);
+
+                var fireProc = new Process
+                {
+                    StartInfo = new ProcessStartInfo
+                    {
+                        FileName = "cmd.exe",
+                        Arguments = $"/c \"\"{tempFile}\"\"",
+                        UseShellExecute = false,
+                        CreateNoWindow = true,
+                        RedirectStandardOutput = false,
+                        RedirectStandardError = false
+                    }
+                };
+                fireProc.Start();
+                // Process baslangic icin minik bir bekleme — bat gerçekten basladigindan emin ol
+                Thread.Sleep(500);
+
+                result.Output = "Bat fire-and-forget olarak baslatildi (shutdown/restart icerdigi icin sonuc yakalanamaz).";
+                result.Success = true;
+                // tempFile silinmemeli — bat hala calisiyor olabilir; OS reboot temizleyecek
+                tempFile = null;
+                return result;
+            }
+
+            _logger.LogInformation("Running batch: cmd.exe /c \"{Path}\"", tempFile);
+
+            var process = new Process
+            {
+                StartInfo = new ProcessStartInfo
+                {
+                    FileName = "cmd.exe",
+                    Arguments = $"/c \"\"{tempFile}\"\"",
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    UseShellExecute = false,
+                    CreateNoWindow = true
+                }
+            };
+
+            process.Start();
+            string output = process.StandardOutput.ReadToEnd();
+            string error = process.StandardError.ReadToEnd();
+            process.WaitForExit(300000);
+
+            result.Output = (string.IsNullOrWhiteSpace(output) ? "" : output) +
+                            (string.IsNullOrWhiteSpace(error) ? "" : $"\nHata: {error}");
+            result.Success = process.ExitCode == 0;
+        }
+        catch (Exception ex)
+        {
+            result.Output = $"Bat calistirma hatasi: {ex.Message}";
+            _logger.LogError(ex, "Bat calistirma basarisiz.");
+            result.Success = false;
+        }
+        finally
+        {
             if (tempFile != null && File.Exists(tempFile))
             {
                 try { File.Delete(tempFile); } catch { }
@@ -604,6 +757,123 @@ echo [%date% %time%] Update complete! >> ""{logPath}""
         {
             result.Output = $"Update failed: {ex.Message}";
             _logger.LogError(ex, "Agent update error: {Message}", ex.Message);
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// Self-uninstall: agent durdurulur, TightVNC kaldirilir, kurulum klasoru ve loglar silinir.
+    /// Detached batch ile yapilir — batch agent'i kill ettiginden sonuc batch baslatildiktan
+    /// hemen sonra geri donmeli (sonradan rapor edilemez).
+    /// </summary>
+    private CommandResultDto ExecuteAgentUninstall(CommandResultDto result)
+    {
+        try
+        {
+            var installDir = AppContext.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar);
+            var tempDir = Path.Combine(Path.GetTempPath(), "MudoSoftUninstall");
+            try { if (Directory.Exists(tempDir)) Directory.Delete(tempDir, true); } catch { }
+            Directory.CreateDirectory(tempDir);
+
+            var batchPath = Path.Combine(tempDir, "uninstaller.cmd");
+            var logPath = Path.Combine(tempDir, "uninstall.log");
+            var psPath = Path.Combine(tempDir, "uninstall_vnc.ps1");
+
+            // TightVNC kaldirma + VNC verisi temizleme — registry'den product code'u bul, msiexec ile sessizce kaldir
+            var psContent = @"
+$ErrorActionPreference = 'SilentlyContinue'
+try { Stop-Service tvnserver -Force } catch {}
+$keys = @(
+    'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall',
+    'HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall'
+)
+foreach ($root in $keys) {
+    if (Test-Path $root) {
+        Get-ChildItem $root | ForEach-Object {
+            $name = (Get-ItemProperty $_.PSPath -ErrorAction SilentlyContinue).DisplayName
+            if ($name -like 'TightVNC*') {
+                $code = Split-Path $_.PSPath -Leaf
+                Write-Output (""TightVNC bulundu: $name $code"")
+                Start-Process msiexec.exe -ArgumentList ""/x $code /qn /norestart"" -Wait -NoNewWindow
+            }
+        }
+    }
+}
+# registry kalintilarini temizle
+Remove-Item 'HKLM:\SOFTWARE\TightVNC' -Recurse -Force -ErrorAction SilentlyContinue
+Remove-Item 'HKLM:\SOFTWARE\WOW6432Node\TightVNC' -Recurse -Force -ErrorAction SilentlyContinue
+# servis kaldiysa zorla sil
+sc.exe delete tvnserver | Out-Null
+# kurulum klasoru kalintilari
+Remove-Item 'C:\Program Files\TightVNC' -Recurse -Force -ErrorAction SilentlyContinue
+Remove-Item 'C:\Program Files (x86)\TightVNC' -Recurse -Force -ErrorAction SilentlyContinue
+";
+            File.WriteAllText(psPath, psContent, System.Text.Encoding.UTF8);
+
+            var batchContent = $@"@echo off
+echo [%date% %time%] === ORCHESTRA AGENT UNINSTALL === > ""{logPath}""
+
+REM Agent'in command-result POST etmesi icin biraz bekle
+timeout /t 5 /nobreak > nul
+
+REM Tray'i durdur
+echo [%date% %time%] Stopping Tray... >> ""{logPath}""
+taskkill /F /IM MudoSoft.Tray.exe 2>> ""{logPath}""
+
+REM TightVNC + VNC verilerini temizle (PowerShell)
+echo [%date% %time%] Uninstalling TightVNC... >> ""{logPath}""
+powershell -NoProfile -ExecutionPolicy Bypass -File ""{psPath}"" >> ""{logPath}"" 2>&1
+
+REM Agent servisini durdur (eski + yeni isimler)
+echo [%date% %time%] Stopping agent services... >> ""{logPath}""
+net stop ""MudosoftAgentService"" 2>> ""{logPath}""
+net stop ""MudosoftAgent"" 2>> ""{logPath}""
+net stop ""MudoSoft.Agent"" 2>> ""{logPath}""
+timeout /t 3 /nobreak > nul
+
+REM Agent process'lerini zorla oldur
+echo [%date% %time%] Force killing agent processes... >> ""{logPath}""
+taskkill /F /IM MudoSoft.Agent.exe 2>> ""{logPath}""
+timeout /t 2 /nobreak > nul
+
+REM Servisleri sil
+echo [%date% %time%] Deleting services... >> ""{logPath}""
+sc delete ""MudosoftAgentService"" 2>> ""{logPath}""
+sc delete ""MudosoftAgent"" 2>> ""{logPath}""
+sc delete ""MudoSoft.Agent"" 2>> ""{logPath}""
+
+REM Scheduled task (RDHelper)
+echo [%date% %time%] Removing scheduled tasks... >> ""{logPath}""
+schtasks /Delete /TN ""MudoSoftRDHelper"" /F 2>> ""{logPath}""
+
+REM Kurulum + update + log klasorlerini sil
+echo [%date% %time%] Deleting install/update folders... >> ""{logPath}""
+rmdir /S /Q ""{installDir}"" 2>> ""{logPath}""
+rmdir /S /Q ""C:\Program Files\MudoSoft"" 2>> ""{logPath}""
+rmdir /S /Q ""C:\Users\Public\MudoSoftUpdate"" 2>> ""{logPath}""
+rmdir /S /Q ""%TEMP%\MudoSoftUpdate"" 2>> ""{logPath}""
+del /F /Q ""C:\mudosoft_helper.log"" 2>> ""{logPath}""
+
+echo [%date% %time%] === UNINSTALL COMPLETE === >> ""{logPath}""
+
+REM Batch kendini silsin (temp klasoruyle birlikte, log haric)
+(goto) 2>nul & rmdir /S /Q ""{tempDir}""
+";
+            File.WriteAllText(batchPath, batchContent);
+            _logger.LogWarning("Uninstall batch yazildi: {Path}", batchPath);
+
+            // Detached olarak baslat — service Job Object'tan kopsun ki bizi oldurmesin
+            var pid = StartDetachedProcess("cmd.exe", $"/C \"{batchPath}\"");
+            _logger.LogWarning("Uninstall process baslatildi PID={PID}", pid);
+
+            result.Success = true;
+            result.Output = "Uninstall baslatildi. Agent ~10sn icinde duracak, klasor ve servisler silinecek, TightVNC kaldirilacak.";
+        }
+        catch (Exception ex)
+        {
+            result.Output = $"Uninstall baslatilamadi: {ex.Message}";
+            _logger.LogError(ex, "Uninstall hatasi");
         }
 
         return result;

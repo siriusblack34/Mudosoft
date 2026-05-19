@@ -20,5 +20,6 @@ namespace Orchestra.Shared.Dtos
         public int? CpuUsage { get; set; }
         public int? RamUsage { get; set; }
         public int? DiskUsage { get; set; }
+        public bool HiddenForNonAdmins { get; set; }
     }
 }

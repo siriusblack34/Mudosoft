@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { AlertCircle, CheckCircle2, Loader2, Send, Search, X, Mail, Pencil } from 'lucide-react';
+import { AlertCircle, CheckCircle2, Loader2, Send, Search, X, Mail, Pencil, RefreshCw } from 'lucide-react';
 import { apiClient, type StoreManager } from '../lib/apiClient';
 import type {
     OutageMailTemplateGroup, OutageMailPreview, OutageMailRequest,
@@ -26,6 +26,26 @@ const OutageMailPage: React.FC = () => {
 
     const [sending, setSending] = useState(false);
     const [sendResult, setSendResult] = useState<{ ok: boolean; message: string } | null>(null);
+
+    const [syncingAddresses, setSyncingAddresses] = useState(false);
+    const [syncResult, setSyncResult] = useState<{ ok: boolean; message: string } | null>(null);
+
+    const handleSyncAddresses = async () => {
+        setSyncingAddresses(true);
+        setSyncResult(null);
+        try {
+            const r = await apiClient.syncStoreAddresses();
+            const missingNote = r.missingCount > 0 ? ` · ${r.missingCount} mağaza için adres bulunamadı` : '';
+            setSyncResult({ ok: true, message: `GENIUS3'ten ${r.fetched} adres çekildi, ${r.updated} kayıt güncellendi${missingNote}.` });
+            // refresh stores
+            const mgr = await apiClient.getStoreManagers();
+            setStores(mgr);
+        } catch (e: any) {
+            setSyncResult({ ok: false, message: e?.message || 'Senkronizasyon başarısız' });
+        } finally {
+            setSyncingAddresses(false);
+        }
+    };
 
     useEffect(() => {
         (async () => {
@@ -194,10 +214,37 @@ const OutageMailPage: React.FC = () => {
                     {/* Alici + not */}
                     <div className="card space-y-3">
                         <div className="space-y-1 text-[12px] text-ms-text-muted">
-                            <div>Mail "Merhaba Zafer Bey" olarak başlar.</div>
-                            <div>Kime: <span className="font-mono text-ms-text">zafer.canver@turkcell.com.tr</span></div>
+                            <div>Mail "Merhaba Onur Bey" olarak başlar.</div>
+                            <div>Kime: <span className="font-mono text-ms-text">onur.karagoz@turkcell.com.tr</span></div>
                             <div>CC: <span className="font-mono text-ms-text">MudoBTDestek@mudo.com.tr</span> ve gönderen teknisyen</div>
                         </div>
+                        <div className="flex items-center justify-between gap-2 -mt-1">
+                            <span className="text-[11px] text-ms-text-muted">
+                                Adresler GENIUS3 STORE tablosundan alınır.
+                            </span>
+                            <button
+                                onClick={handleSyncAddresses}
+                                disabled={syncingAddresses}
+                                className="flex items-center gap-1 text-[11px] px-2 py-1 rounded-md text-ms-text-muted hover:text-violet-400 border border-ms-border hover:border-violet-500/40 transition-colors disabled:opacity-50"
+                            >
+                                {syncingAddresses
+                                    ? <Loader2 className="w-3 h-3 animate-spin" />
+                                    : <RefreshCw className="w-3 h-3" />}
+                                Adresleri senkronize et
+                            </button>
+                        </div>
+                        {syncResult && (
+                            <div className={`p-2 rounded-md text-[11px] flex items-start gap-1.5 ${
+                                syncResult.ok
+                                    ? 'bg-emerald-600/10 text-emerald-300 border border-emerald-500/30'
+                                    : 'bg-red-600/10 text-red-300 border border-red-500/30'
+                            }`}>
+                                {syncResult.ok
+                                    ? <CheckCircle2 className="w-3 h-3 mt-0.5 shrink-0" />
+                                    : <AlertCircle className="w-3 h-3 mt-0.5 shrink-0" />}
+                                <span>{syncResult.message}</span>
+                            </div>
+                        )}
                         <div>
                             <label className="form-label">Ek Not (opsiyonel)</label>
                             <textarea
@@ -392,7 +439,7 @@ const OutageMailPage: React.FC = () => {
                             )}
                         </button>
                         <p className="text-[11px] text-ms-text-muted mt-2 text-center">
-                            Canlı alıcı: <span className="font-mono">zafer.canver@turkcell.com.tr</span><br />
+                            Canlı alıcı: <span className="font-mono">onur.karagoz@turkcell.com.tr</span><br />
                             CC: <span className="font-mono">MudoBTDestek@mudo.com.tr</span> ve gönderen teknisyen
                         </p>
                     </div>

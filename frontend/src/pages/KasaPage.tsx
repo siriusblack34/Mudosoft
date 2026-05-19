@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { apiClient, SqlDeviceWithStatus } from "../lib/apiClient";
 import Spinner from "../components/ui/Spinner";
-import { Monitor, RefreshCw, Search, Wifi, WifiOff, Store, Network, Activity, Info, Trash2, Cpu, PauseCircle, PlayCircle, Mail, Loader2 } from "lucide-react";
+import { Monitor, RefreshCw, Search, Wifi, WifiOff, Store, Network, Activity, Info, Trash2, Cpu, PauseCircle, PlayCircle, Mail, Loader2, Hash, Printer, Pencil, Check, X, RotateCw } from "lucide-react";
 import DeviceTabs from "../components/DeviceTabs";
 
 interface StoreRow {
@@ -24,12 +24,100 @@ const formatOfflineDuration = (lastSeen: string | null): string => {
 };
 
 const DeviceDetailCard = ({ title, device, onDelete, onToggleClose }: { title: string, device: SqlDeviceWithStatus | null, onDelete?: (deviceId: string) => void, onToggleClose?: (deviceId: string, isClosed: boolean, reason?: string) => void }) => {
-    const [sysInfo, setSysInfo] = useState<{ hostname: string | null; serialNumber: string | null; hostnameError?: string; serialError?: string } | null>(null);
+    const [sysInfo, setSysInfo] = useState<{ hostname: string | null; serialNumber: string | null; hostnameError?: string; serialError?: string; printerSerialNumber: string | null } | null>(null);
     const [sysInfoLoading, setSysInfoLoading] = useState(false);
     const [showCloseDialog, setShowCloseDialog] = useState(false);
     const [closeReason, setCloseReason] = useState("");
     const [sendingLog, setSendingLog] = useState(false);
     const [logMessage, setLogMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+
+    // Inline edit state — 3 alan icin tek state seti
+    const [editingField, setEditingField] = useState<null | 'hostname' | 'serialNumber' | 'printerSerialNumber'>(null);
+    const [fieldInput, setFieldInput] = useState("");
+    const [savingField, setSavingField] = useState(false);
+
+    const startEdit = (field: 'hostname' | 'serialNumber' | 'printerSerialNumber', current: string | null | undefined) => {
+        setFieldInput(current || "");
+        setEditingField(field);
+    };
+
+    const saveField = async () => {
+        if (!device || !editingField) return;
+        setSavingField(true);
+        try {
+            const trimmed = fieldInput.trim();
+            const patch: any = { [editingField]: trimmed || null };
+            const resp = await apiClient.updateDeviceManualInfo(device.deviceId, patch);
+            setSysInfo(prev => prev ? { ...prev, hostname: resp.hostname, serialNumber: resp.serialNumber, printerSerialNumber: resp.printerSerialNumber } : prev);
+            setEditingField(null);
+        } catch (err: any) {
+            alert(err?.message || "Kaydedilemedi");
+        } finally {
+            setSavingField(false);
+        }
+    };
+
+    const [refreshingPrinter, setRefreshingPrinter] = useState(false);
+    const refreshPrinter = async () => {
+        if (!device) return;
+        setRefreshingPrinter(true);
+        try {
+            const resp = await apiClient.refreshPrinterSerial(device.deviceId);
+            setSysInfo(prev => prev ? { ...prev, printerSerialNumber: resp.printerSerialNumber } : prev);
+            if (resp.message) alert(resp.message);
+        } catch (err: any) {
+            alert(err?.message || "Sicil no çekilemedi");
+        } finally {
+            setRefreshingPrinter(false);
+        }
+    };
+
+    const EditableRow = ({ icon: Icon, label, value, field, mono = true, placeholder, extraActions }: {
+        icon: React.ComponentType<{ className?: string }>,
+        label: string,
+        value: string | null | undefined,
+        field: 'hostname' | 'serialNumber' | 'printerSerialNumber',
+        mono?: boolean,
+        placeholder?: string,
+        extraActions?: React.ReactNode,
+    }) => {
+        const isEditing = editingField === field;
+        return (
+            <div className="flex items-center gap-3 p-2.5 rounded-xl bg-slate-900/50 border border-slate-700/50 hover:bg-slate-900/80 transition-colors group/row">
+                <div className="p-1.5 bg-slate-800 rounded-md text-slate-400"><Icon className="w-4 h-4" /></div>
+                <div className="overflow-hidden flex-1 min-w-0">
+                    <div className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold">{label}</div>
+                    {isEditing ? (
+                        <div className="flex items-center gap-1.5 mt-0.5">
+                            <input
+                                type="text"
+                                value={fieldInput}
+                                onChange={(e) => setFieldInput(e.target.value)}
+                                disabled={savingField}
+                                autoFocus
+                                onKeyDown={(e) => { if (e.key === 'Enter') saveField(); if (e.key === 'Escape') setEditingField(null); }}
+                                placeholder={placeholder}
+                                className={`flex-1 min-w-0 px-2 py-1 bg-slate-950 border border-slate-700 rounded text-sm ${mono ? 'font-mono' : ''} text-slate-200 focus:outline-none focus:border-indigo-500/50 disabled:opacity-50`}
+                            />
+                            <button onClick={saveField} disabled={savingField} className="p-1 rounded text-emerald-400 hover:bg-emerald-500/10 disabled:opacity-40"><Check className="w-3.5 h-3.5" /></button>
+                            <button onClick={() => setEditingField(null)} disabled={savingField} className="p-1 rounded text-slate-400 hover:bg-slate-700 disabled:opacity-40"><X className="w-3.5 h-3.5" /></button>
+                        </div>
+                    ) : (
+                        <div className="flex items-center gap-2">
+                            <div className={`text-sm text-slate-200 ${mono ? 'font-mono' : ''} mt-0.5 truncate flex-1`}>
+                                {sysInfoLoading ? <span className="text-slate-500 text-xs">Yükleniyor...</span>
+                                    : value || <span className="text-slate-500">—</span>}
+                            </div>
+                            {extraActions}
+                            <button onClick={() => startEdit(field, value)} className="opacity-0 group-hover/row:opacity-100 transition-opacity p-1 rounded text-slate-400 hover:bg-slate-700 hover:text-slate-200" title={`${label} düzenle`}>
+                                <Pencil className="w-3 h-3" />
+                            </button>
+                        </div>
+                    )}
+                </div>
+            </div>
+        );
+    };
 
     const handleSendLog = async () => {
         if (!device) return;
@@ -54,7 +142,7 @@ const DeviceDetailCard = ({ title, device, onDelete, onToggleClose }: { title: s
         setSysInfoLoading(true);
         apiClient.getDeviceSystemInfo(device.deviceId)
             .then(info => { console.log('[SysInfo]', device.deviceId, info); setSysInfo(info); })
-            .catch(err => { console.error('[SysInfo] error', err); setSysInfo({ hostname: null, serialNumber: null }); })
+            .catch(err => { console.error('[SysInfo] error', err); setSysInfo({ hostname: null, serialNumber: null, printerSerialNumber: null }); })
             .finally(() => setSysInfoLoading(false));
     }, [device?.deviceId]);
 
@@ -184,40 +272,20 @@ const DeviceDetailCard = ({ title, device, onDelete, onToggleClose }: { title: s
                     </div>
                 </div>
 
-                <div className="flex items-center gap-3 p-2.5 rounded-xl bg-slate-900/50 border border-slate-700/50 hover:bg-slate-900/80 transition-colors">
-                    <div className="p-1.5 bg-slate-800 rounded-md text-slate-400">
-                        <Activity className="w-4 h-4" />
-                    </div>
-                    <div className="overflow-hidden">
-                        <div className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold">Cihaz Türü</div>
-                        <div className="text-sm text-slate-200 mt-0.5 truncate" title={device.deviceType}>{device.deviceType || "N/A"}</div>
-                    </div>
-                </div>
-
-                <div className="flex items-center gap-3 p-2.5 rounded-xl bg-slate-900/50 border border-slate-700/50 hover:bg-slate-900/80 transition-colors">
-                    <div className="p-1.5 bg-slate-800 rounded-md text-slate-400">
-                        <Info className="w-4 h-4" />
-                    </div>
-                    <div className="overflow-hidden">
-                        <div className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold">Ajan Kodu</div>
-                        <div className="text-xs text-slate-400 font-mono mt-0.5 truncate" title={device.deviceId}>{device.deviceId}</div>
-                    </div>
-                </div>
-
-                <div className="flex items-center gap-3 p-2.5 rounded-xl bg-slate-900/50 border border-slate-700/50 hover:bg-slate-900/80 transition-colors">
-                    <div className="p-1.5 bg-slate-800 rounded-md text-slate-400">
-                        <Cpu className="w-4 h-4" />
-                    </div>
-                    <div className="overflow-hidden">
-                        <div className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold">Hostname</div>
-                        <div className="text-sm text-slate-200 font-mono mt-0.5 truncate">
-                            {sysInfoLoading ? <span className="text-slate-500 text-xs">Yükleniyor...</span>
-                                : sysInfo?.hostname
-                                    ? sysInfo.hostname
-                                    : <span className="text-rose-500/70 text-xs" title={sysInfo?.hostnameError || ''}>{sysInfo?.hostnameError ? '⚠ Hata' : '—'}</span>}
-                        </div>
-                    </div>
-                </div>
+                <EditableRow icon={Cpu} label="Hostname" value={sysInfo?.hostname} field="hostname" placeholder="KSTRIST026P003" />
+                <EditableRow icon={Hash} label="Seri No" value={sysInfo?.serialNumber} field="serialNumber" placeholder="BIOS seri" />
+                <EditableRow
+                    icon={Printer}
+                    label="Yazıcı Sicil No"
+                    value={sysInfo?.printerSerialNumber}
+                    field="printerSerialNumber"
+                    placeholder="YAB..."
+                    extraActions={
+                        <button onClick={refreshPrinter} disabled={refreshingPrinter} className="opacity-0 group-hover/row:opacity-100 transition-opacity p-1 rounded text-slate-400 hover:bg-slate-700 hover:text-indigo-300 disabled:opacity-40" title="Kasadan yeniden çek">
+                            <RotateCw className={`w-3 h-3 ${refreshingPrinter ? 'animate-spin' : ''}`} />
+                        </button>
+                    }
+                />
 
             </div>
 

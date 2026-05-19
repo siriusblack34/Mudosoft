@@ -163,9 +163,16 @@ export default function ScheduledTasksModal({ onClose }: ScheduledTasksModalProp
                                                 {task.frequency === 'Daily' ? <Repeat className="w-4 h-4" /> : <Calendar className="w-4 h-4" />}
                                             </div>
                                             <div>
-                                                <div className="flex items-center gap-2">
+                                                <div className="flex items-center gap-2 flex-wrap">
                                                     <span className="font-medium text-white text-sm">
                                                         {task.frequency === 'Daily' ? 'Her Gün' : 'Tek Seferlik'}
+                                                    </span>
+                                                    <span className={`text-[10px] px-1.5 py-0.5 rounded font-mono ${
+                                                        task.taskType === 'StockCleanup'
+                                                            ? 'bg-amber-500/15 text-amber-400 border border-amber-500/25'
+                                                            : 'bg-cyan-500/15 text-cyan-400 border border-cyan-500/25'
+                                                    }`}>
+                                                        {task.taskType === 'StockCleanup' ? 'POS Stock Transfer' : 'Inbox Cleanup'}
                                                     </span>
                                                     {!task.isActive && (
                                                         <span className="text-[10px] bg-slate-700 text-slate-400 px-1.5 py-0.5 rounded">Pasif</span>

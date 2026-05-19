@@ -25,15 +25,22 @@ import PrinterLicensesPage from "./pages/PrinterLicensesPage";
 import WebRdpPage from "./pages/WebRdpPage";
 import HolidaysPage from "./pages/HolidaysPage";
 import RemoteInstallPage from "./pages/RemoteInstallPage";
+import ActiveDirectoryPage from "./pages/ActiveDirectoryPage";
+import BatchScriptsPage from "./pages/BatchScriptsPage";
 import BilgisayarlarPage from "./pages/BilgisayarlarPage";
 import MagazalarPage from "./pages/MagazalarPage";
 import RouterPage from "./pages/RouterPage";
 import NetworkDiagnosticsPage from "./pages/NetworkDiagnosticsPage";
 import PosLogAnalyzerPage from "./pages/PosLogAnalyzerPage";
+import EventLogDiagnosticsPage from "./pages/EventLogDiagnosticsPage";
 import TeamPage from "./pages/TeamPage";
 import PersonelPage from "./pages/PersonelPage";
 import StoreOutageReportPage from "./pages/StoreOutageReportPage";
 import HardwareInventoryReportPage from "./pages/HardwareInventoryReportPage";
+import InventoryPage from "./pages/InventoryPage";
+import StoreOpeningsPage from "./pages/StoreOpeningsPage";
+import StoreOpeningDetailPage from "./pages/StoreOpeningDetailPage";
+import StoreOpeningTemplatesPage from "./pages/StoreOpeningTemplatesPage";
 import FaultDensityReportPage from "./pages/FaultDensityReportPage";
 import GundemPage from "./pages/GundemPage";
 import OutageMailPage from "./pages/OutageMailPage";
@@ -282,6 +289,14 @@ const routes = [
                 ),
             },
             {
+                path: "/event-log-diagnostics",
+                element: (
+                    <ShellLayout>
+                        <EventLogDiagnosticsPage />
+                    </ShellLayout>
+                ),
+            },
+            {
                 path: "/personel",
                 element: (
                     <ShellLayout>
@@ -310,6 +325,24 @@ const routes = [
                 element: (
                     <ShellLayout>
                         <RemoteInstallPage />
+                    </ShellLayout>
+                ),
+            },
+            {
+                path: "/active-directory",
+                element: (
+                    <ShellLayout>
+                        <AdminGuard>
+                            <ActiveDirectoryPage />
+                        </AdminGuard>
+                    </ShellLayout>
+                ),
+            },
+            {
+                path: "/batch-scripts",
+                element: (
+                    <ShellLayout>
+                        <BatchScriptsPage />
                     </ShellLayout>
                 ),
             },
@@ -350,6 +383,38 @@ const routes = [
                 element: (
                     <ShellLayout>
                         <FaultDensityReportPage />
+                    </ShellLayout>
+                ),
+            },
+            {
+                path: "/inventory",
+                element: (
+                    <ShellLayout>
+                        <InventoryPage />
+                    </ShellLayout>
+                ),
+            },
+            {
+                path: "/store-openings",
+                element: (
+                    <ShellLayout>
+                        <StoreOpeningsPage />
+                    </ShellLayout>
+                ),
+            },
+            {
+                path: "/store-openings/templates",
+                element: (
+                    <ShellLayout>
+                        <StoreOpeningTemplatesPage />
+                    </ShellLayout>
+                ),
+            },
+            {
+                path: "/store-openings/:id",
+                element: (
+                    <ShellLayout>
+                        <StoreOpeningDetailPage />
                     </ShellLayout>
                 ),
             },

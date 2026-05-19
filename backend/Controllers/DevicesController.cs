@@ -57,8 +57,10 @@ public class DevicesController : ControllerBase
     [HttpGet("status")]
     public ActionResult<DashboardDto> GetStatus()
     {
+        var isAdmin = User.IsInRole("Admin");
         var devices = _repo.GetAll()
             .Where(d => !string.IsNullOrEmpty(d.AgentVersion))
+            .Where(d => isAdmin || !d.HiddenForNonAdmins)
             .ToList();
 
         var total = devices.Count;
@@ -91,8 +93,10 @@ public class DevicesController : ControllerBase
     [HttpGet("inventory")]
     public async Task<ActionResult<IEnumerable<DeviceListDto>>> GetInventory()
     {
+        var isAdmin = User.IsInRole("Admin");
         var devices = _repo.GetAll()
             .Where(d => !string.IsNullOrEmpty(d.AgentVersion))
+            .Where(d => isAdmin || !d.HiddenForNonAdmins)
             .ToList();
 
         var storeNames = await _dbContext.StoreDevices
@@ -108,7 +112,11 @@ public class DevicesController : ControllerBase
         var deviceDtos = devices.Select(d =>
         {
             var storeCode = d.StoreCode;
-            if (!string.IsNullOrEmpty(d.IpAddress) && d.IpAddress.StartsWith("192.168.", StringComparison.OrdinalIgnoreCase))
+            // device.StoreCode yoksa (0) IP'den çıkar — fallback. Non-standart subnet'li mağazalarda
+            // (ör. 258 → 192.168.240.x) device.StoreCode'a güven, IP'yi override etme.
+            if (storeCode <= 0
+                && !string.IsNullOrEmpty(d.IpAddress)
+                && d.IpAddress.StartsWith("192.168.", StringComparison.OrdinalIgnoreCase))
             {
                 var parts = d.IpAddress.Split('.');
                 if (parts.Length == 4 && int.TryParse(parts[2], out var ipStore) && ipStore > 0)
@@ -136,11 +144,34 @@ public class DevicesController : ControllerBase
                 LastSeen = d.LastSeen?.ToString("o"),
                 CpuUsage = SafeRoundToNullableInt(d.CurrentCpuUsagePercent),
                 RamUsage = SafeRoundToNullableInt(d.CurrentRamUsagePercent),
-                DiskUsage = SafeRoundToNullableInt(d.CurrentDiskUsagePercent)
+                DiskUsage = SafeRoundToNullableInt(d.CurrentDiskUsagePercent),
+                HiddenForNonAdmins = d.HiddenForNonAdmins
             };
         }).ToList();
 
         return Ok(deviceDtos);
+    }
+
+    /// <summary>
+    /// Cihazın non-admin görünürlüğünü toggle eder. Sadece Admin.
+    /// HiddenForNonAdmins=true → non-admin'ler listede görmez.
+    /// </summary>
+    [HttpPut("{id}/visibility")]
+    [Authorize(Roles = "Admin")]
+    public async Task<IActionResult> SetVisibility(string id, [FromBody] SetVisibilityRequest req)
+    {
+        var device = await _dbContext.Devices.FindAsync(id);
+        if (device == null) return NotFound();
+        device.HiddenForNonAdmins = req.Hidden;
+        await _dbContext.SaveChangesAsync();
+        _logger.LogInformation("[Visibility] {Host} ({Id}) HiddenForNonAdmins -> {Hidden} by {User}",
+            device.Hostname, id, req.Hidden, User?.Identity?.Name);
+        return Ok(new { id, hiddenForNonAdmins = device.HiddenForNonAdmins });
+    }
+
+    public class SetVisibilityRequest
+    {
+        public bool Hidden { get; set; }
     }
 
     [HttpPost("start-offline-services")]
@@ -318,6 +349,7 @@ public class DevicesController : ControllerBase
             TotalRamMB = device.TotalRamMB,
             TotalDiskGB = device.TotalDiskGB,
             GpuModel = device.GpuModel,
+            SerialNumber = device.SerialNumber,
             LastLoggedInUser = device.LastLoggedInUser,
             SystemBootTime = device.SystemBootTime?.ToString("o"),
             SqlVersion = device.SqlVersion,
@@ -372,6 +404,31 @@ public class DevicesController : ControllerBase
             DeviceId = device.Id,
             device.IsTemporarilyClosed,
             device.TemporaryCloseReason
+        });
+    }
+
+    /// <summary>
+    /// Tum online Windows cihazlarinin BIOS seri numarasini remote WMI ile cekip DB'ye yazar.
+    /// Background service ayda 1 otomatik calistirir; bu endpoint manuel tetikleme icindir.
+    /// </summary>
+    [HttpPost("sync-serials")]
+    [Authorize(Roles = "Admin")]
+    public async Task<IActionResult> SyncSerials(
+        [FromServices] SerialNumberSyncService syncService,
+        CancellationToken ct)
+    {
+        var result = await syncService.RunSyncAsync(ct);
+        return Ok(new
+        {
+            skipped = result.Skipped,
+            total = result.Total,
+            updated = result.Updated,
+            unchanged = result.Unchanged,
+            failed = result.Failed,
+            completedAtUtc = result.CompletedAtUtc?.ToString("o"),
+            lastRunUtc = SerialNumberSyncService.LastRunUtc == DateTime.MinValue
+                ? null
+                : SerialNumberSyncService.LastRunUtc.ToString("o")
         });
     }
 
@@ -464,11 +521,25 @@ public class DevicesController : ControllerBase
             };
         }
 
+        // sc.exe query bile hard-fail dondurduyse (Access Denied, RPC kapali, vb)
+        // konfig/start denemenin anlami yok — erken sebebi raporla
+        var queryDiag = ClassifyRemoteOutput(queryOutput);
+        if (queryDiag.IsHardFailure)
+        {
+            return new RemoteServiceStartAttempt
+            {
+                Status = queryDiag.Status,
+                Message = queryDiag.Message,
+                StartIssued = false,
+                RunningConfirmed = false
+            };
+        }
+
         var repairOutput = await RunCommandCaptureAsync(
             "sc.exe",
             $"\\\\{ipAddress} config {AgentServiceName} binPath= \"\\\"{AgentExecutablePath}\\\" --service\" start= delayed-auto obj= LocalSystem",
             cancellationToken);
-        await RunCommandCaptureAsync("sc.exe", $"\\\\{ipAddress} description {AgentServiceName} \"MudoSoft Remote Management Agent\"", cancellationToken);
+        await RunCommandCaptureAsync("sc.exe", $"\\\\{ipAddress} description {AgentServiceName} \"Orchestra Agent Service\"", cancellationToken);
         var startOutput = await RunCommandCaptureAsync("sc.exe", $"\\\\{ipAddress} start {AgentServiceName}", cancellationToken);
 
         for (var attempt = 0; attempt < 4; attempt++)
@@ -488,20 +559,95 @@ public class DevicesController : ControllerBase
             }
         }
 
+        var combined = string.Join("\n", new[] { repairOutput, startOutput, queryOutput }
+            .Where(o => !string.IsNullOrWhiteSpace(o)));
+        var failDiag = ClassifyRemoteOutput(combined);
         return new RemoteServiceStartAttempt
         {
-            Status = "failed",
-            Message = ShortenOutput(string.Join(Environment.NewLine, new[] { repairOutput, startOutput }.Where(o => !string.IsNullOrWhiteSpace(o)))),
+            Status = failDiag.Status == "failed" ? "start-failed" : failDiag.Status,
+            Message = failDiag.Message,
             StartIssued = false,
             RunningConfirmed = false
         };
     }
 
+    private static RemoteOutputDiagnosis ClassifyRemoteOutput(string output)
+    {
+        if (string.IsNullOrWhiteSpace(output))
+        {
+            return new RemoteOutputDiagnosis("unknown", "Cikti bos — uzak makineye komut gonderilemedi.", true);
+        }
+
+        var lower = output.ToLowerInvariant();
+
+        if (lower.Contains("access is denied") ||
+            lower.Contains("erisim engellendi") ||
+            lower.Contains("erişim engellendi") ||
+            lower.Contains("erisim reddedildi") ||
+            lower.Contains("erişim reddedildi"))
+        {
+            return new RemoteOutputDiagnosis(
+                "access-denied",
+                "Yetki yok (Access Denied) — backend hesabi uzak makinede admin degil.",
+                true);
+        }
+
+        if (lower.Contains("rpc server is unavailable") ||
+            lower.Contains("rpc sunucusu kullanilamiyor") ||
+            lower.Contains("rpc sunucusu kullanılamıyor"))
+        {
+            return new RemoteOutputDiagnosis(
+                "rpc-unavailable",
+                "RPC sunucusu erisilemez (port 135 ya da SMB/445 kapali olabilir).",
+                true);
+        }
+
+        if (lower.Contains("the network path was not found") ||
+            lower.Contains("ag yolu bulunamadi") ||
+            lower.Contains("ağ yolu bulunamadı"))
+        {
+            return new RemoteOutputDiagnosis(
+                "host-unreachable",
+                "Ag yolu bulunamadi (SMB/445 erisilemiyor veya host dusmus).",
+                true);
+        }
+
+        if (lower.Contains("the specified service does not exist") ||
+            lower.Contains("1060") ||
+            lower.Contains("belirtilen hizmet mevcut degil") ||
+            lower.Contains("belirtilen hizmet mevcut değil"))
+        {
+            return new RemoteOutputDiagnosis(
+                "service-missing",
+                "Hedef makinede agent servisi yuklu degil (sc 1060).",
+                true);
+        }
+
+        if (lower.Contains("logon failure") ||
+            lower.Contains("oturum acma basarisiz") ||
+            lower.Contains("oturum açma başarısız"))
+        {
+            return new RemoteOutputDiagnosis(
+                "auth-failed",
+                "Kimlik dogrulama basarisiz — domain/lokal admin kimligi gerekiyor.",
+                true);
+        }
+
+        if (lower.Contains("the rpc server is too busy"))
+        {
+            return new RemoteOutputDiagnosis("rpc-busy", "RPC sunucusu mesgul, tekrar denenebilir.", false);
+        }
+
+        return new RemoteOutputDiagnosis("failed", ShortenOutput(output), false);
+    }
+
+    private sealed record RemoteOutputDiagnosis(string Status, string Message, bool IsHardFailure);
+
     private async Task<RemoteServiceStartAttempt> TryStartWithScheduledTaskAsync(string ipAddress, CancellationToken cancellationToken)
     {
         var remoteBatPath = $@"\\{ipAddress}\C$\temp\mudo_start_agent_service.bat";
         var localBatPath = Path.Combine(Path.GetTempPath(), $"mudo_start_agent_service_{ipAddress.Replace('.', '_')}.bat");
-        var taskName = $"MudoSoftStartAgent_{ipAddress.Replace('.', '_')}";
+        var taskName = $"OrchestraStartAgent_{ipAddress.Replace('.', '_')}";
         var remoteLogPath = $@"\\{ipAddress}\C$\temp\mudo_start_agent_service.log";
         var batContent = BuildRemoteServiceRepairBatch();
 
@@ -563,10 +709,11 @@ try {{
                 };
             }
 
+            var fallbackDiag = ClassifyRemoteOutput(output);
             return new RemoteServiceStartAttempt
             {
-                Status = "failed",
-                Message = ShortenOutput(output),
+                Status = fallbackDiag.Status == "failed" ? "start-failed" : fallbackDiag.Status,
+                Message = fallbackDiag.Message,
                 StartIssued = false,
                 RunningConfirmed = false
             };
@@ -689,7 +836,7 @@ try {{
             "  sc config %SVC% binPath= \"\\\"%EXE%\\\" --service\" start= delayed-auto obj= LocalSystem >> \"%LOG%\" 2>&1\r\n" +
             ")\r\n" +
             $"reg add \"HKLM\\SYSTEM\\CurrentControlSet\\Services\\{AgentServiceName}\" /v DelayedAutoStart /t REG_DWORD /d 1 /f >> \"%LOG%\" 2>&1\r\n" +
-            "sc description %SVC% \"MudoSoft Remote Management Agent\" >> \"%LOG%\" 2>&1\r\n" +
+            "sc description %SVC% \"Orchestra Agent\" >> \"%LOG%\" 2>&1\r\n" +
             "sc failure %SVC% reset= 86400 actions= restart/5000/restart/10000/restart/30000 >> \"%LOG%\" 2>&1\r\n" +
             "net start %SVC% >> \"%LOG%\" 2>&1\r\n" +
             "sc query %SVC% >> \"%LOG%\" 2>&1\r\n";

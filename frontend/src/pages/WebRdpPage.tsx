@@ -6,7 +6,7 @@ import { API_BASE_URL, apiClient } from "../lib/apiClient";
 import {
     ArrowLeft, Maximize2, Minimize2,
     Clipboard, Loader2, Monitor,
-    Camera, Settings, Upload, Download, Keyboard,
+    Camera, Settings, Upload, Download, Keyboard, Wrench,
 } from "lucide-react";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -73,6 +73,10 @@ export default function WebRdpPage() {
     const [retryKey, setRetryKey] = useState(0);
     const reconnectCountRef = useRef(0);
     const MAX_RECONNECT = 3;
+
+    // VNC onar (agent uzerinden)
+    const [repairing, setRepairing] = useState(false);
+    const [repairMsg, setRepairMsg] = useState<string | null>(null);
 
     // Session timer
     const [elapsedSeconds, setElapsedSeconds] = useState(0);
@@ -654,8 +658,48 @@ export default function WebRdpPage() {
                                         <p className="text-sm text-red-400">{errorMsg}</p>
                                     </div>
                                 )}
+                                {repairMsg && (
+                                    <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-xl p-3 max-h-72 overflow-auto">
+                                        <pre className="text-[11px] text-emerald-200 font-mono whitespace-pre-wrap text-left">{repairMsg}</pre>
+                                    </div>
+                                )}
+                                {/* VNC port erisilemiyorsa onar butonunu goster */}
+                                {(errorMsg.toLowerCase().includes("vnc port") || errorMsg.toLowerCase().includes("erisilebilir")) && deviceId && (
+                                    <button
+                                        onClick={async () => {
+                                            setRepairing(true); setRepairMsg("Onar komutu agent'a gonderildi, sonuc bekleniyor...");
+                                            try {
+                                                const resp = await apiClient.post<{ commandId: string }>(`/api/agent/vnc-install/${deviceId}`, {});
+                                                const commandId = resp?.commandId;
+                                                const deadline = Date.now() + 90_000;
+                                                let result: { success: boolean; output: string } | null = null;
+                                                while (Date.now() < deadline) {
+                                                    await new Promise(r => setTimeout(r, 3000));
+                                                    try {
+                                                        const r = await apiClient.get<{ success: boolean; output: string }>(`/api/agent/command-results/${commandId}`);
+                                                        if (r && (r as any).output) { result = r; break; }
+                                                    } catch { /* 404 = hala bekliyor */ }
+                                                }
+                                                if (result) {
+                                                    setRepairMsg((result.success ? "Onar OK: " : "Onar BASARISIZ: ") + result.output);
+                                                } else {
+                                                    setRepairMsg("90sn icinde sonuc dönmedi. Cihaz offline olabilir.");
+                                                }
+                                            } catch (e: any) {
+                                                setRepairMsg("Onar komutu yollanamadi: " + (e?.message || "bilinmeyen hata"));
+                                            } finally {
+                                                setRepairing(false);
+                                            }
+                                        }}
+                                        disabled={repairing}
+                                        className="w-full px-4 py-2 bg-amber-600 hover:bg-amber-500 disabled:opacity-50 text-white text-sm font-medium rounded-xl transition-colors flex items-center justify-center gap-2"
+                                    >
+                                        {repairing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Wrench className="w-4 h-4" />}
+                                        VNC Onar (agent uzerinden)
+                                    </button>
+                                )}
                                 <div className="flex gap-2">
-                                    <button onClick={() => { reconnectCountRef.current = 0; setRetryKey(k => k + 1); }}
+                                    <button onClick={() => { reconnectCountRef.current = 0; setRetryKey(k => k + 1); setRepairMsg(null); }}
                                         className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium rounded-xl transition-colors">
                                         Tekrar Dene
                                     </button>

@@ -33,6 +33,14 @@ public class AgentService : IAgentService
 
         if (device == null)
         {
+            // Cihaz silinmis ama UninstallAgent komutu hala kuyrukta bekliyorsa,
+            // aradaki heartbeat ile cihazi yeniden olusturma — listeden temizli kalmali.
+            if (_queue.HasPendingCommand(dto.DeviceId, CommandType.UninstallAgent))
+            {
+                _logger.LogInformation("Heartbeat {DeviceId} icin tombstone — UninstallAgent pending, cihaz yeniden olusturulmadi.", dto.DeviceId);
+                return;
+            }
+
             device = new Device
             {
                 Id = dto.DeviceId,

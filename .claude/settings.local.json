@@ -97,7 +97,14 @@
       "Bash(curl -L -o /e/Mudosoft/agent/tools/tightvnc.msi \"https://www.tightvnc.com/download/2.8.85/tightvnc-2.8.85-gpl-setup-64bit.msi\")",
       "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://10.0.210.99:5102/api/devices)",
       "Bash(dotnet add:*)",
-      "Bash(echo \"EXIT=$?\")"
+      "Bash(echo \"EXIT=$?\")",
+      "Bash(where msedge *)",
+      "Read(//c/Program Files \\(x86\\)/Microsoft/Edge/Application/**)",
+      "Read(//c/Program Files/Microsoft/Edge/Application/**)",
+      "PowerShell(Get-Process dotnet -ErrorAction SilentlyContinue | ForEach-Object { try { $cl = \\(Get-CimInstance Win32_Process -Filter \"ProcessId=$\\($_.Id\\)\"\\).CommandLine; [pscustomobject]@{ Id=$_.Id; StartTime=$_.StartTime; Cmd=$cl } } catch {} } | Format-Table -Wrap -AutoSize)",
+      "Bash(findstr :5173)",
+      "Bash(export PGPASSWORD=$\\(grep '^DB_PASSWORD=' .env)",
+      "PowerShell($z = [System.IO.Compression.ZipFile]::OpenRead\\(\"E:\\\\Mudosoft\\\\backend\\\\updates\\\\MudoSoft.Agent_1.0.0.70.zip\"\\); $z.Entries | Select-Object -First 10 FullName, Length; $z.Dispose\\(\\))"
     ],
     "additionalDirectories": [
       "E:\\Mudosoft\\agent\\deploy"

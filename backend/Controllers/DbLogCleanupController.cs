@@ -17,17 +17,20 @@ namespace Orchestra.Backend.Controllers
         private readonly IRemoteSqlService _remoteSqlService;
         private readonly ILogger<DbLogCleanupController> _logger;
         private readonly FastSqlReachabilityService _fastCheck;
+        private readonly ActivityLogService _activity;
 
         public DbLogCleanupController(
             OrchestraDbContext db,
             IRemoteSqlService remoteSqlService,
             FastSqlReachabilityService fastCheck,
-            ILogger<DbLogCleanupController> logger)
+            ILogger<DbLogCleanupController> logger,
+            ActivityLogService activity)
         {
             _db = db;
             _remoteSqlService = remoteSqlService;
             _fastCheck = fastCheck;
             _logger = logger;
+            _activity = activity;
         }
 
         public class DbLogStatusDto
@@ -160,10 +163,12 @@ namespace Orchestra.Backend.Controllers
                 await _remoteSqlService.ExecuteQueryAsync(device.DbConnectionString, query);
 
                 _logger.LogInformation("EXPORT_LOG and EXPORT_ERR_LOG truncated: {DeviceId} ({StoreName})", device.DeviceId, device.StoreName);
+                await _activity.LogAsync("Cleanup", "DbLogCleanSingle", $"{device.StoreName} ({device.DeviceId})", "EXPORT_LOG + EXPORT_ERR_LOG truncate");
                 return Ok(new { success = true, message = $"{device.StoreName} log tabloları temizlendi." });
             }
             catch (Exception ex)
             {
+                await _activity.LogAsync("Cleanup", "DbLogCleanSingle", $"{device.StoreName} ({device.DeviceId})", null, false, ex.Message);
                 return BadRequest(new { error = ex.Message });
             }
         }
@@ -213,6 +218,9 @@ namespace Orchestra.Backend.Controllers
             });
 
             await Task.WhenAll(tasks);
+
+            var cleanedCount = results.Count(r => ((dynamic)r).status == "cleaned");
+            await _activity.LogAsync("Cleanup", "DbLogCleanAll", null, $"{cleanedCount}/{pcDevices.Count} PC temizlendi");
 
             return Ok(new { success = true, total = pcDevices.Count, details = results });
         }

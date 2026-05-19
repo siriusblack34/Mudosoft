@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { formatDistanceToNow } from 'date-fns';
@@ -22,11 +22,14 @@ import {
   Trash2,
   Wifi,
   WifiOff,
+  Eye,
+  EyeOff,
 } from 'lucide-react';
 import { apiClient } from '../lib/apiClient';
 import type {
   DeviceOfflineExclusionResponse,
   DeviceTemporaryCloseResponse,
+  StartOfflineServiceResult,
   StartOfflineServicesResponse,
 } from '../lib/apiClient';
 import type { Device } from '../types';
@@ -54,6 +57,8 @@ const DevicesPage: React.FC = () => {
   const [busyDeviceId, setBusyDeviceId] = useState<string | null>(null);
   const [contextMenu, setContextMenu] = useState<ContextMenuState>(null);
   const [actionMessage, setActionMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
+  const [offlineJob, setOfflineJob] = useState<StartOfflineServicesResponse | null>(null);
+  const activeJobIdRef = useRef<string | null>(null);
 
   const loadDevices = async (silent = false) => {
     try {
@@ -215,38 +220,57 @@ const DevicesPage: React.FC = () => {
   const handleStartOfflineServices = async () => {
     setStartingOfflineServices(true);
     setActionMessage(null);
+    setOfflineJob(null);
+    activeJobIdRef.current = null;
 
     try {
       const result = await apiClient.startOfflineServices();
       setActionMessage(buildStartServiceMessage(result));
+      setOfflineJob(result);
       await loadDevices(true);
 
       if (!result.jobId) {
         return;
       }
 
-      let attempts = 0;
+      activeJobIdRef.current = result.jobId;
+
       const poll = async () => {
-        attempts += 1;
+        // Yeni bir job baslatildiysa eski poll'u dusur
+        if (activeJobIdRef.current !== result.jobId) {
+          return;
+        }
 
         try {
           const latest = await apiClient.getOfflineServiceStartStatus(result.jobId!);
+
+          if (activeJobIdRef.current !== result.jobId) {
+            return;
+          }
+
+          setOfflineJob(latest);
           setActionMessage(buildStartServiceMessage(latest));
           await loadDevices(true);
 
-          if (!latest.completedAtUtc && attempts < 6) {
+          if (!latest.completedAtUtc) {
             window.setTimeout(() => {
               void poll();
-            }, 5000);
+            }, 4000);
           }
         } catch (pollErr) {
           console.error(pollErr);
+          // Tek bir hatada vazgecme — birkac saniye sonra tekrar dene
+          if (activeJobIdRef.current === result.jobId) {
+            window.setTimeout(() => {
+              void poll();
+            }, 6000);
+          }
         }
       };
 
       window.setTimeout(() => {
         void poll();
-      }, 5000);
+      }, 4000);
     } catch (err) {
       console.error(err);
       setActionMessage({
@@ -336,6 +360,30 @@ const DevicesPage: React.FC = () => {
       console.error(err);
       setActionMessage({
         text: err instanceof Error ? err.message : 'Gecici kapalilik durumu guncellenemedi.',
+        type: 'error',
+      });
+    } finally {
+      setBusyDeviceId(null);
+      setContextMenu(null);
+    }
+  };
+
+  const handleToggleVisibility = async (device: Device) => {
+    setBusyDeviceId(device.id);
+    setActionMessage(null);
+    try {
+      const next = !device.hiddenForNonAdmins;
+      const result = await apiClient.setDeviceVisibility(device.id, next);
+      patchDevice(device.id, (current) => ({ ...current, hiddenForNonAdmins: result.hiddenForNonAdmins }));
+      setActionMessage({
+        text: result.hiddenForNonAdmins
+          ? `${device.storeName || device.hostname} sadece adminlere görünecek.`
+          : `${device.storeName || device.hostname} tüm kullanıcılara görünür.`,
+        type: 'success',
+      });
+    } catch (err) {
+      setActionMessage({
+        text: err instanceof Error ? err.message : 'Görünürlük güncellenemedi.',
         type: 'error',
       });
     } finally {
@@ -562,6 +610,10 @@ const DevicesPage: React.FC = () => {
         </div>
       )}
 
+      {offlineJob && (
+        <OfflineJobPanel job={offlineJob} onClose={() => setOfflineJob(null)} />
+      )}
+
       {loading ? (
         <div className="flex items-center justify-center py-32">
           <div className="w-8 h-8 border-2 border-sky-500 border-t-transparent rounded-full animate-spin" />
@@ -636,6 +688,11 @@ const DevicesPage: React.FC = () => {
                             <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${deviceIsKasa ? 'bg-amber-500/10 text-amber-400' : 'bg-sky-500/10 text-sky-400'}`}>
                               {deviceIsKasa ? 'Kasa' : 'PC'}
                             </span>
+                            {device.hiddenForNonAdmins && isAdmin && (
+                              <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded font-medium bg-purple-500/10 text-purple-300 border border-purple-500/20" title="Sadece admin görür">
+                                <EyeOff className="w-3 h-3" /> Admin
+                              </span>
+                            )}
                             {device.isTemporarilyClosed && (
                               <span className="text-[10px] px-1.5 py-0.5 rounded font-medium bg-amber-500/10 text-amber-300 border border-amber-500/20">
                                 Kapali
@@ -778,6 +835,14 @@ const DevicesPage: React.FC = () => {
               busy={busyDeviceId === contextDevice.id}
               onClick={() => { void handleToggleOfflineExclusion(contextDevice); }}
             />
+            {isAdmin && (
+              <ContextMenuButton
+                icon={contextDevice.hiddenForNonAdmins ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
+                label={contextDevice.hiddenForNonAdmins ? 'Herkese Göster' : 'Sadece Admin Görsün'}
+                busy={busyDeviceId === contextDevice.id}
+                onClick={() => { void handleToggleVisibility(contextDevice); }}
+              />
+            )}
             {isAdmin && !contextDevice.online && (
               <ContextMenuButton
                 icon={<Trash2 className="h-4 w-4" />}
@@ -793,6 +858,150 @@ const DevicesPage: React.FC = () => {
     </div>
   );
 };
+
+type StatusTone = 'ok' | 'warn' | 'err' | 'mute';
+
+const STATUS_META: Record<string, { label: string; tone: StatusTone }> = {
+  queued: { label: 'Sirada', tone: 'mute' },
+  pinging: { label: 'Pingleniyor', tone: 'mute' },
+  starting: { label: 'Baslatiliyor', tone: 'mute' },
+  running: { label: 'Baslatildi', tone: 'ok' },
+  'already-running': { label: 'Zaten calisiyor', tone: 'ok' },
+  unreachable: { label: 'Ping yok', tone: 'err' },
+  'access-denied': { label: 'Yetki yok', tone: 'warn' },
+  'rpc-unavailable': { label: 'RPC kapali', tone: 'warn' },
+  'host-unreachable': { label: 'Ag yolu yok', tone: 'warn' },
+  'service-missing': { label: 'Agent yok', tone: 'warn' },
+  'auth-failed': { label: 'Kimlik hatasi', tone: 'warn' },
+  'rpc-busy': { label: 'RPC mesgul', tone: 'warn' },
+  'start-failed': { label: 'Baslatma basarisiz', tone: 'err' },
+  failed: { label: 'Hata', tone: 'err' },
+  error: { label: 'Istisna', tone: 'err' },
+  unknown: { label: 'Bilinmiyor', tone: 'mute' },
+};
+
+const TONE_CLASSES: Record<StatusTone, string> = {
+  ok: 'bg-emerald-500/10 text-emerald-300 border-emerald-500/30',
+  warn: 'bg-amber-500/10 text-amber-300 border-amber-500/30',
+  err: 'bg-rose-500/10 text-rose-300 border-rose-500/30',
+  mute: 'bg-slate-700/30 text-slate-300 border-slate-700/40',
+};
+
+const statusMeta = (status: string) =>
+  STATUS_META[status] ?? { label: status || '-', tone: 'mute' as StatusTone };
+
+const StatusBadge: React.FC<{ status: string }> = ({ status }) => {
+  const meta = statusMeta(status);
+  return (
+    <span className={`inline-block whitespace-nowrap rounded-md border px-2 py-0.5 text-[11px] font-medium ${TONE_CLASSES[meta.tone]}`}>
+      {meta.label}
+    </span>
+  );
+};
+
+const OfflineJobPanel: React.FC<{
+  job: StartOfflineServicesResponse;
+  onClose: () => void;
+}> = ({ job, onClose }) => {
+  const completed = !!job.completedAtUtc;
+  const groups = job.results.reduce<Record<string, number>>((acc, r) => {
+    acc[r.status] = (acc[r.status] ?? 0) + 1;
+    return acc;
+  }, {});
+  const groupEntries = Object.entries(groups).sort(([, a], [, b]) => b - a);
+
+  return (
+    <div className="rounded-2xl border border-slate-700/60 bg-slate-900/40 px-4 py-3 text-sm">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          {!completed && <RefreshCw className="h-4 w-4 animate-spin text-amber-300" />}
+          <span className="font-medium text-slate-200">
+            Offline servis baslatma {completed ? 'tamamlandi' : 'devam ediyor'}
+          </span>
+          {job.jobId && <span className="text-xs text-slate-500">#{job.jobId}</span>}
+        </div>
+        <button
+          type="button"
+          onClick={onClose}
+          className="text-xs text-slate-400 hover:text-slate-200"
+        >
+          Kapat
+        </button>
+      </div>
+
+      <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-5">
+        <Stat label="Hedef" value={job.totalOffline} />
+        <Stat label="Islenen" value={job.attempted} total={job.totalOffline} />
+        <Stat label="Pinglendi" value={job.pingReachable} />
+        <Stat label="Komut gonderildi" value={job.startIssued} />
+        <Stat label="Calistigi dogrulandi" value={job.runningConfirmed} tone="ok" />
+      </div>
+
+      {groupEntries.length > 0 && (
+        <div className="mt-3 flex flex-wrap gap-1.5">
+          {groupEntries.map(([status, count]) => (
+            <span
+              key={status}
+              className={`inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[11px] ${TONE_CLASSES[statusMeta(status).tone]}`}
+            >
+              <span>{statusMeta(status).label}</span>
+              <span className="font-semibold">{count}</span>
+            </span>
+          ))}
+        </div>
+      )}
+
+      {job.results.length > 0 && (
+        <details className="mt-3" open={completed}>
+          <summary className="cursor-pointer select-none text-xs text-slate-300 hover:text-white">
+            Cihaz detaylari ({job.results.length})
+          </summary>
+          <div className="mt-2 max-h-80 overflow-y-auto rounded-lg border border-slate-800">
+            <table className="w-full text-xs">
+              <thead className="bg-slate-800/80 text-slate-300 sticky top-0">
+                <tr>
+                  <th className="px-2 py-1.5 text-left font-medium">Magaza</th>
+                  <th className="px-2 py-1.5 text-left font-medium">Hostname</th>
+                  <th className="px-2 py-1.5 text-left font-medium">IP</th>
+                  <th className="px-2 py-1.5 text-left font-medium">Durum</th>
+                  <th className="px-2 py-1.5 text-left font-medium">Aciklama</th>
+                </tr>
+              </thead>
+              <tbody>
+                {job.results.map((r: StartOfflineServiceResult) => (
+                  <tr key={r.deviceId} className="border-t border-slate-800/60">
+                    <td className="px-2 py-1.5 text-slate-400">{r.storeCode || '-'}</td>
+                    <td className="px-2 py-1.5 text-slate-200">{r.hostname}</td>
+                    <td className="px-2 py-1.5 font-mono text-slate-400">{r.ipAddress}</td>
+                    <td className="px-2 py-1.5"><StatusBadge status={r.status} /></td>
+                    <td className="px-2 py-1.5 text-slate-400" title={r.message}>
+                      {r.message}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </details>
+      )}
+    </div>
+  );
+};
+
+const Stat: React.FC<{ label: string; value: number; total?: number; tone?: StatusTone }> = ({
+  label,
+  value,
+  total,
+  tone = 'mute',
+}) => (
+  <div className={`rounded-lg border px-2 py-1.5 ${TONE_CLASSES[tone]}`}>
+    <div className="text-[10px] uppercase tracking-wide opacity-70">{label}</div>
+    <div className="text-base font-semibold">
+      {value}
+      {total !== undefined && <span className="ml-1 text-xs opacity-60">/ {total}</span>}
+    </div>
+  </div>
+);
 
 const ContextMenuButton = ({
   icon,

@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { useLocation } from 'react-router-dom';
 import { Bell, Sun, Moon, Wifi, WifiOff } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
@@ -30,9 +30,17 @@ const Topbar: React.FC = () => {
   const { fullName, role } = useAuth();
   const [backendStatus, setBackendStatus] = useState<'connected' | 'disconnected' | 'checking'>('checking');
 
+  // En az 2 ardışık aşımdan sonra disconnected gösteriyoruz — tek bir blip kırmızı yapmasın
+  const failureCountRef = useRef(0);
   const checkBackend = useCallback(async () => {
     const ok = await apiClient.checkBackendHealth();
-    setBackendStatus(ok ? 'connected' : 'disconnected');
+    if (ok) {
+      failureCountRef.current = 0;
+      setBackendStatus('connected');
+    } else {
+      failureCountRef.current += 1;
+      if (failureCountRef.current >= 2) setBackendStatus('disconnected');
+    }
   }, []);
 
   useEffect(() => {

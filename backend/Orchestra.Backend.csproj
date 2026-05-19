@@ -20,9 +20,12 @@
     <PackageReference Include="Npgsql" Version="8.0.3" />
     <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="8.0.0" />
     <PackageReference Include="BCrypt.Net-Next" Version="4.0.3" />
+    <PackageReference Include="ClosedXML" Version="0.102.2" />
     <PackageReference Include="Swashbuckle.AspNetCore" Version="6.4.0" />
     <PackageReference Include="Microsoft.Data.SqlClient" Version="5.2.0" />
     <PackageReference Include="System.Management" Version="8.0.0" />
+    <PackageReference Include="System.Diagnostics.EventLog" Version="8.0.0" />
+    <PackageReference Include="Novell.Directory.Ldap.NETStandard" Version="3.6.0" />
   </ItemGroup>
 
   <ItemGroup>

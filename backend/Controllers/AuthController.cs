@@ -6,6 +6,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Orchestra.Backend.Data;
 using Orchestra.Backend.Models;
+using Orchestra.Backend.Services;
 
 namespace Orchestra.Backend.Controllers;
 
@@ -16,17 +17,19 @@ public class AuthController : ControllerBase
     private readonly IConfiguration _configuration;
     private readonly ILogger<AuthController> _logger;
     private readonly OrchestraDbContext _db;
+    private readonly ILdapAuthService _ldap;
 
     // Account lockout: IP bazlı başarısız giriş takibi
     private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, (int count, DateTime lastAttempt)> _failedAttempts = new();
     private const int MaxFailedAttempts = 5;
     private static readonly TimeSpan LockoutDuration = TimeSpan.FromMinutes(15);
 
-    public AuthController(IConfiguration configuration, ILogger<AuthController> logger, OrchestraDbContext db)
+    public AuthController(IConfiguration configuration, ILogger<AuthController> logger, OrchestraDbContext db, ILdapAuthService ldap)
     {
         _configuration = configuration;
         _logger = logger;
         _db = db;
+        _ldap = ldap;
     }
 
     [HttpPost("login")]
@@ -49,10 +52,68 @@ public class AuthController : ControllerBase
             return StatusCode(429, new { error = $"Çok fazla başarısız deneme. {remaining} dakika sonra tekrar deneyin." });
         }
 
-        // DB'den kullanıcı ara
+        // Hibrit akış: UseLdap=true ise önce LDAP'ı dene, başarısızsa lokal DB'ye düş
+        if (request.UseLdap && _ldap.IsEnabled)
+        {
+            var ldapResult = await _ldap.AuthenticateAsync(request.Username.Trim(), request.Password);
+            if (ldapResult.Success)
+            {
+                // LDAP'ta var ama Orchestra DB'de yoksa just-in-time provision et
+                var ldapUser = await _db.Users.FirstOrDefaultAsync(u => u.Username == username);
+                if (ldapUser == null)
+                {
+                    ldapUser = new User
+                    {
+                        Username = username,
+                        PasswordHash = string.Empty,
+                        Role = _configuration["Ldap:DefaultRole"] ?? "Teknisyen",
+                        FullName = ldapResult.DisplayName ?? username,
+                        Email = ldapResult.Email,
+                        IsActive = true,
+                        IsLdapUser = true
+                    };
+                    _db.Users.Add(ldapUser);
+                    await _db.SaveChangesAsync(); // Id atanmalı ki LoginHistory.UserId doğru yazılsın
+                    _logger.LogInformation("LDAP JIT-provisioned new user: {Username} (Id={Id})", username, ldapUser.Id);
+                }
+                else if (!ldapUser.IsActive)
+                {
+                    _logger.LogWarning("LDAP login blocked (user inactive): {Username}", username);
+                    return Unauthorized(new { error = "Hesabınız pasif durumda" });
+                }
+
+                _failedAttempts.TryRemove(lockoutKey, out _);
+                ldapUser.LastLoginAt = DateTime.UtcNow;
+                _db.LoginHistories.Add(new LoginHistory
+                {
+                    UserId = ldapUser.Id,
+                    Username = ldapUser.Username,
+                    IpAddress = ip,
+                    Success = true
+                });
+                await _db.SaveChangesAsync();
+
+                var token = GenerateJwtToken(ldapUser.Username, ldapUser.Role, ldapUser.Id);
+                _logger.LogInformation("Login OK (LDAP): {Username} ({Role}) from {IP}", ldapUser.Username, ldapUser.Role, ip);
+
+                return Ok(new LoginResponse
+                {
+                    Token = token,
+                    ExpiresAt = DateTime.UtcNow.AddHours(8),
+                    Username = ldapUser.Username,
+                    Role = ldapUser.Role,
+                    FullName = ldapUser.FullName
+                });
+            }
+            // LDAP başarısız → hibrit politika: lokal DB'ye düş (aşağıdaki akış)
+            _logger.LogInformation("LDAP auth failed for {User}, falling back to local DB ({Reason})", username, ldapResult.FailureReason);
+        }
+
+        // DB'den kullanıcı ara (lokal akış — LDAP user'lar bu yola düşmemeli)
         var user = await _db.Users.FirstOrDefaultAsync(u => u.Username == username && u.IsActive);
 
-        if (user != null && BCrypt.Net.BCrypt.Verify(request.Password, user.PasswordHash))
+        if (user != null && !user.IsLdapUser && !string.IsNullOrEmpty(user.PasswordHash)
+            && BCrypt.Net.BCrypt.Verify(request.Password, user.PasswordHash))
         {
             // Başarılı giriş — lockout sayacını sıfırla
             _failedAttempts.TryRemove(lockoutKey, out _);
@@ -271,6 +332,7 @@ public class LoginRequest
 {
     public string Username { get; set; } = string.Empty;
     public string Password { get; set; } = string.Empty;
+    public bool UseLdap { get; set; } = false;
 }
 
 public class AgentAuthRequest

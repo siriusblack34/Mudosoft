@@ -18,6 +18,7 @@ namespace Orchestra.Backend.Controllers
         private readonly IRemoteSqlService _remoteSqlService;
         private readonly ILogger<StockCleanupController> _logger;
         private readonly FastSqlReachabilityService _fastCheck;
+        private readonly ActivityLogService _activity;
 
         private static readonly ConcurrentDictionary<string, CleanAllJob> _cleanAllJobs = new();
 
@@ -25,12 +26,14 @@ namespace Orchestra.Backend.Controllers
             OrchestraDbContext db,
             IRemoteSqlService remoteSqlService,
             FastSqlReachabilityService fastCheck,
-            ILogger<StockCleanupController> logger)
+            ILogger<StockCleanupController> logger,
+            ActivityLogService activity)
         {
             _db = db;
             _remoteSqlService = remoteSqlService;
             _fastCheck = fastCheck;
             _logger = logger;
+            _activity = activity;
         }
 
         public class StockStatusDto
@@ -190,10 +193,12 @@ namespace Orchestra.Backend.Controllers
                 await _remoteSqlService.ExecuteQueryAsync(device.DbConnectionString, query);
 
                 _logger.LogInformation("POS_STOCK_TRANSFER truncated: {DeviceId} ({StoreName})", device.DeviceId, device.StoreName);
+                await _activity.LogAsync("Cleanup", "StockCleanSingle", $"{device.StoreName} ({device.DeviceId})", "POS_STOCK_TRANSFER truncate");
                 return Ok(new { success = true, message = $"{device.StoreName} tablosu temizlendi." });
             }
             catch (Exception ex)
             {
+                await _activity.LogAsync("Cleanup", "StockCleanSingle", $"{device.StoreName} ({device.DeviceId})", null, false, ex.Message);
                 return BadRequest(new { error = ex.Message });
             }
         }
@@ -220,6 +225,7 @@ namespace Orchestra.Backend.Controllers
             _ = Task.Run(() => ProcessCleanAllJobAsync(jobId, scopeFactory));
 
             _logger.LogInformation("Stock clean-all job queued: JobId={JobId} TargetCount={Count}", jobId, pcCount);
+            await _activity.LogAsync("Cleanup", "StockCleanAllStarted", jobId, $"{pcCount} PC kuyruga alindi");
             return Accepted(new { jobId, totalCount = pcCount });
         }
 

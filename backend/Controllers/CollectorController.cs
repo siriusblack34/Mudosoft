@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -5,7 +6,6 @@ using Orchestra.Backend.Data;
 using Orchestra.Backend.Models;
 using Orchestra.Backend.Services;
 using Orchestra.Shared.Dtos;
-using System.Text.Json;
 
 namespace Orchestra.Backend.Controllers;
 
@@ -16,19 +16,25 @@ public class CollectorController : ControllerBase
     private readonly OrchestraDbContext _db;
     private readonly ILogger<CollectorController> _logger;
     private readonly EventLogTranslationService _translator;
+    private readonly EventLogAnalysisService _analysisService;
+    private readonly IServiceProvider _services;
 
-    public CollectorController(OrchestraDbContext db, ILogger<CollectorController> logger, EventLogTranslationService translator)
+    public CollectorController(
+        OrchestraDbContext db,
+        ILogger<CollectorController> logger,
+        EventLogTranslationService translator,
+        EventLogAnalysisService analysisService,
+        IServiceProvider services)
     {
         _db = db;
         _logger = logger;
         _translator = translator;
+        _analysisService = analysisService;
+        _services = services;
     }
 
-    /// <summary>
-    /// Agent'lar collector sonuçlarını bu endpoint'e POST eder.
-    /// </summary>
     [HttpPost("collector-report")]
-    [AllowAnonymous] // Agent token ile doğrulama ileride eklenecek
+    [AllowAnonymous]
     public async Task<IActionResult> ReceiveReport([FromBody] CollectorReportDto report)
     {
         if (report.Results == null || report.Results.Count == 0)
@@ -48,21 +54,19 @@ public class CollectorController : ControllerBase
         _db.CollectorReports.AddRange(entities);
         await _db.SaveChangesAsync();
 
-        _logger.LogDebug("Received {Count} collector results from {DeviceId}",
-            entities.Count, report.DeviceId);
+        _logger.LogDebug("Received {Count} collector results from {DeviceId}", entities.Count, report.DeviceId);
 
         return Ok(new { saved = entities.Count });
     }
 
-    /// <summary>
-    /// Belirli bir cihazın son collector verilerini döndürür.
-    /// </summary>
     [HttpGet("collector-report/{deviceId}")]
     [Authorize]
     public async Task<IActionResult> GetLatest(string deviceId, [FromQuery] string? collector = null, [FromQuery] int limit = 50)
     {
+        var resolvedDeviceId = await ResolveCollectorDeviceIdAsync(deviceId);
+
         var query = _db.CollectorReports
-            .Where(r => r.DeviceId == deviceId)
+            .Where(r => r.DeviceId == resolvedDeviceId)
             .AsQueryable();
 
         if (!string.IsNullOrEmpty(collector))
@@ -85,19 +89,17 @@ public class CollectorController : ControllerBase
         return Ok(results);
     }
 
-    /// <summary>
-    /// Belirli bir cihazın her collector için son sonucunu döndürür.
-    /// </summary>
     [HttpGet("collector-report/{deviceId}/latest")]
     [Authorize]
     public async Task<IActionResult> GetLatestPerCollector(string deviceId)
     {
-        // Raw SQL ile PostgreSQL DISTINCT ON kullanarak her collector için son kaydı çek
+        var resolvedDeviceId = await ResolveCollectorDeviceIdAsync(deviceId);
+
         var results = await _db.CollectorReports
             .FromSqlInterpolated($@"
                 SELECT DISTINCT ON (""CollectorName"") *
                 FROM ""CollectorReports""
-                WHERE ""DeviceId"" = {deviceId}
+                WHERE ""DeviceId"" = {resolvedDeviceId}
                 ORDER BY ""CollectorName"", ""TimestampUtc"" DESC")
             .Select(r => new
             {
@@ -113,17 +115,16 @@ public class CollectorController : ControllerBase
         return Ok(results);
     }
 
-    /// <summary>
-    /// Belirli bir cihazın EventLog verilerini Türkçe çeviri ile döndürür.
-    /// </summary>
     [HttpGet("collector-report/{deviceId}/eventlogs")]
     [Authorize]
     public async Task<IActionResult> GetEventLogs(string deviceId, [FromQuery] int limit = 100)
     {
+        var resolvedDeviceId = await ResolveCollectorDeviceIdAsync(deviceId);
+
         var reports = await _db.CollectorReports
-            .Where(r => r.DeviceId == deviceId && r.CollectorName == "EventLog")
+            .Where(r => r.DeviceId == resolvedDeviceId && r.CollectorName == "EventLog")
             .OrderByDescending(r => r.TimestampUtc)
-            .Take(20) // Son 20 rapor (her biri 50 event içerebilir)
+            .Take(20)
             .Select(r => r.JsonData)
             .ToListAsync();
 
@@ -137,10 +138,11 @@ public class CollectorController : ControllerBase
                 if (entries != null)
                     allEntries.AddRange(entries);
             }
-            catch { }
+            catch
+            {
+            }
         }
 
-        // Çeviri uygula ve sırala
         var result = allEntries
             .OrderByDescending(e => e.TimeGenerated)
             .Take(limit)
@@ -154,5 +156,82 @@ public class CollectorController : ControllerBase
             .ToList();
 
         return Ok(result);
+    }
+
+    [HttpGet("collector-report/{deviceId}/eventlogs/analysis")]
+    [Authorize]
+    public async Task<IActionResult> GetEventLogAnalysis(string deviceId, [FromQuery] int hours = 24, [FromQuery] int limit = 200)
+    {
+        var resolvedDeviceId = await ResolveCollectorDeviceIdAsync(deviceId);
+        var analysis = await _analysisService.AnalyzeAsync(resolvedDeviceId, hours, limit);
+        return Ok(analysis);
+    }
+
+    /// <summary>
+    /// Hedef cihazin event log'unu backend'den dogrudan RPC ile ceker (agent gerekmez).
+    /// MudoSoft:Wmi domain credentials kullanir. Hem agentless cihazlar hem de fresh pull icin.
+    /// </summary>
+    [HttpPost("collector-report/{deviceId}/eventlogs/pull")]
+    [Authorize]
+    public async Task<IActionResult> PullEventLogs(string deviceId, [FromQuery] int hours = 24, CancellationToken ct = default)
+    {
+        if (!OperatingSystem.IsWindows())
+            return StatusCode(503, new { error = "Bu islem yalnizca Windows backend'de calisir." });
+
+        var pullService = _services.GetService<RemoteEventLogPullService>();
+        if (pullService == null)
+            return StatusCode(503, new { error = "RemoteEventLogPullService aktif degil." });
+
+        var result = await pullService.PullAsync(deviceId, hours, ct);
+        if (!result.Success)
+            return StatusCode(502, new { error = result.ErrorMessage, host = result.Host });
+
+        var analysis = await _analysisService.AnalyzeAsync(result.StoredAsDeviceId ?? deviceId, hours, 300);
+
+        return Ok(new
+        {
+            host = result.Host,
+            eventCount = result.EventCount,
+            storedAsDeviceId = result.StoredAsDeviceId,
+            partialErrors = result.PartialErrors,
+            analysis
+        });
+    }
+
+    private async Task<string> ResolveCollectorDeviceIdAsync(string requestedDeviceId)
+    {
+        if (string.IsNullOrWhiteSpace(requestedDeviceId))
+            return requestedDeviceId;
+
+        var hasDirectCollectorData = await _db.CollectorReports
+            .AsNoTracking()
+            .AnyAsync(r => r.DeviceId == requestedDeviceId);
+        if (hasDirectCollectorData)
+            return requestedDeviceId;
+
+        var exactAgentDevice = await _db.Devices
+            .AsNoTracking()
+            .AnyAsync(d => d.Id == requestedDeviceId);
+        if (exactAgentDevice)
+            return requestedDeviceId;
+
+        var storeDevice = await _db.StoreDevices
+            .AsNoTracking()
+            .Where(sd => sd.DeviceId == requestedDeviceId)
+            .Select(sd => new { sd.CalculatedIpAddress })
+            .FirstOrDefaultAsync();
+        if (storeDevice == null || string.IsNullOrWhiteSpace(storeDevice.CalculatedIpAddress))
+            return requestedDeviceId;
+
+        var matchedAgentDeviceId = await _db.Devices
+            .AsNoTracking()
+            .Where(d => d.IpAddress == storeDevice.CalculatedIpAddress)
+            .OrderByDescending(d => d.LastSeen)
+            .Select(d => d.Id)
+            .FirstOrDefaultAsync();
+
+        return string.IsNullOrWhiteSpace(matchedAgentDeviceId)
+            ? requestedDeviceId
+            : matchedAgentDeviceId;
     }
 }

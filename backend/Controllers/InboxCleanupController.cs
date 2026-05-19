@@ -15,6 +15,7 @@ namespace Orchestra.Backend.Controllers
     {
         private readonly OrchestraDbContext _db;
         private readonly ILogger<InboxCleanupController> _logger;
+        private readonly ActivityLogService _activity;
 
         private static readonly ConcurrentDictionary<string, CleanAllJob> _cleanAllJobs = new();
 
@@ -25,10 +26,12 @@ namespace Orchestra.Backend.Controllers
 
         public InboxCleanupController(
             OrchestraDbContext db,
-            ILogger<InboxCleanupController> logger)
+            ILogger<InboxCleanupController> logger,
+            ActivityLogService activity)
         {
             _db = db;
             _logger = logger;
+            _activity = activity;
         }
 
         // DTO
@@ -406,6 +409,8 @@ namespace Orchestra.Backend.Controllers
 
             var totalDeleted = del1 + del2 + del3 + del4;
             _logger.LogInformation("Inbox cleaned: {DeviceId} ({Ip}) - {Count} files", device.DeviceId, ip, totalDeleted);
+            await _activity.LogAsync("Cleanup", "InboxCleanSingle", $"{device.StoreName} ({device.DeviceId})",
+                $"{totalDeleted} dosya silindi", ct: ct);
             return Ok(new { success = true, deleted = totalDeleted, message = $"{device.StoreName} temizlendi ({totalDeleted} dosya)" });
         }
 
@@ -457,6 +462,10 @@ namespace Orchestra.Backend.Controllers
                         job.CompletedAtUtc = DateTime.UtcNow;
                     }
                     _logger.LogInformation("Clean-all job {JobId} tamamlandi: {Success}/{Total}", jobId, success, total);
+                    using var s2 = scopeFactory.CreateScope();
+                    var act = s2.ServiceProvider.GetRequiredService<ActivityLogService>();
+                    await act.LogAsync("Cleanup", "InboxCleanAll", jobId,
+                        $"{success}/{total} basarili");
                 }
                 catch (Exception ex)
                 {
@@ -466,9 +475,13 @@ namespace Orchestra.Backend.Controllers
                         job.CompletedAtUtc = DateTime.UtcNow;
                     }
                     _logger.LogError(ex, "Clean-all job {JobId} hata", jobId);
+                    using var s2 = scopeFactory.CreateScope();
+                    var act = s2.ServiceProvider.GetRequiredService<ActivityLogService>();
+                    await act.LogAsync("Cleanup", "InboxCleanAll", jobId, null, false, ex.Message);
                 }
             });
 
+            await _activity.LogAsync("Cleanup", "InboxCleanAllStarted", jobId, $"{pcCount} PC kuyruga alindi");
             return Accepted(new { jobId, totalCount = pcCount });
         }
 

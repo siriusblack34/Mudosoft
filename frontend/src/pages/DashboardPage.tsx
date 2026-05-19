@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import {
     Activity,
     AlertTriangle,
+    Gift,
     Globe,
     Laptop,
     Monitor,
@@ -15,7 +16,9 @@ import {
 import AgendaTopicsPanel from "../components/dashboard/AgendaTopicsPanel";
 import TurkeyStoreMap from "../components/dashboard/TurkeyStoreMap";
 import { useTheme } from "../contexts/ThemeContext";
-import { apiClient, SqlDeviceWithStatus, RouterClassification } from "../lib/apiClient";
+import { useAuth } from "../contexts/AuthContext";
+import { formatName, getBirthdayInfo, teamMembers } from "../lib/btTeam";
+import { apiClient, SqlDeviceWithStatus, RouterClassification, StoreServiceIncident } from "../lib/apiClient";
 
 /* ─── Types ─── */
 interface DashboardData {
@@ -167,6 +170,7 @@ function useAnimatedNumber(target: number, duration = 900) {
    ═══════════════════════════════════════════ */
 const DashboardPage: React.FC = () => {
     const { isDark } = useTheme();
+    const { isAdmin } = useAuth();
     const c = palette(isDark);
     const [data, setData] = useState<DashboardData | null>(null);
     const [sqlDevices, setSqlDevices] = useState<SqlDeviceWithStatus[]>(() => readSqlCache()?.items ?? []);
@@ -179,6 +183,8 @@ const DashboardPage: React.FC = () => {
     });
     const [dashboardError, setDashboardError] = useState<string | null>(null);
     const [sqlError, setSqlError] = useState<string | null>(null);
+    const [serviceError, setServiceError] = useState<string | null>(null);
+    const [serviceIncidents, setServiceIncidents] = useState<StoreServiceIncident[]>([]);
     const [mobileRouters, setMobileRouters] = useState<RouterClassification[]>([]);
     const [connectionView, setConnectionView] = useState<"grid" | "map">("grid");
     const [, setTick] = useState(0);
@@ -231,19 +237,29 @@ const DashboardPage: React.FC = () => {
         }
     }, []);
 
+    const loadServiceIncidents = useCallback(async () => {
+        setServiceError(null);
+        try {
+            const result = await apiClient.getActiveServiceIncidents();
+            setServiceIncidents(result);
+        } catch (error) {
+            setServiceError(error instanceof Error ? error.message : "Servis kesintileri alinamadi.");
+        }
+    }, []);
+
     useEffect(() => {
-        void Promise.all([loadDashboard(), loadSql(), loadRouterDiag()]);
-        const interval = window.setInterval(() => { void Promise.all([loadDashboard(), loadSql(), loadRouterDiag()]); }, 15000);
+        void Promise.all([loadDashboard(), loadSql(), loadRouterDiag(), loadServiceIncidents()]);
+        const interval = window.setInterval(() => { void Promise.all([loadDashboard(), loadSql(), loadRouterDiag(), loadServiceIncidents()]); }, 15000);
         return () => window.clearInterval(interval);
-    }, [loadDashboard, loadSql, loadRouterDiag]);
+    }, [loadDashboard, loadSql, loadRouterDiag, loadServiceIncidents]);
 
     useEffect(() => {
         const handleRefresh = () => {
-            void Promise.all([loadDashboard(), loadSql()]);
+            void Promise.all([loadDashboard(), loadSql(), loadServiceIncidents()]);
         };
         window.addEventListener("ms-dashboard-refresh", handleRefresh);
         return () => window.removeEventListener("ms-dashboard-refresh", handleRefresh);
-    }, [loadDashboard, loadSql]);
+    }, [loadDashboard, loadSql, loadServiceIncidents]);
 
     /* ─── Derived data (tek geçişte hesapla) ─── */
     const summary = data ?? EMPTY_DASHBOARD;
@@ -325,10 +341,12 @@ const DashboardPage: React.FC = () => {
     const activeStoreCount = stores.filter((s) => s.activePos > 0).length;
     const storePct = pct(liveStoreCount, activeStoreCount);
     const issueCount = criticalStores.length + watchStores.length;
+    const serviceIssueCount = serviceIncidents.length;
+    const criticalServiceIssueCount = serviceIncidents.filter((i) => i.severity?.toLowerCase() === "critical").length;
 
     // Gecici kapali magazalar bilinçli karar — alert seviyesini yükseltmez
-    const level = criticalStores.length > 0 || agentPct < 70 || sqlPct < 70 ? "critical"
-        : watchStores.length > 0 || agentPct < 90 || sqlPct < 90 ? "watch"
+    const level = criticalServiceIssueCount > 0 || criticalStores.length > 0 || agentPct < 70 || sqlPct < 70 ? "critical"
+        : serviceIssueCount > 0 || watchStores.length > 0 || agentPct < 90 || sqlPct < 90 ? "watch"
         : "stable";
 
     // Kesinti listesi: once gercek sorunlar, sonra kapalilar
@@ -346,6 +364,23 @@ const DashboardPage: React.FC = () => {
                 return tb - ta; // en yeni kapanan uste
             });
     }, [sqlDevices]);
+
+    const birthdayPanelMembers = useMemo(() => {
+        const todayBirthdays: Array<ReturnType<typeof getBirthdayInfo> & { no: string; name: string; surname: string; role: string }> = [];
+        const upcomingBirthdays: Array<ReturnType<typeof getBirthdayInfo> & { no: string; name: string; surname: string; role: string }> = [];
+
+        for (const member of teamMembers) {
+            const birthday = getBirthdayInfo(member.birthDate);
+            const enriched = { ...birthday, no: member.no, name: member.name, surname: member.surname, role: member.role };
+            if (birthday.isToday) todayBirthdays.push(enriched);
+            else if (birthday.daysUntil <= 30) upcomingBirthdays.push(enriched);
+        }
+
+        todayBirthdays.sort((a, b) => `${a.name} ${a.surname}`.localeCompare(`${b.name} ${b.surname}`, "tr"));
+        upcomingBirthdays.sort((a, b) => a.daysUntil - b.daysUntil || `${a.name} ${a.surname}`.localeCompare(`${b.name} ${b.surname}`, "tr"));
+
+        return [...todayBirthdays, ...upcomingBirthdays].slice(0, 6);
+    }, []);
 
     /* Donut data */
     const totalOnline = pcOnline + posOnline + routerOnline + geciciOnline;
@@ -420,9 +455,10 @@ const DashboardPage: React.FC = () => {
                             </span>
                         </div>
                         <p className="mt-1 text-sm" style={{ color: c.muted }}>
-                            {criticalStores.length > 0 ? `${criticalStores.length} mağazada tam kesinti var.`
-                                : watchStores.length > 0 ? `${watchStores.length} mağazada parçalı kayıp var.`
-                                : closedStores.length > 0 ? `Temiz. ${closedStores.length} mağaza planlı kapalı.`
+                            {serviceIssueCount > 0 ? `${serviceIssueCount} kritik servis alarmi var.`
+                                : criticalStores.length > 0 ? `${criticalStores.length} magazada tam kesinti var.`
+                                : watchStores.length > 0 ? `${watchStores.length} magazada parcali kayip var.`
+                                : closedStores.length > 0 ? `Temiz. ${closedStores.length} magaza planli kapali.`
                                 : "Temiz. Kritik aksiyon yok."}
                         </p>
                     </div>
@@ -431,6 +467,7 @@ const DashboardPage: React.FC = () => {
                         <SummaryPill c={c} label="Agent" value={`${agentPct}%`} color={c.sky} />
                         <SummaryPill c={c} label="SQL" value={`${sqlPct}%`} color={c.emerald} />
                         <SummaryPill c={c} label="Mağaza" value={`${storePct}%`} color={c.amber} />
+                        <SummaryPill c={c} label="Servis" value={serviceIssueCount} color={serviceIssueCount > 0 ? c.rose : c.emerald} />
                         <SummaryPill c={c} label="Offline" value={offlineDevices.length} color={offlineDevices.length > 0 ? c.rose : c.emerald} />
                         <div className="hidden h-5 w-px xl:block" style={{ background: c.border }} />
                         <div className="flex gap-2">
@@ -454,10 +491,11 @@ const DashboardPage: React.FC = () => {
             </section>
 
             {/* ═══ ERROR NOTICES ═══ */}
-            {(dashboardError || sqlError) && (
-                <div className="grid gap-3 xl:grid-cols-2">
+            {(dashboardError || sqlError || serviceError) && (
+                <div className="grid gap-3 xl:grid-cols-3">
                     {dashboardError && <Notice c={c} title="Agent özeti geç geldi" message={dashboardError} />}
                     {sqlError && <Notice c={c} title={sqlDevices.length > 0 ? "SQL matrisi cache gösteriyor" : "SQL matrisi bekleniyor"} message={sqlError} />}
+                    {serviceError && <Notice c={c} title="Servis kesintileri bekleniyor" message={serviceError} />}
                 </div>
             )}
 
@@ -591,6 +629,75 @@ const DashboardPage: React.FC = () => {
 
                 {/* ═══ RIGHT SIDEBAR ═══ */}
                 <div className="space-y-5">
+                    {false && (
+                    <GlassCard c={c}>
+                        <div className="mb-3 flex items-center justify-between">
+                            <div>
+                                <h3 className="text-sm font-semibold flex items-center gap-2" style={{ color: c.text }}>
+                                    <Gift className="h-4 w-4" style={{ color: c.amber }} />
+                                    BT Ekibi Doğum Günleri
+                                </h3>
+                                <p className="text-[10px]" style={{ color: c.muted }}>
+                                    Bugün olanlar ve 30 gün içindeki yaklaşan doğum günleri
+                                </p>
+                            </div>
+                            {birthdayPanelMembers.length > 0 && (
+                                <span
+                                    className="flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-[10px] font-bold text-white"
+                                    style={{ background: c.amber }}
+                                >
+                                    {birthdayPanelMembers.length}
+                                </span>
+                            )}
+                        </div>
+                        {birthdayPanelMembers.length === 0 ? (
+                            <div className="rounded-xl border border-dashed px-4 py-8 text-center" style={{ borderColor: c.borderStrong, background: c.cardSoft }}>
+                                <Gift className="mx-auto h-6 w-6" style={{ color: c.muted }} />
+                                <p className="mt-2 text-xs font-medium" style={{ color: c.text }}>Yaklaşan BT doğum günü görünmüyor</p>
+                                <p className="mt-1 text-[10px]" style={{ color: c.muted }}>Bir sonraki doğum günü 30 gün içinde olduğunda burada görünecek.</p>
+                            </div>
+                        ) : (
+                            <div className="space-y-2">
+                                {birthdayPanelMembers.map((member) => (
+                                    <div
+                                        key={member.no}
+                                        className="rounded-xl border px-3 py-2.5"
+                                        style={{
+                                            borderColor: member.isToday ? c.amberBorder : c.border,
+                                            background: member.isToday ? c.amberGlow : c.cardSoft,
+                                        }}
+                                    >
+                                        <div className="flex items-start justify-between gap-3">
+                                            <div className="min-w-0">
+                                                <div className="text-xs font-semibold" style={{ color: c.text }}>
+                                                    {formatName(member.name)} {formatName(member.surname)}
+                                                </div>
+                                                <div className="mt-0.5 text-[10px]" style={{ color: c.muted }}>
+                                                    {member.role}
+                                                </div>
+                                            </div>
+                                            <div
+                                                className="shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-semibold"
+                                                style={{
+                                                    color: member.isToday ? c.amber : c.sky,
+                                                    borderColor: member.isToday ? c.amberBorder : c.skyBorder,
+                                                    background: member.isToday ? c.amberSoft : c.skySoft,
+                                                }}
+                                            >
+                                                {member.shortLabel}
+                                            </div>
+                                        </div>
+                                        <div className="mt-2 flex items-center justify-between gap-3 text-[10px]" style={{ color: c.muted }}>
+                                            {isAdmin && <span>{member.nextBirthday.toLocaleDateString("tr-TR", { day: "2-digit", month: "long" })}</span>}
+                                            {isAdmin && <span>{member.isToday ? `${member.ageTurning} yaşında` : `${member.ageTurning} olacak`}</span>}
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </GlassCard>
+                    )}
+
                     {/* Mobil hatta gectigi tahmin edilen router'lar */}
                     {mobileRouters.length > 0 && (
                         <GlassCard c={c}>
@@ -688,22 +795,106 @@ const DashboardPage: React.FC = () => {
                     <GlassCard c={c}>
                         <div className="mb-4 flex items-center justify-between">
                             <h3 className="text-sm font-semibold" style={{ color: c.text }}>Kesinti & Kapalı Mağazalar</h3>
-                            {attention.length > 0 && <span className="flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-bold text-white" style={{ background: issueCount > 0 ? c.rose : c.sky }}>{attention.length}</span>}
+                            {(attention.length + serviceIssueCount) > 0 && <span className="flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-bold text-white" style={{ background: (issueCount + serviceIssueCount) > 0 ? c.rose : c.sky }}>{attention.length + serviceIssueCount}</span>}
                         </div>
-                        {attention.length === 0 ? (
+                        {attention.length === 0 && serviceIssueCount === 0 ? (
                             <div className="rounded-2xl border border-dashed px-5 py-10 text-center" style={{ borderColor: c.emeraldBorder, background: c.emeraldGlow }}>
                                 <ShieldCheck className="mx-auto h-8 w-8" style={{ color: c.emerald }} />
                                 <p className="mt-3 text-sm font-medium" style={{ color: c.text }}>Açık kesinti yok</p>
                                 <p className="mt-1 text-xs" style={{ color: c.muted }}>Tüm hatlar temiz görünüyor.</p>
                             </div>
                         ) : (
-                            <div className="space-y-2">
-                                {attention.map((store, i) => (
-                                    <StoreCard key={store.code} c={c} store={store} rank={i + 1} />
-                                ))}
+                            <div className="space-y-3">
+                                {serviceIssueCount > 0 && (
+                                    <div className="space-y-2">
+                                        <div className="flex items-center justify-between">
+                                            <span className="text-[11px] font-bold uppercase" style={{ color: c.rose }}>Servis Kesintileri</span>
+                                            <span className="text-[10px]" style={{ color: c.muted }}>{serviceIssueCount} aktif alarm</span>
+                                        </div>
+                                        <div className="space-y-2 max-h-[280px] overflow-auto scrollbar-thin scrollbar-thumb-slate-700 scrollbar-track-transparent">
+                                            {serviceIncidents.slice(0, 10).map((incident) => (
+                                                <ServiceIncidentRow key={incident.id} c={c} incident={incident} />
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+                                {attention.length > 0 && (
+                                    <div className="space-y-2">
+                                        {serviceIssueCount > 0 && <div className="h-px" style={{ background: c.border }} />}
+                                        {attention.map((store, i) => (
+                                            <StoreCard key={store.code} c={c} store={store} rank={i + 1} />
+                                        ))}
+                                    </div>
+                                )}
                             </div>
                         )}
                         <AgendaTopicsPanel c={c} />
+                        <div className="mt-4 border-t pt-4" style={{ borderColor: c.border }}>
+                            <div className="mb-3 flex items-center justify-between">
+                                <div>
+                                    <h3 className="text-sm font-semibold flex items-center gap-2" style={{ color: c.text }}>
+                                        <Gift className="h-4 w-4" style={{ color: c.amber }} />
+                                        BT Ekibi Doğum Günleri
+                                    </h3>
+                                    <p className="text-[10px]" style={{ color: c.muted }}>
+                                        Bugün olanlar ve 30 gün içindeki yaklaşan doğum günleri
+                                    </p>
+                                </div>
+                                {birthdayPanelMembers.length > 0 && (
+                                    <span
+                                        className="flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-[10px] font-bold text-white"
+                                        style={{ background: c.amber }}
+                                    >
+                                        {birthdayPanelMembers.length}
+                                    </span>
+                                )}
+                            </div>
+                            {birthdayPanelMembers.length === 0 ? (
+                                <div className="rounded-xl border border-dashed px-4 py-8 text-center" style={{ borderColor: c.borderStrong, background: c.cardSoft }}>
+                                    <Gift className="mx-auto h-6 w-6" style={{ color: c.muted }} />
+                                    <p className="mt-2 text-xs font-medium" style={{ color: c.text }}>Yaklaşan BT doğum günü görünmüyor</p>
+                                    <p className="mt-1 text-[10px]" style={{ color: c.muted }}>Bir sonraki doğum günü 30 gün içinde olduğunda burada görünecek.</p>
+                                </div>
+                            ) : (
+                                <div className="space-y-2">
+                                    {birthdayPanelMembers.map((member) => (
+                                        <div
+                                            key={member.no}
+                                            className="rounded-xl border px-3 py-2.5"
+                                            style={{
+                                                borderColor: member.isToday ? c.amberBorder : c.border,
+                                                background: member.isToday ? c.amberGlow : c.cardSoft,
+                                            }}
+                                        >
+                                            <div className="flex items-start justify-between gap-3">
+                                                <div className="min-w-0">
+                                                    <div className="text-xs font-semibold" style={{ color: c.text }}>
+                                                        {formatName(member.name)} {formatName(member.surname)}
+                                                    </div>
+                                                    <div className="mt-0.5 text-[10px]" style={{ color: c.muted }}>
+                                                        {member.role}
+                                                    </div>
+                                                </div>
+                                                <div
+                                                    className="shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-semibold"
+                                                    style={{
+                                                        color: member.isToday ? c.amber : c.sky,
+                                                        borderColor: member.isToday ? c.amberBorder : c.skyBorder,
+                                                        background: member.isToday ? c.amberSoft : c.skySoft,
+                                                    }}
+                                                >
+                                                    {member.shortLabel}
+                                                </div>
+                                            </div>
+                                            <div className="mt-2 flex items-center justify-between gap-3 text-[10px]" style={{ color: c.muted }}>
+                                                {isAdmin && <span>{member.nextBirthday.toLocaleDateString("tr-TR", { day: "2-digit", month: "long" })}</span>}
+                                                {isAdmin && <span>{member.isToday ? `${member.ageTurning} yaşında` : `${member.ageTurning} olacak`}</span>}
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
                     </GlassCard>
                 </div>
             </div>
@@ -854,6 +1045,39 @@ const ProgressLine: React.FC<{ c: Palette; label: string; value: number; detail:
                     className="h-full rounded-full ms-shimmer-bar"
                     style={{ width: `${value}%`, background: `linear-gradient(90deg, ${color}80, ${color})`, boxShadow: `0 0 12px ${color}30`, animation: `ms-bar-grow 1.2s cubic-bezier(0.16,1,0.3,1) both` }}
                 />
+            </div>
+        </div>
+    );
+};
+
+const ServiceIncidentRow: React.FC<{ c: Palette; incident: StoreServiceIncident }> = ({ c, incident }) => {
+    const isCritical = incident.severity?.toLowerCase() === "critical";
+    const color = isCritical ? c.rose : c.amber;
+    const statusText = incident.status === "CheckFailed" ? "WMI" : incident.status === "NotFound" ? "Yok" : incident.status;
+    return (
+        <div
+            className="rounded-xl border p-3"
+            style={{ background: color + "08", borderColor: color + "30" }}
+            title={[incident.message, incident.lastError].filter(Boolean).join("\n")}
+        >
+            <div className="flex items-start gap-2">
+                <span className="mt-1 h-2 w-2 shrink-0 rounded-full animate-pulse" style={{ background: color }} />
+                <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-1.5">
+                        <span className="text-[11px] font-bold" style={{ color: c.text }}>[{incident.storeCode}]</span>
+                        <span className="truncate text-[11px] font-semibold" style={{ color: c.text }}>{incident.storeName}</span>
+                    </div>
+                    <div className="mt-1 truncate text-[11px]" style={{ color: c.muted }}>
+                        {incident.deviceName} - {incident.displayName}
+                    </div>
+                    <div className="mt-1 flex flex-wrap items-center gap-2">
+                        <span className="rounded px-1.5 py-0.5 text-[9px] font-bold uppercase" style={{ background: color + "20", color }}>
+                            {statusText}
+                        </span>
+                        <span className="text-[10px] font-mono" style={{ color: c.subtle }}>{incident.ipAddress}</span>
+                        <span className="text-[10px] font-semibold" style={{ color }}>{fmtDuration(incident.firstDetectedAt)}</span>
+                    </div>
+                </div>
             </div>
         </div>
     );

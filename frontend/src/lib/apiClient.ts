@@ -1,7 +1,7 @@
 // frontend/src/lib/apiClient.ts
 
 import type {
-    Device, DashboardSummary, OfflineLogEntry, OfflineLogStats, CollectorReportEntry, EventLogEntry,
+    Device, DashboardSummary, OfflineLogEntry, OfflineLogStats, CollectorReportEntry, EventLogEntry, EventLogAnalysisResult, EventLogPullResult,
     OutageMailTemplateGroup, OutageMailRequest, OutageMailPreview, OutageMailSendResult,
 } from "../types";
 
@@ -181,6 +181,14 @@ export interface StoreManager {
     storeName: string;
     fullName: string;
     phone: string;
+    address?: string | null;
+}
+
+export interface StoreAddressSyncResult {
+    fetched: number;
+    updated: number;
+    missingCount: number;
+    missingCodes: number[];
 }
 
 export interface StoreOutageSummary {
@@ -335,6 +343,26 @@ export interface StartOfflineServiceResult {
     message: string;
 }
 
+export interface StoreServiceIncident {
+    id: number;
+    deviceId: string;
+    storeCode: number;
+    storeName: string;
+    deviceName: string;
+    ipAddress: string;
+    serviceName: string;
+    displayName: string;
+    status: string;
+    severity: string;
+    message: string;
+    lastStartMode: string | null;
+    lastError: string | null;
+    consecutiveFailures: number;
+    firstDetectedAt: string;
+    lastDetectedAt: string;
+    resolvedAt: string | null;
+}
+
 
 // ==========================
 // BASE CONFIG
@@ -479,6 +507,10 @@ export const apiClient = {
         return this.delete(`/api/devices/${encodeURIComponent(id)}`);
     },
 
+    uninstallAgent(deviceId: string): Promise<{ commandId: string; message: string }> {
+        return this.post(`/api/agent/uninstall/${encodeURIComponent(deviceId)}`);
+    },
+
     // ==========================
     // SQL QUERY – ✅ TEK DOĞRU KAYNAK
     // ==========================
@@ -498,8 +530,20 @@ export const apiClient = {
         return this.post("/api/sqlquery/execute", { deviceId, query }, 120_000);
     },
 
-    getDeviceSystemInfo(deviceId: string): Promise<{ hostname: string | null; serialNumber: string | null; hostnameError?: string; serialError?: string }> {
+    getDeviceSystemInfo(deviceId: string): Promise<{ hostname: string | null; serialNumber: string | null; hostnameError?: string; serialError?: string; printerSerialNumber: string | null }> {
         return this.get(`/api/sqlquery/devices/${deviceId}/system-info`);
+    },
+
+    updatePrinterSerial(deviceId: string, printerSerialNumber: string | null): Promise<{ deviceId: string; printerSerialNumber: string | null }> {
+        return this.put(`/api/sqlquery/devices/${deviceId}/printer-serial`, { printerSerialNumber });
+    },
+
+    refreshPrinterSerial(deviceId: string): Promise<{ deviceId: string; printerSerialNumber: string | null; message?: string }> {
+        return this.post(`/api/sqlquery/devices/${deviceId}/refresh-printer-serial`, undefined, 30_000);
+    },
+
+    updateDeviceManualInfo(deviceId: string, patch: { hostname?: string | null; serialNumber?: string | null; printerSerialNumber?: string | null }): Promise<{ deviceId: string; hostname: string | null; serialNumber: string | null; printerSerialNumber: string | null }> {
+        return this.put(`/api/sqlquery/devices/${deviceId}/manual-info`, patch);
     },
 
     // ==========================
@@ -556,6 +600,9 @@ export const apiClient = {
     getStoreManagers(): Promise<StoreManager[]> {
         return this.get("/api/storemanagers");
     },
+    syncStoreAddresses(): Promise<StoreAddressSyncResult> {
+        return this.post("/api/storemanagers/sync-addresses", {});
+    },
 
     importStoreManagers(rawText: string): Promise<{ success: boolean; count: number }> {
         return this.post("/api/storemanagers/import", { rawText });
@@ -606,6 +653,10 @@ export const apiClient = {
 
     setDeviceTemporaryClose(deviceId: string, isClosed: boolean, reason?: string): Promise<DeviceTemporaryCloseResponse> {
         return this.put(`/api/devices/${encodeURIComponent(deviceId)}/temporary-close`, { isClosed, reason });
+    },
+
+    setDeviceVisibility(deviceId: string, hidden: boolean): Promise<{ id: string; hiddenForNonAdmins: boolean }> {
+        return this.put(`/api/devices/${encodeURIComponent(deviceId)}/visibility`, { hidden });
     },
 
     deleteStoreDevice(deviceId: string): Promise<{ success: boolean; deletedDeviceId: string }> {
@@ -659,6 +710,14 @@ export const apiClient = {
         return this.get(`/api/agent/collector-report/${encodeURIComponent(deviceId)}/eventlogs?limit=${limit}`);
     },
 
+    getEventLogAnalysis(deviceId: string, hours = 24, limit = 200): Promise<EventLogAnalysisResult> {
+        return this.get(`/api/agent/collector-report/${encodeURIComponent(deviceId)}/eventlogs/analysis?hours=${hours}&limit=${limit}`);
+    },
+
+    pullEventLogsFromDevice(deviceId: string, hours = 24): Promise<EventLogPullResult> {
+        return this.post(`/api/agent/collector-report/${encodeURIComponent(deviceId)}/eventlogs/pull?hours=${hours}`, undefined, 120_000);
+    },
+
     // ==========================
     // OFFLINE SERVICES
     // ==========================
@@ -670,15 +729,18 @@ export const apiClient = {
         return this.get(`/api/devices/start-offline-services/${encodeURIComponent(jobId)}`);
     },
 
+    getActiveServiceIncidents(): Promise<StoreServiceIncident[]> {
+        return this.get("/api/service-monitor/incidents/active");
+    },
+
     getBaseUrl(): string {
         return API_BASE_URL;
     },
 
-    /** Backend health check — herhangi bir HTTP yanıtı = sunucu ayakta. 401 redirect yapmaz. */
+    /** Backend liveness probe — hafif `/api/health` endpoint'i. 401 redirect yapmaz, auth header gerekmez. */
     async checkBackendHealth(): Promise<boolean> {
         try {
-            await fetch(buildUrl("/api/dashboard/summary"), {
-                headers: { ...getAuthHeaders() },
+            await fetch(buildUrl("/api/health"), {
                 signal: AbortSignal.timeout(5000),
             });
             return true;
@@ -743,4 +805,444 @@ export const apiClient = {
     buildNewAgent(): Promise<void> {
         return this.post("/api/updates/build");
     },
+
+    // ==========================
+    // INVENTORY (SDP envanter modulu)
+    // ==========================
+    getInventoryAssets(params: {
+        search?: string;
+        storeCode?: number;
+        productType?: string;
+        state?: string;
+        fizikselDurum?: string;
+        unmatchedOnly?: boolean;
+        sortBy?: string;
+        sortDir?: "asc" | "desc";
+        page?: number;
+        pageSize?: number;
+    }): Promise<{ items: InventoryAsset[]; total: number; page: number; pageSize: number }> {
+        const qs = new URLSearchParams();
+        Object.entries(params).forEach(([k, v]) => {
+            if (v !== undefined && v !== null && v !== "") qs.append(k, String(v));
+        });
+        return this.get(`/api/inventory/assets?${qs}`);
+    },
+
+    getInventoryAsset(id: number): Promise<InventoryAsset> {
+        return this.get(`/api/inventory/assets/${id}`);
+    },
+
+    getInventorySummary(): Promise<InventorySummary> {
+        return this.get("/api/inventory/summary");
+    },
+
+    getInventoryStats(): Promise<InventoryStats> {
+        return this.get("/api/inventory/stats");
+    },
+
+    getInventoryFilterOptions(): Promise<InventoryFilterOptions> {
+        return this.get("/api/inventory/filter-options");
+    },
+
+    getInventoryBatches(): Promise<InventoryImportBatch[]> {
+        return this.get("/api/inventory/batches");
+    },
+
+    getInventoryUnmappedStores(): Promise<StoreNameMapping[]> {
+        return this.get("/api/inventory/unmapped-stores");
+    },
+
+    getInventoryAllStores(): Promise<Array<{ storeCode: number; storeName: string | null }>> {
+        return this.get("/api/inventory/all-stores");
+    },
+
+    updateInventoryStoreMapping(id: number, storeCode: number | null): Promise<{ mapping: StoreNameMapping; affectedAssets: number }> {
+        return this.put(`/api/inventory/store-mappings/${id}`, { storeCode });
+    },
+
+    rematchInventoryUnmapped(): Promise<{ updatedMappings: number; updatedAssets: number }> {
+        return this.post("/api/inventory/rematch-unmapped", {});
+    },
+
+    // ==========================
+    // ACTIVITY LOG (audit)
+    // ==========================
+    getActivityLog(params: {
+        category?: string;
+        username?: string;
+        successOnly?: boolean;
+        failuresOnly?: boolean;
+        search?: string;
+        page?: number;
+        pageSize?: number;
+    } = {}): Promise<{ items: ActivityLogEntry[]; total: number; page: number; pageSize: number }> {
+        const qs = new URLSearchParams();
+        Object.entries(params).forEach(([k, v]) => {
+            if (v !== undefined && v !== null && v !== "") qs.append(k, String(v));
+        });
+        return this.get(`/api/activity-log?${qs}`);
+    },
+
+    getActivityLogCategories(): Promise<Array<{ name: string; count: number }>> {
+        return this.get("/api/activity-log/categories");
+    },
+
+    // ==========================
+    // STORE OPENINGS (Mağaza Açılış Checklist)
+    // ==========================
+    getStoreOpenings(status?: string): Promise<StoreOpeningListItem[]> {
+        const qs = status ? `?status=${encodeURIComponent(status)}` : "";
+        return this.get(`/api/store-openings${qs}`);
+    },
+
+    getStoreOpening(id: number): Promise<StoreOpeningDetail> {
+        return this.get(`/api/store-openings/${id}`);
+    },
+
+    createStoreOpening(data: {
+        storeCode: number;
+        storeName: string;
+        city?: string;
+        address?: string;
+        targetOpeningDate: string;
+        templateId?: number;
+        notes?: string;
+        roleAssignments?: Record<string, string>;
+    }): Promise<StoreOpeningDetail> {
+        return this.post("/api/store-openings", data);
+    },
+
+    updateStoreOpening(id: number, data: {
+        storeName?: string;
+        city?: string;
+        address?: string;
+        targetOpeningDate?: string;
+        actualOpeningDate?: string;
+        status?: string;
+        notes?: string;
+        roleAssignments?: Record<string, string>;
+    }): Promise<void> {
+        return this.put(`/api/store-openings/${id}`, data);
+    },
+
+    deleteStoreOpening(id: number): Promise<void> {
+        return this.delete(`/api/store-openings/${id}`);
+    },
+
+    updateOpeningItem(openingId: number, itemId: number, data: {
+        status?: string;
+        serialNumber?: string;
+        assetNumber?: string;
+        notes?: string;
+    }): Promise<void> {
+        return this.put(`/api/store-openings/${openingId}/items/${itemId}`, data);
+    },
+
+    addOpeningItem(openingId: number, data: {
+        categoryName: string;
+        assignedRole?: string;
+        itemName: string;
+        parentName?: string;
+        hasSerialNumber: boolean;
+        hasAssetNumber: boolean;
+        sortOrder?: number;
+    }): Promise<StoreOpeningItem> {
+        return this.post(`/api/store-openings/${openingId}/items`, data);
+    },
+
+    deleteOpeningItem(openingId: number, itemId: number): Promise<void> {
+        return this.delete(`/api/store-openings/${openingId}/items/${itemId}`);
+    },
+
+    async uploadOpeningItemPhoto(openingId: number, itemId: number, file: File): Promise<{ photoUrl: string }> {
+        const formData = new FormData();
+        formData.append("file", file);
+        const res = await fetchWithTimeout(buildUrl(`/api/store-openings/${openingId}/items/${itemId}/photo`), {
+            method: "POST",
+            headers: { ...getAuthHeaders() },
+            body: formData,
+        });
+        if (!res.ok) throw new Error(`Foto yükleme başarısız: ${res.status}`);
+        return res.json();
+    },
+
+    deleteOpeningItemPhoto(openingId: number, itemId: number): Promise<void> {
+        return this.delete(`/api/store-openings/${openingId}/items/${itemId}/photo`);
+    },
+
+    getOpeningItemPhotoUrl(openingId: number, itemId: number): string {
+        return buildUrl(`/api/store-openings/${openingId}/items/${itemId}/photo`);
+    },
+
+    getStoreOpeningActivity(openingId: number): Promise<StoreOpeningActivity[]> {
+        return this.get(`/api/store-openings/${openingId}/activity`);
+    },
+
+    getStoreOpeningExportUrl(openingId: number): string {
+        return buildUrl(`/api/store-openings/${openingId}/export.xlsx`);
+    },
+
+    // ----- Templates -----
+    getStoreOpeningTemplates(): Promise<StoreOpeningTemplateSummary[]> {
+        return this.get("/api/store-opening-templates");
+    },
+
+    getStoreOpeningTemplate(id: number): Promise<StoreOpeningTemplateDetail> {
+        return this.get(`/api/store-opening-templates/${id}`);
+    },
+
+    createStoreOpeningTemplate(data: {
+        name: string;
+        description?: string;
+        isDefault: boolean;
+        items: StoreOpeningTemplateItemInput[];
+    }): Promise<StoreOpeningTemplateDetail> {
+        return this.post("/api/store-opening-templates", data);
+    },
+
+    updateStoreOpeningTemplate(id: number, data: {
+        name: string;
+        description?: string;
+        isDefault: boolean;
+        items: StoreOpeningTemplateItemInput[];
+    }): Promise<void> {
+        return this.put(`/api/store-opening-templates/${id}`, data);
+    },
+
+    deleteStoreOpeningTemplate(id: number): Promise<void> {
+        return this.delete(`/api/store-opening-templates/${id}`);
+    },
+
+    async importInventoryXlsx(file: File): Promise<InventoryImportResult> {
+        const formData = new FormData();
+        formData.append("file", file);
+        const res = await fetchWithTimeout(buildUrl("/api/inventory/import"), {
+            method: "POST",
+            headers: { ...getAuthHeaders() },
+            body: formData,
+        }, 5 * 60_000); // 5 dk — 7400 satir icin
+        if (!res.ok) {
+            let msg = `Import failed: ${res.status}`;
+            try { const j = await res.json(); if (j?.error) msg = j.error; } catch { /* ignore */ }
+            throw new Error(msg);
+        }
+        return res.json();
+    },
 };
+
+// ==========================
+// INVENTORY TYPES
+// ==========================
+export interface InventoryAsset {
+    id: number;
+    assetName: string;
+    storeCode: number | null;
+    storeNameRaw: string | null;
+    department: string | null;
+    productType: string | null;
+    product: string | null;
+    productCode: string | null;
+    orgSerialNumber: string | null;
+    computerName: string | null;
+    macAddress: string | null;
+    assetTag: string | null;
+    acquisitionDate: string | null;
+    expiryDate: string | null;
+    yazarkasaSicilNo: string | null;
+    baseSeriNo: string | null;
+    printerSeriNo: string | null;
+    ikinciMonitorSeriNo: string | null;
+    ipAddress: string | null;
+    assetState: string | null;
+    fizikselDurum: string | null;
+    purchaseCost: number | null;
+    faturaNo: string | null;
+    talepNo: string | null;
+    importedAt: string;
+    importBatchId: number | null;
+}
+
+export interface InventorySummary {
+    totalAssets: number;
+    matchedAssets: number;
+    unmatchedAssets: number;
+    unmappedStoreNames: number;
+}
+
+export interface InventoryStats {
+    byProductType: Array<{ name: string; count: number }>;
+    byState: Array<{ name: string; count: number }>;
+    byFizikselDurum: Array<{ name: string; count: number }>;
+    byStoreTop20: Array<{ storeCode: number; count: number }>;
+    acquisitionByYear: Array<{ year: number; count: number }>;
+    totalPurchaseCost: number;
+}
+
+export interface InventoryFilterOptions {
+    productTypes: string[];
+    states: string[];
+    fizikselDurumlar: string[];
+    stores: Array<{ storeCode: number; storeName: string | null; count: number }>;
+}
+
+export interface InventoryImportBatch {
+    id: number;
+    fileName: string | null;
+    fileSizeBytes: number;
+    importedBy: string | null;
+    importedAt: string;
+    totalRows: number;
+    insertedCount: number;
+    updatedCount: number;
+    skippedCount: number;
+    unmatchedStoreCount: number;
+    status: string;
+    errorMessage: string | null;
+}
+
+export interface InventoryImportResult {
+    batchId: number;
+    totalRows: number;
+    insertedCount: number;
+    updatedCount: number;
+    skippedCount: number;
+    unmatchedStoreCount: number;
+    unmatchedStoreNames: string[];
+    errors: string[];
+}
+
+export interface ActivityLogEntry {
+    id: number;
+    username: string | null;
+    category: string;
+    action: string;
+    target: string | null;
+    details: string | null;
+    success: boolean;
+    errorMessage: string | null;
+    createdAt: string;
+}
+
+export interface StoreNameMapping {
+    id: number;
+    rawName: string;
+    storeCode: number | null;
+    autoMatched: boolean;
+    createdAt: string;
+    updatedAt: string;
+}
+
+// ==========================
+// STORE OPENING TYPES
+// ==========================
+export type StoreOpeningStatus = "Planned" | "InProgress" | "Completed" | "Cancelled";
+export type StoreOpeningItemStatus = "Pending" | "Completed" | "NotApplicable";
+
+export interface StoreOpeningListItem {
+    id: number;
+    storeCode: number;
+    storeName: string;
+    city: string | null;
+    targetOpeningDate: string;
+    actualOpeningDate: string | null;
+    status: StoreOpeningStatus;
+    totalItems: number;
+    completedItems: number;
+    notApplicableItems: number;
+    progressPercent: number;
+    createdAt: string;
+    createdBy: string | null;
+    isOverdue: boolean;
+}
+
+export interface StoreOpeningItem {
+    id: number;
+    storeOpeningId: number;
+    categoryName: string;
+    assignedRole: string | null;
+    itemName: string;
+    parentName: string | null;
+    hasSerialNumber: boolean;
+    hasAssetNumber: boolean;
+    serialNumber: string | null;
+    assetNumber: string | null;
+    status: StoreOpeningItemStatus;
+    photoUrl: string | null;
+    notes: string | null;
+    sortOrder: number;
+    completedBy: string | null;
+    completedAt: string | null;
+}
+
+export interface StoreOpeningCategoryGroup {
+    categoryName: string;
+    assignedRole: string | null;
+    totalItems: number;
+    completedItems: number;
+    notApplicableItems: number;
+    progressPercent: number;
+    items: StoreOpeningItem[];
+}
+
+export interface StoreOpeningDetail {
+    id: number;
+    storeCode: number;
+    storeName: string;
+    city: string | null;
+    address: string | null;
+    targetOpeningDate: string;
+    actualOpeningDate: string | null;
+    status: StoreOpeningStatus;
+    templateId: number | null;
+    notes: string | null;
+    roleAssignments: Record<string, string>;
+    createdBy: string | null;
+    createdAt: string;
+    updatedBy: string | null;
+    updatedAt: string | null;
+    completedBy: string | null;
+    completedAt: string | null;
+    categories: StoreOpeningCategoryGroup[];
+    progressPercent: number;
+}
+
+export interface StoreOpeningActivity {
+    id: number;
+    username: string;
+    action: string;
+    details: string | null;
+    createdAt: string;
+}
+
+export interface StoreOpeningTemplateSummary {
+    id: number;
+    name: string;
+    description: string | null;
+    isDefault: boolean;
+    itemCount: number;
+    createdAt: string;
+}
+
+export interface StoreOpeningTemplateItemInput {
+    categoryName: string;
+    assignedRole?: string;
+    itemName: string;
+    parentName?: string;
+    hasSerialNumber: boolean;
+    hasAssetNumber: boolean;
+    sortOrder: number;
+}
+
+export interface StoreOpeningTemplateItem extends StoreOpeningTemplateItemInput {
+    id: number;
+    templateId: number;
+}
+
+export interface StoreOpeningTemplateDetail {
+    id: number;
+    name: string;
+    description: string | null;
+    isDefault: boolean;
+    createdAt: string;
+    items: StoreOpeningTemplateItem[];
+}

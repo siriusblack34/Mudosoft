@@ -213,7 +213,10 @@ builder.Services.AddSwaggerGen();
 // IDeviceRepository Scoped, ancak Worker'lar Factory ile çekecek
 builder.Services.AddScoped<IRemoteSqlService, RemoteSqlService>();
 builder.Services.AddScoped<IDeviceRepository, DeviceRepository>();
-builder.Services.AddSingleton<Orchestra.Backend.Services.EventLogTranslationService>(); 
+builder.Services.AddSingleton<Orchestra.Backend.Services.EventLogTranslationService>();
+builder.Services.AddScoped<EventLogAnalysisService>();
+if (OperatingSystem.IsWindows())
+    builder.Services.AddScoped<RemoteEventLogPullService>();
 
 // 1. RsaKeyProvider (Gerektiği gibi Scoped)
 builder.Services.AddScoped<RsaKeyProvider>(); 
@@ -233,8 +236,21 @@ builder.Services.AddScoped<MobileLineDetectionService>();
 // 3.2. InboxCleanupService
 builder.Services.AddScoped<IInboxCleanupService, InboxCleanupService>();
 
+// 3.2.1. StockCleanupService (POS_STOCK_TRANSFER conditional truncate — scheduler için)
+builder.Services.AddScoped<IStockCleanupService, StockCleanupService>();
+
+// 3.3. Inventory Import (SDP envanter modulu)
+builder.Services.AddScoped<Orchestra.Backend.Services.InventoryImportService>();
+
+// 3.4. Activity Log (audit)
+builder.Services.AddHttpContextAccessor();
+builder.Services.AddScoped<Orchestra.Backend.Services.ActivityLogService>();
+
 // 4. CommandQueue
 builder.Services.AddSingleton<CommandQueue>();
+
+// 4.0.1. Batch Execution (acil bat çalıştırma — agent'lı + agent'siz)
+builder.Services.AddSingleton<Orchestra.Backend.Services.BatchExecutionService>();
 
 // 4.1. VNC Session Manager (RDP proxy)
 builder.Services.AddSingleton<VncSessionManager>();
@@ -246,12 +262,28 @@ builder.Services.AddScoped<AesEncryption>();
 // 6. Email Service (Alarm bildirim)
 builder.Services.AddSingleton<IEmailService, EmailService>();
 
+// 6b. LDAP authentication (opsiyonel, appsettings:Ldap:Enabled ile aç/kapa)
+builder.Services.AddSingleton<ILdapAuthService, LdapAuthService>();
+builder.Services.AddSingleton<ILdapDirectoryService, LdapDirectoryService>();
+
 // 7. Worker'lar (Singleton/HostedService olarak doğru şekilde kaydedildi)
 builder.Services.AddHostedService<Orchestra.Backend.Services.HeartbeatCheckerWorker>();
 builder.Services.AddHostedService<Orchestra.Backend.Services.NetworkOutageAlarmWorker>();
+builder.Services.AddHostedService<Orchestra.Backend.Services.CriticalServiceMonitorWorker>();
 builder.Services.AddHostedService<Orchestra.Backend.Services.SchedulerBackgroundService>();
+builder.Services.AddHostedService<Orchestra.Backend.Services.ScheduledTaskSeeder>();
 builder.Services.AddHostedService<Orchestra.Backend.Services.DeviceStatusWorker>();
 builder.Services.AddHostedService<Orchestra.Backend.Services.RouterLatencyPurgeWorker>();
+builder.Services.AddSingleton<Orchestra.Backend.Services.SerialNumberSyncService>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<Orchestra.Backend.Services.SerialNumberSyncService>());
+builder.Services.AddSingleton<Orchestra.Backend.Services.PrinterSerialSyncService>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<Orchestra.Backend.Services.PrinterSerialSyncService>());
+if (OperatingSystem.IsWindows())
+    builder.Services.AddHostedService<Orchestra.Backend.Services.UserInstallWatcherService>();
+builder.Services.AddHttpClient("internal", c =>
+{
+    c.Timeout = TimeSpan.FromSeconds(120);
+});
 //builder.Services.AddHostedService<Orchestra.Backend.Services.DiscoveryWorker>();
 
 // 7. SignalR
@@ -607,6 +639,9 @@ if (app.Environment.IsDevelopment())
         db.SaveChanges();
         Console.WriteLine($"[SEED] StoreNetworkInfos: {toAdd.Count} magaza Mbps kaydi eklendi");
     }
+
+    // Seed default Store Opening checklist template
+    await Orchestra.Backend.Services.StoreOpeningTemplateSeeder.SeedAsync(db);
 
     // Seed default admin user if no users exist
     if (!db.Users.Any())

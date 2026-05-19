@@ -53,6 +53,7 @@ export interface Device {
     excludeFromOfflineList?: boolean;
     isTemporarilyClosed?: boolean;
     temporaryCloseReason?: string | null;
+    hiddenForNonAdmins?: boolean;
 
     // Live Metrics
     cpuUsage?: number;
@@ -68,6 +69,7 @@ export interface Device {
     totalRamMB?: number;
     totalDiskGB?: number;
     gpuModel?: string;
+    serialNumber?: string;
 
     // User & Session
     lastLoggedInUser?: string;
@@ -187,4 +189,83 @@ export interface EventLogEntry {
     message: string;
     translatedMessage: string | null;
     suggestedAction: string | null;
+}
+
+export interface EventLogAnalysisSummary {
+    overallAssessment: string;
+    primaryCategory: string;
+    primaryConfidence: string;
+    hardwareLikely: boolean;
+    softwareLikely: boolean;
+    unexpectedShutdownCount: number;
+    blueScreenCount: number;
+    diskIssueCount: number;
+    serviceCrashCount: number;
+    networkIssueCount: number;
+    wheaCount: number;
+    appCrashCount: number;
+    tdrCount: number;
+    lastBootTime: string | null;
+    lastUnexpectedShutdownAt: string | null;
+}
+
+export interface EventLogDataQuality {
+    hasEventLogData: boolean;
+    latestEventLogReport: string | null;
+    hasUptimeData: boolean;
+    hasDiskHealthData: boolean;
+    hasTemperatureData: boolean;
+}
+
+export interface BootShutdownEvent {
+    timeGenerated: string;
+    type: 'BootClean' | 'ShutdownClean' | 'ShutdownUnexpected' | 'UptimeReport' | 'UserShutdown' | 'Other';
+    source: string;
+    eventId: number;
+    detail: string;
+}
+
+export interface ShutdownChain {
+    shutdownAt: string;
+    shutdownSource: string;
+    shutdownEventId: number;
+    precedingEvents: EventLogTimelineItem[];
+}
+
+export interface EventLogHypothesis {
+    category: string;
+    confidence: string;
+    score: number;
+    title: string;
+    why: string;
+    evidence: string[];
+    recommendedActions: string[];
+}
+
+export interface EventLogTimelineItem {
+    timeGenerated: string;
+    source: string;
+    eventId: number;
+    level: string;
+    summary: string;
+    rawMessage: string;
+}
+
+export interface EventLogAnalysisResult {
+    deviceId: string;
+    hoursAnalyzed: number;
+    dataQuality: EventLogDataQuality;
+    summary: EventLogAnalysisSummary;
+    hypotheses: EventLogHypothesis[];
+    recentTimeline: EventLogTimelineItem[];
+    bootShutdownTimeline: BootShutdownEvent[];
+    shutdownChains: ShutdownChain[];
+}
+
+export interface EventLogPullResult {
+    host: string;
+    eventCount: number;
+    storedAsDeviceId: string;
+    partialErrors: string[];
+    analysis: EventLogAnalysisResult;
 }

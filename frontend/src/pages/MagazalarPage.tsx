@@ -1,10 +1,11 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { apiClient, SqlDeviceWithStatus } from "../lib/apiClient";
+import { apiClient, SqlDeviceWithStatus, StoreManager } from "../lib/apiClient";
 import Spinner from "../components/ui/Spinner";
 import {
     Building2, RefreshCw, Search, Wifi, WifiOff, PauseCircle,
     Monitor, ShoppingCart, CheckCircle2, AlertCircle, XCircle,
+    X, User, Phone, MapPin, ExternalLink, Router as RouterIcon,
 } from "lucide-react";
 
 // Gerçek mağaza listesinden çıkarılan kodlar:
@@ -92,10 +93,12 @@ const StatusDot: React.FC<{ device: SqlDeviceWithStatus | null; label: string }>
 
 const MagazalarPage: React.FC = () => {
     const [devices, setDevices] = useState<SqlDeviceWithStatus[]>([]);
+    const [managers, setManagers] = useState<StoreManager[]>([]);
     const [search, setSearch] = useState("");
     const [statusFilter, setStatusFilter] = useState<"all" | StoreStatus>("all");
     const [isLoading, setIsLoading] = useState(true);
     const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
+    const [selectedStoreCode, setSelectedStoreCode] = useState<number | null>(null);
 
     useEffect(() => {
         let alive = true;
@@ -111,9 +114,21 @@ const MagazalarPage: React.FC = () => {
             finally { if (alive && !silent) setIsLoading(false); }
         };
         load();
+        apiClient.getStoreManagers()
+            .then(m => { if (alive) setManagers(m ?? []); })
+            .catch(err => console.error("StoreManager load failed:", err));
         const t = setInterval(() => load(true), 30000);
         return () => { alive = false; clearInterval(t); };
     }, []);
+
+    const managerByCode = useMemo(() => {
+        const m = new Map<number, StoreManager>();
+        for (const sm of managers) {
+            const key = (sm.actualStoreCode ?? sm.storeCode);
+            if (key) m.set(key, sm);
+        }
+        return m;
+    }, [managers]);
 
     const stores = useMemo(() => aggregateByStore(devices), [devices]);
 
@@ -135,6 +150,11 @@ const MagazalarPage: React.FC = () => {
         if (statusFilter !== "all") list = list.filter(s => s.status === statusFilter);
         return list;
     }, [stores, search, statusFilter]);
+
+    const selectedStore = useMemo(
+        () => selectedStoreCode == null ? null : stores.find(s => s.storeCode === selectedStoreCode) ?? null,
+        [selectedStoreCode, stores],
+    );
 
     if (isLoading) return <div className="flex h-[80vh] items-center justify-center"><Spinner size="lg" /></div>;
 
@@ -181,6 +201,15 @@ const MagazalarPage: React.FC = () => {
                 />
             </div>
 
+            {/* Detay paneli */}
+            {selectedStore && (
+                <StoreDetailPanel
+                    store={selectedStore}
+                    manager={managerByCode.get(selectedStore.storeCode) ?? null}
+                    onClose={() => setSelectedStoreCode(null)}
+                />
+            )}
+
             {/* Table */}
             <div className="flex-1 overflow-auto rounded-lg border border-white/10 bg-slate-900/40">
                 <table className="w-full text-[12px]">
@@ -199,15 +228,14 @@ const MagazalarPage: React.FC = () => {
                         {filtered.length === 0 ? (
                             <tr><td colSpan={7} className="px-3 py-6 text-center text-slate-500">Sonuç yok</td></tr>
                         ) : filtered.map(s => (
-                            <tr key={s.storeCode} className="border-t border-white/5 hover:bg-white/[0.02]">
+                            <tr
+                                key={s.storeCode}
+                                onClick={() => setSelectedStoreCode(s.storeCode)}
+                                className={`border-t border-white/5 cursor-pointer hover:bg-white/[0.04] ${selectedStoreCode === s.storeCode ? "bg-sky-500/[0.08]" : ""}`}
+                            >
                                 <td className="px-3 py-2 font-mono text-slate-300">{s.storeCode}</td>
                                 <td className="px-3 py-2 text-white">
-                                    <Link
-                                        to={`/devices?store=${s.storeCode}`}
-                                        className="hover:text-sky-300 hover:underline"
-                                    >
-                                        {s.storeName}
-                                    </Link>
+                                    <span className="hover:text-sky-300">{s.storeName}</span>
                                 </td>
                                 <td className="px-3 py-2"><StatusBadge status={s.status} /></td>
                                 <td className="px-3 py-2"><StatusDot device={s.router} label="Router" /></td>
@@ -267,6 +295,129 @@ const StatusBadge: React.FC<{ status: StoreStatus }> = ({ status }) => {
         <span className={`inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[10px] font-medium ${cfg.cls}`}>
             {cfg.icon}{cfg.label}
         </span>
+    );
+};
+
+const StoreDetailPanel: React.FC<{
+    store: StoreAgg;
+    manager: StoreManager | null;
+    onClose: () => void;
+}> = ({ store, manager, onClose }) => {
+    const allDevices = useMemo(() => {
+        const list: SqlDeviceWithStatus[] = [];
+        if (store.router) list.push(store.router);
+        if (store.pc) list.push(store.pc);
+        list.push(...store.kasalar);
+        list.push(...store.otherDevices);
+        return list;
+    }, [store]);
+
+    return (
+        <div className="fixed inset-0 z-40" onClick={onClose}>
+            <div className="absolute inset-0 bg-black/40" />
+            <aside
+                onClick={(e) => e.stopPropagation()}
+                className="absolute right-0 top-0 h-full w-full max-w-md overflow-y-auto border-l border-white/10 bg-slate-950 shadow-2xl"
+            >
+                {/* Header */}
+                <div className="sticky top-0 z-10 flex items-center justify-between border-b border-white/10 bg-slate-950/95 px-5 py-4 backdrop-blur">
+                    <div>
+                        <div className="text-[11px] font-mono text-slate-500">#{store.storeCode}</div>
+                        <h2 className="text-lg font-semibold text-white">{store.storeName}</h2>
+                        <div className="mt-1"><StatusBadge status={store.status} /></div>
+                    </div>
+                    <button
+                        onClick={onClose}
+                        className="rounded-lg p-1.5 text-slate-400 hover:bg-white/5 hover:text-white"
+                    >
+                        <X className="h-4 w-4" />
+                    </button>
+                </div>
+
+                <div className="space-y-5 px-5 py-4">
+                    {/* Mağaza müdürü & adres */}
+                    <section>
+                        <div className="mb-2 text-[11px] uppercase tracking-wider text-slate-500">Mağaza Bilgileri</div>
+                        <div className="space-y-2 rounded-lg border border-white/10 bg-white/[0.02] p-3 text-[13px]">
+                            <InfoRow icon={<User className="h-3.5 w-3.5" />} label="Müdür" value={manager?.fullName ?? "—"} />
+                            <InfoRow
+                                icon={<Phone className="h-3.5 w-3.5" />}
+                                label="Telefon"
+                                value={manager?.phone ? (
+                                    <a href={`tel:${manager.phone}`} className="text-sky-300 hover:underline">{manager.phone}</a>
+                                ) : "—"}
+                            />
+                            <InfoRow icon={<MapPin className="h-3.5 w-3.5" />} label="Adres" value={manager?.address ?? "—"} multiline />
+                        </div>
+                    </section>
+
+                    {/* Cihaz özeti */}
+                    <section>
+                        <div className="mb-2 flex items-center justify-between">
+                            <div className="text-[11px] uppercase tracking-wider text-slate-500">Cihazlar ({store.totalDevices})</div>
+                            <Link
+                                to={`/devices?store=${store.storeCode}`}
+                                className="inline-flex items-center gap-1 text-[11px] text-sky-300 hover:underline"
+                            >
+                                Agent sayfasında aç <ExternalLink className="h-3 w-3" />
+                            </Link>
+                        </div>
+
+                        <div className="grid grid-cols-3 gap-2 text-center text-[11px]">
+                            <MiniStat label="Online" value={store.onlineDevices} tone="emerald" />
+                            <MiniStat label="Offline" value={store.offlineDevices} tone="rose" />
+                            <MiniStat label="Kapalı" value={store.closedDevices} tone="slate" />
+                        </div>
+
+                        <div className="mt-3 space-y-1.5">
+                            {allDevices.length === 0 ? (
+                                <div className="rounded-lg border border-white/10 bg-white/[0.02] p-3 text-center text-[12px] text-slate-500">
+                                    Cihaz kaydı yok
+                                </div>
+                            ) : allDevices.map(d => <DeviceRow key={d.deviceName + d.deviceType} device={d} />)}
+                        </div>
+                    </section>
+                </div>
+            </aside>
+        </div>
+    );
+};
+
+const InfoRow: React.FC<{ icon: React.ReactNode; label: string; value: React.ReactNode; multiline?: boolean }> = ({ icon, label, value, multiline }) => (
+    <div className={`flex ${multiline ? "items-start" : "items-center"} gap-2`}>
+        <span className="mt-0.5 text-slate-500">{icon}</span>
+        <span className="w-16 shrink-0 text-[11px] uppercase tracking-wider text-slate-500">{label}</span>
+        <span className={`flex-1 text-slate-200 ${multiline ? "" : "truncate"}`}>{value}</span>
+    </div>
+);
+
+const MiniStat: React.FC<{ label: string; value: number; tone: "emerald" | "rose" | "slate" }> = ({ label, value, tone }) => {
+    const cls = { emerald: "text-emerald-300", rose: "text-rose-300", slate: "text-slate-300" }[tone];
+    return (
+        <div className="rounded-lg border border-white/10 bg-white/[0.02] py-2">
+            <div className={`text-lg font-bold ${cls}`}>{value}</div>
+            <div className="text-[10px] uppercase tracking-wider text-slate-500">{label}</div>
+        </div>
+    );
+};
+
+const DeviceRow: React.FC<{ device: SqlDeviceWithStatus }> = ({ device }) => {
+    const t = (device.deviceType ?? "").toUpperCase();
+    const icon = t === "ROUTER" ? <RouterIcon className="h-3.5 w-3.5" />
+        : t.startsWith("KASA") ? <ShoppingCart className="h-3.5 w-3.5" />
+        : <Monitor className="h-3.5 w-3.5" />;
+    const state = device.isTemporarilyClosed ? "closed"
+        : device.isOnline ? "online" : "offline";
+    const dot = state === "closed" ? "bg-slate-500"
+        : state === "online" ? "bg-emerald-400"
+        : "bg-rose-500";
+    return (
+        <div className="flex items-center gap-2 rounded-lg border border-white/10 bg-white/[0.02] px-3 py-1.5 text-[12px]">
+            <span className={`h-2 w-2 shrink-0 rounded-full ${dot}`} />
+            <span className="text-slate-500">{icon}</span>
+            <span className="flex-1 truncate text-slate-200">{device.deviceName}</span>
+            <span className="font-mono text-[11px] text-slate-500">{device.calculatedIpAddress || "—"}</span>
+        </div>
     );
 };
 

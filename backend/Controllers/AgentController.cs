@@ -142,15 +142,58 @@ public class AgentController : ControllerBase
     [HttpPost("vnc-install/{deviceId}")]
     public IActionResult TriggerVncInstall(string deviceId)
     {
+        var commandId = Guid.NewGuid();
         _queue.Enqueue(new CommandDto
         {
-            Id = Guid.NewGuid(),
+            Id = commandId,
             DeviceId = deviceId,
             Type = CommandType.InstallVnc,
             CreatedAtUtc = DateTime.UtcNow
         });
 
-        return Ok(new { message = "VNC install command queued" });
+        return Ok(new { commandId, message = "VNC install command queued" });
+    }
+
+    /// <summary>
+    /// Hedef cihazda Orchestra agent'i, TightVNC'yi, kurulum klasorunu, update klasorlerini
+    /// ve helper log'u uzaktan tamamen kaldirir. Admin yetkisi gerekir.
+    /// </summary>
+    [HttpPost("uninstall/{deviceId}")]
+    [Authorize(Roles = "Admin")]
+    public async Task<IActionResult> TriggerUninstall(string deviceId)
+    {
+        if (string.IsNullOrWhiteSpace(deviceId))
+            return BadRequest(new { error = "deviceId required" });
+
+        var commandId = Guid.NewGuid();
+        _queue.Enqueue(new CommandDto
+        {
+            Id = commandId,
+            DeviceId = deviceId,
+            Type = CommandType.UninstallAgent,
+            CreatedAtUtc = DateTime.UtcNow
+        });
+
+        _logger.LogWarning("[UNINSTALL] Uninstall komutu kuyruga eklendi: DeviceId={DeviceId} CommandId={CommandId} User={User}",
+            deviceId, commandId, User?.Identity?.Name);
+
+        // Cihaz kaydini ve iliskili kayitlari listeden hemen kaldir.
+        // Komut in-memory queue'da kaldigi icin agent yine de cekip calistirabilir.
+        // Heartbeat handler'da pending UninstallAgent kontrolu sayesinde aradaki heartbeat
+        // ile cihaz tekrar olusmaz.
+        var device = await _dbContext.Devices.FindAsync(deviceId);
+        if (device != null)
+        {
+            await _dbContext.DeviceMetrics.Where(m => m.DeviceId == deviceId).ExecuteDeleteAsync();
+            await _dbContext.CommandResultRecords.Where(r => r.DeviceId == deviceId).ExecuteDeleteAsync();
+            await _dbContext.CollectorReports.Where(r => r.DeviceId == deviceId).ExecuteDeleteAsync();
+            await _dbContext.VncSessionLogs.Where(r => r.DeviceId == deviceId).ExecuteDeleteAsync();
+            _dbContext.Devices.Remove(device);
+            await _dbContext.SaveChangesAsync();
+            _logger.LogWarning("[UNINSTALL] Cihaz kaydi silindi: DeviceId={DeviceId}", deviceId);
+        }
+
+        return Ok(new { commandId, message = "Uninstall command queued. Agent will remove itself, TightVNC and all folders within ~30s." });
     }
 
     /// <summary>
@@ -322,6 +365,7 @@ public class AgentController : ControllerBase
                                   : r.CommandType == CommandType.FileWrite      ? "Dosya Yükle"
                                   : r.CommandType == CommandType.FileDelete     ? "Dosya Sil"
                                   : r.CommandType == CommandType.InstallVnc    ? "VNC Kur"
+                                  : r.CommandType == CommandType.UninstallAgent ? "Agent Kaldır"
                                   : "Diğer",
                     success        = r.Success,
                     completedAtUtc = r.CompletedAtUtc,

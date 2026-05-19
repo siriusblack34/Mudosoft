@@ -58,5 +58,19 @@ namespace Orchestra.Backend.Models
 
         [StringLength(200)]
         public string? TemporaryCloseReason { get; set; }
+
+        // BIOS SerialNumber — SerialNumberSyncService ayda 1 wmic /node: ile doldurur.
+        [StringLength(128)]
+        public string? SerialNumber { get; set; }
+
+        // OKC (yazici) sicil no — PrinterSerialSyncService kasanin GENIUS DB'sindeki
+        // TRANSACTION_RESULT tablosundan (PARAMETER_1 LIKE 'YAB%') ceker.
+        // Cok nadir degisir; manuel olarak da duzenlenebilir.
+        [StringLength(64)]
+        public string? PrinterSerialNumber { get; set; }
+
+        // Manuel girilebilen hostname override — sync'ler erisemediginde kullanici elle girer.
+        [StringLength(256)]
+        public string? Hostname { get; set; }
     }
 }

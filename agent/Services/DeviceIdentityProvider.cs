@@ -14,11 +14,20 @@ namespace Orchestra.Agent.Services
         private readonly ILogger<DeviceIdentityProvider> _logger;
         private readonly string _deviceId;
 
+        // Diagnostic boot trace — agent service start'inda hangi adimda takildigimizi gormek icin
+        private static readonly string DiagLogPath = Path.Combine(AppContext.BaseDirectory, "mudosoft_helper.log");
+        private static void DiagLog(string msg)
+        {
+            try { File.AppendAllText(DiagLogPath, $"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}: [DeviceIdentity] {msg}{Environment.NewLine}"); } catch { }
+        }
+
         public DeviceIdentityProvider(ILogger<DeviceIdentityProvider> logger)
         {
+            DiagLog("ctor begin");
             _logger = logger;
             _logger.LogInformation("Device ID file path: {Path}", DeviceIdFilePath);
             _deviceId = GetOrCreateDeviceId();
+            DiagLog($"ctor end, id={_deviceId}");
         }
 
         public string GetDeviceId()
@@ -28,31 +37,44 @@ namespace Orchestra.Agent.Services
 
         private string GetOrCreateDeviceId()
         {
+            // Cache-first: eger device_id.txt varsa WMI'ye hic gitme.
+            // Eski kod her boot'ta WMI calistiriyordu; mağaza POS'larında WMI yavas/hung olabiliyor
+            // ve bu boot'u 120sn+ blocklayip SCM kill'ine sebep oluyordu.
+            try
+            {
+                if (File.Exists(DeviceIdFilePath))
+                {
+                    var cachedId = File.ReadAllText(DeviceIdFilePath).Trim();
+                    if (!string.IsNullOrWhiteSpace(cachedId) && cachedId.Length >= 16)
+                    {
+                        DiagLog($"cached id loaded: {cachedId}");
+                        _logger.LogInformation("Kalici cihaz ID cache'den okundu: {DeviceId}", cachedId);
+                        return cachedId;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                DiagLog($"cache read failed: {ex.Message}");
+                _logger.LogWarning(ex, "Cache okuma basarisiz, WMI'ye dusulecek.");
+            }
+
+            // Cache yok ya da bozuk — WMI ile hesapla (yalnizca ilk kurulumda)
+            DiagLog("cache miss, computing hardware id via WMI");
             try
             {
                 string hardwareId = ComputeHardwareId();
+                DiagLog($"WMI hardware id: {hardwareId}");
                 _logger.LogInformation("Hesaplanan Donanim ID: {HardwareId}", hardwareId);
-
-                if (File.Exists(DeviceIdFilePath))
-                {
-                    string existingId = File.ReadAllText(DeviceIdFilePath).Trim();
-                    if (existingId == hardwareId)
-                    {
-                        _logger.LogInformation("Kalici cihaz ID dogrulandi: {DeviceId}", existingId);
-                        return existingId;
-                    }
-                    else
-                    {
-                        _logger.LogWarning("Mevcut ID ({Existing}) donanim ID ({HardwareId}) ile uyusmuyor.", existingId, hardwareId);
-                    }
-                }
 
                 File.WriteAllText(DeviceIdFilePath, hardwareId);
                 _logger.LogWarning("Donanim tabanli yeni cihaz ID kaydedildi: {DeviceId}", hardwareId);
+                DiagLog("hardware id persisted to cache");
                 return hardwareId;
             }
             catch (Exception ex)
             {
+                DiagLog($"WMI failed: {ex.Message}");
                 _logger.LogError(ex, "Cihaz ID hesabi basarisiz. Gecici ID kullaniliyor.");
                 return Guid.NewGuid().ToString("N");
             }

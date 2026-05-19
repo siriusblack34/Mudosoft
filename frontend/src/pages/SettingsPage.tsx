@@ -926,7 +926,7 @@ const EmailAlarmPanel: React.FC = () => {
             <div>
               <label className="form-label">Kullanıcı Adı</label>
               <input value={smtp.username} onChange={e => setSmtp({ ...smtp, username: e.target.value })}
-                className="w-full text-sm" placeholder="mudosoft@mudo.com.tr" />
+                className="w-full text-sm" placeholder="orchestra@sirket.com" />
             </div>
             <div>
               <label className="form-label">Şifre {hasPassword && <span className="text-emerald-400 text-[10px]">(kayıtlı)</span>}</label>
@@ -936,7 +936,7 @@ const EmailAlarmPanel: React.FC = () => {
             <div>
               <label className="form-label">Gönderen Adres</label>
               <input value={smtp.fromAddress} onChange={e => setSmtp({ ...smtp, fromAddress: e.target.value })}
-                className="w-full text-sm" placeholder="mudosoft@mudo.com.tr" />
+                className="w-full text-sm" placeholder="orchestra@sirket.com" />
             </div>
             <div>
               <label className="form-label">Gönderen İsim</label>

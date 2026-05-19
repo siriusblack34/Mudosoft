@@ -209,12 +209,12 @@ namespace Orchestra.Backend.Services
                 var sd = storeDevices.GetValueOrDefault(d.StoreCode);
                 var storeName = sd?.StoreName ?? "";
                 var displayName = !string.IsNullOrEmpty(storeName) ? $"{storeName} - {d.Hostname}" : d.Hostname;
-                subject = $"[MudoSoft] Cihaz Cevrimdisi: {displayName}";
+                subject = $"[Orchestra] Cihaz Cevrimdisi: {displayName}";
                 body = BuildSingleDeviceHtml(d, storeDevices);
             }
             else
             {
-                subject = $"[MudoSoft] {devicesToAlert.Count} Cihaz Cevrimdisi Oldu";
+                subject = $"[Orchestra] {devicesToAlert.Count} Cihaz Cevrimdisi Oldu";
                 body = BuildMultiDeviceHtml(devicesToAlert, storeDevices);
             }
 
@@ -265,7 +265,7 @@ namespace Orchestra.Backend.Services
       <tr><td style='padding: 8px 0; color: #64748b;'>Son Gorulme:</td><td style='padding: 8px 0;'>{lastSeen}</td></tr>
     </table>
     <hr style='border: none; border-top: 1px solid #e2e8f0; margin: 16px 0;' />
-    <p style='color: #94a3b8; font-size: 12px; margin: 0;'>Bu otomatik bir bildirimdir — MudoSoft RMM</p>
+    <p style='color: #94a3b8; font-size: 12px; margin: 0;'>Bu otomatik bir bildirimdir — Orchestra</p>
   </div>
 </div>";
         }
@@ -305,7 +305,7 @@ namespace Orchestra.Backend.Services
       <tbody>{rows}</tbody>
     </table>
     <div style='padding: 16px 12px;'>
-      <p style='color: #94a3b8; font-size: 12px; margin: 0;'>Bu otomatik bir bildirimdir — MudoSoft RMM</p>
+      <p style='color: #94a3b8; font-size: 12px; margin: 0;'>Bu otomatik bir bildirimdir — Orchestra</p>
     </div>
   </div>
 </div>";

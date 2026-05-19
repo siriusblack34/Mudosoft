@@ -54,12 +54,13 @@ AppDomain.CurrentDomain.UnhandledException += (sender, e) =>
 };
 
 HelperLog($"[BOOT] CLR started. ENV: PID={Environment.ProcessId}, CWD={Environment.CurrentDirectory}, User={Environment.UserName}, Interactive={Environment.UserInteractive}, ExePath={Environment.ProcessPath}");
-HelperLog("BUILD_VERIFICATION: FIX_APPLIED_v7_MANAGER_DEBUG");
+HelperLog("BUILD_VERIFICATION: FIX_APPLIED_v9_1_SELF_UPDATE");
 
 // 🔍 HELPER CRASH DEBUG - En başta log
 HelperLog($"Program started. Args: {string.Join(" ", args)}.");
 
 try {
+HelperLog("[BOOT] entering hostBuilder configuration");
 // ========== NORMAL/SERVICE MODE: Full Host ==========
 var hostBuilder = Host.CreateDefaultBuilder(args)
     .UseWindowsService() 
@@ -114,6 +115,9 @@ var hostBuilder = Host.CreateDefaultBuilder(args)
         // Tray Communication - Named Pipe Server
         services.AddHostedService<PipeServer>();
 
+        // Periyodik kontrol — backend'in yayinladigi yeni surumu kendiliginden indir + uygula.
+        services.AddHostedService<AgentUpdateCheckerService>();
+
         // Emergency hotfix:
         // Telemetry reconnect + debug log spam was causing unnecessary load on store PCs.
         // Keep the type in the codebase, but do not start it in the hotfix build.
@@ -138,8 +142,11 @@ var hostBuilder = Host.CreateDefaultBuilder(args)
         // services.AddHostedService<CollectorOrchestrator>();
     });
 
+HelperLog("[BOOT] hostBuilder configured, calling Build()");
 var host = hostBuilder.Build();
+HelperLog("[BOOT] host built, calling Run() — SCM RUNNING signal will fire after StartAsync returns");
 host.Run();
+HelperLog("[BOOT] host.Run() returned (service stopping)");
 
 } // end global try
 catch (Exception ex)

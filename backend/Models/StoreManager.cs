@@ -21,5 +21,8 @@ namespace Orchestra.Backend.Models
 
         [MaxLength(20)]
         public string Phone { get; set; } = string.Empty; // Tel
+
+        [MaxLength(500)]
+        public string? Address { get; set; } // GENIUS3 STORE.HEADER_4 + HEADER_5 + HEADER_6 birleşik adres
     }
 }

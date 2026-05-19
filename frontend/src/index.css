@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Space+Grotesk:wght@400;500;600;700&display=swap');
 
 @tailwind base;
 @tailwind components;
@@ -268,4 +268,164 @@
 @keyframes dot-glow {
   0%, 100% { box-shadow: 0 0 0 0 rgba(248,250,252,0.3); }
   50%      { box-shadow: 0 0 0 3px rgba(248,250,252,0); }
+}
+
+
+/* ── Login başarı geçiş animasyonu ── */
+@keyframes login-flash {
+  0%   { opacity: 0; transform: scale(0.6); }
+  35%  { opacity: 1; transform: scale(1.1); }
+  100% { opacity: 0; transform: scale(2); }
+}
+.login-success-flash {
+  position: fixed;
+  inset: 0;
+  background: radial-gradient(circle at center,
+    rgba(167,243,208,0.55) 0%,
+    rgba(34,211,238,0.45) 25%,
+    rgba(79,70,229,0.30) 55%,
+    transparent 80%);
+  animation: login-flash 0.9s ease-out forwards;
+  pointer-events: none;
+  z-index: 100;
+  transform-origin: center;
+}
+
+@keyframes login-card-exit {
+  0%   { transform: scale(1)    translateY(0);    opacity: 1; filter: blur(0); }
+  60%  { transform: scale(1.04) translateY(-4px); opacity: 0.6; filter: blur(2px); }
+  100% { transform: scale(1.12) translateY(-12px); opacity: 0; filter: blur(10px); }
+}
+.login-card-exit { animation: login-card-exit 0.8s ease-in forwards; }
+
+@keyframes aurora-boost {
+  0%   { opacity: 0.7; }
+  40%  { opacity: 1; filter: blur(40px) saturate(1.5); }
+  100% { opacity: 0; filter: blur(80px); }
+}
+.login-bg-aurora.boost { animation: aurora-boost 0.9s ease-out forwards; }
+
+/* ── Login arka plan animasyonları ── */
+@keyframes orb-drift-1 {
+  0%   { transform: translate(0, 0)        scale(1);   }
+  33%  { transform: translate(120px, -80px) scale(1.15); }
+  66%  { transform: translate(-60px, 100px) scale(0.9);  }
+  100% { transform: translate(0, 0)        scale(1);   }
+}
+@keyframes orb-drift-2 {
+  0%   { transform: translate(0, 0)         scale(1);   }
+  50%  { transform: translate(-140px, 60px) scale(1.2); }
+  100% { transform: translate(0, 0)         scale(1);   }
+}
+@keyframes orb-drift-3 {
+  0%   { transform: translate(0, 0)        scale(0.9); }
+  40%  { transform: translate(80px, 120px)  scale(1.1); }
+  80%  { transform: translate(-100px, 40px) scale(1);   }
+  100% { transform: translate(0, 0)        scale(0.9); }
+}
+@keyframes orb-drift-4 {
+  0%   { transform: translate(0, 0)         scale(1);   }
+  50%  { transform: translate(100px, -120px) scale(1.25); }
+  100% { transform: translate(0, 0)         scale(1);   }
+}
+
+@keyframes grid-pan {
+  0%   { background-position: 0 0; }
+  100% { background-position: 60px 60px; }
+}
+
+@keyframes particle-rise {
+  0%   { transform: translateY(0)      translateX(0)   scale(0); opacity: 0; }
+  10%  { opacity: 0.8; transform: translateY(-20px) translateX(2px)  scale(1); }
+  90%  { opacity: 0.8; }
+  100% { transform: translateY(-100vh) translateX(-30px) scale(1); opacity: 0; }
+}
+
+.login-bg {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.login-bg-grid {
+  position: absolute;
+  inset: -2px;
+  background-image:
+    linear-gradient(to right,  rgba(56,189,248,0.07) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(56,189,248,0.07) 1px, transparent 1px);
+  background-size: 60px 60px;
+  animation: grid-pan 18s linear infinite;
+  mask-image: radial-gradient(ellipse at center, black 30%, transparent 75%);
+  -webkit-mask-image: radial-gradient(ellipse at center, black 30%, transparent 75%);
+}
+
+.login-bg-orb {
+  position: absolute;
+  border-radius: 9999px;
+  filter: blur(80px);
+  will-change: transform;
+}
+/* Aurora paleti: derin indigo + camgöbeği + zümrüt + teal — pembe yok */
+.login-bg-orb-1 { width: 520px; height: 520px; top: -12%;  left: -8%;   background: radial-gradient(circle, rgba(79,70,229,0.40)  0%, transparent 70%); animation: orb-drift-1 20s ease-in-out infinite; }
+.login-bg-orb-2 { width: 560px; height: 560px; bottom: -18%; right: -12%; background: radial-gradient(circle, rgba(20,184,166,0.32) 0%, transparent 70%); animation: orb-drift-2 24s ease-in-out infinite; }
+.login-bg-orb-3 { width: 420px; height: 420px; top: 20%;   right: 8%;    background: radial-gradient(circle, rgba(6,182,212,0.28)  0%, transparent 70%); animation: orb-drift-3 28s ease-in-out infinite; }
+.login-bg-orb-4 { width: 460px; height: 460px; bottom: 5%;  left: 15%;   background: radial-gradient(circle, rgba(16,185,129,0.22) 0%, transparent 70%); animation: orb-drift-4 32s ease-in-out infinite; }
+
+/* Yavaşça dönen aurora konik degrade — derinlik hissi */
+@keyframes aurora-spin {
+  0%   { transform: translate(-50%, -50%) rotate(0deg); }
+  100% { transform: translate(-50%, -50%) rotate(360deg); }
+}
+.login-bg-aurora {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 140vmax;
+  height: 140vmax;
+  background: conic-gradient(
+    from 0deg,
+    rgba(79,70,229,0)     0deg,
+    rgba(79,70,229,0.12)  60deg,
+    rgba(6,182,212,0.14)  140deg,
+    rgba(16,185,129,0.10) 220deg,
+    rgba(56,189,248,0.12) 300deg,
+    rgba(79,70,229,0)     360deg
+  );
+  filter: blur(60px);
+  animation: aurora-spin 60s linear infinite;
+  opacity: 0.7;
+  mix-blend-mode: screen;
+}
+
+/* Hafif "yıldız" titremesi — uzak ışık noktaları */
+@keyframes star-twinkle {
+  0%, 100% { opacity: 0.2; transform: scale(1); }
+  50%      { opacity: 0.9; transform: scale(1.4); }
+}
+.login-bg-star {
+  position: absolute;
+  width: 2px;
+  height: 2px;
+  border-radius: 9999px;
+  background: rgba(186,230,253,0.9);
+  box-shadow: 0 0 4px rgba(125,211,252,0.8);
+  animation: star-twinkle 4s ease-in-out infinite;
+}
+
+.login-bg-particle {
+  position: absolute;
+  bottom: -10px;
+  width: 3px;
+  height: 3px;
+  border-radius: 9999px;
+  background: rgba(165,243,252,0.8);
+  box-shadow: 0 0 8px rgba(34,211,238,0.7), 0 0 16px rgba(20,184,166,0.4);
+  animation: particle-rise linear infinite;
+}
+
+/* Ayrı renkte ikinci partikül grubu — zümrüt */
+.login-bg-particle.alt {
+  background: rgba(167,243,208,0.8);
+  box-shadow: 0 0 8px rgba(16,185,129,0.7), 0 0 16px rgba(5,150,105,0.4);
 }

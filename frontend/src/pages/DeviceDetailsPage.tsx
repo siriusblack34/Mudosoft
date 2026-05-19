@@ -1,11 +1,12 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
-  Activity, ArrowLeft, Cpu, Download, FolderOpen, HardDrive,
+  Activity, AlertTriangle, ArrowLeft, Cpu, Download, FolderOpen, HardDrive,
   MemoryStick, Monitor, Package, Power, Radar, Settings,
   Terminal, Trash2, Wifi, WifiOff, X, Clock, User, Server,
-  Gauge, Zap, ThermometerSun, Eye,
+  Gauge, Zap, ThermometerSun, Eye, Wrench,
 } from "lucide-react";
+import { useAuth } from "../contexts/AuthContext";
 import MetricChart from "../components/ui/MetricChart";
 import { apiClient } from "../lib/apiClient";
 import type { Device, DeviceMetric, OsInfo } from "../types";
@@ -51,11 +52,19 @@ const clamp = (v = 0) => Math.max(0, Math.min(100, Math.round(v)));
 const DeviceDetailsPage: React.FC = () => {
   const { deviceId } = useParams<{ deviceId: string }>();
   const navigate = useNavigate();
+  const { isAdmin } = useAuth();
   const [dev, setDev] = useState<Device | null>(null);
   const [metrics, setMetrics] = useState<DeviceMetric[]>([]);
   const [loading, setLoading] = useState(true);
   const [restarting, setRestarting] = useState(false);
   const [installingVnc, setInstallingVnc] = useState(false);
+  const [vncResult, setVncResult] = useState<{ ok: boolean; title: string; output: string } | null>(null);
+
+  // Uninstall modal
+  const [uninstallOpen, setUninstallOpen] = useState(false);
+  const [uninstallConfirmText, setUninstallConfirmText] = useState("");
+  const [uninstalling, setUninstalling] = useState(false);
+  const [uninstallError, setUninstallError] = useState<string | null>(null);
 
   // Cleanup
   const [cleanPaths, setCleanPaths] = useState<string[]>([]);
@@ -104,8 +113,42 @@ const DeviceDetailsPage: React.FC = () => {
   const doVnc = async () => {
     if (!deviceId) return;
     setInstallingVnc(true);
-    try { await apiClient.post(`/api/agent/vnc-install/${deviceId}`); alert("VNC kurulum komutu gönderildi."); }
-    catch { alert("VNC kurulum komutu gönderilemedi."); }
+    setVncResult(null);
+    try {
+      const resp = await apiClient.post<{ commandId: string }>(`/api/agent/vnc-install/${deviceId}`);
+      const commandId = resp?.commandId;
+      const isRepair = !!dev?.vncInstalled;
+
+      // Sonucu polla — agent komutu yaklasik 20-30sn'de tamamliyor
+      const deadline = Date.now() + 90_000;
+      let result: { success: boolean; output: string } | null = null;
+      while (Date.now() < deadline) {
+        await new Promise(r => setTimeout(r, 3000));
+        try {
+          const r = await apiClient.get<{ success: boolean; output: string }>(`/api/agent/command-results/${commandId}`);
+          if (r && (r as any).output) { result = r; break; }
+        } catch { /* 404 = hala bekliyor */ }
+      }
+
+      if (result) {
+        setVncResult({
+          ok: result.success,
+          title: result.success
+            ? (isRepair ? "VNC Onar tamamlandı" : "VNC Kurulum tamamlandı")
+            : (isRepair ? "VNC Onar başarısız" : "VNC Kurulum başarısız"),
+          output: result.output,
+        });
+      } else {
+        setVncResult({
+          ok: false,
+          title: "Sonuç gelmedi",
+          output: "Komut agent'a iletildi ancak 90sn içinde sonuç dönmedi. Cihaz offline olabilir ya da komut hala işleniyor olabilir.",
+        });
+      }
+    }
+    catch {
+      setVncResult({ ok: false, title: "Komut gönderilemedi", output: "İstek backend'e ulaşmadı." });
+    }
     finally { setInstallingVnc(false); }
   };
 
@@ -115,6 +158,24 @@ const DeviceDetailsPage: React.FC = () => {
     try { await apiClient.runScript(deviceId, "shutdown /r /t 0"); alert("Yeniden başlatma komutu gönderildi."); }
     catch { alert("Komut gönderilemedi."); }
     finally { setRestarting(false); }
+  };
+
+  const doUninstall = async () => {
+    if (!deviceId || !dev) return;
+    setUninstalling(true);
+    setUninstallError(null);
+    try {
+      await apiClient.uninstallAgent(deviceId);
+      setUninstallOpen(false);
+      setUninstallConfirmText("");
+      alert(
+        `Uninstall komutu kuyruga eklendi.\n\nAgent ~30sn icinde:\n- TightVNC'yi kaldiracak\n- Servisi durdurup silecek\n- Kurulum klasoru ve loglari silecek\n\nCihaz birazdan offline olacak ve envanterden silinebilir.`
+      );
+    } catch (e) {
+      setUninstallError(e instanceof Error ? e.message : "Uninstall komutu gonderilemedi.");
+    } finally {
+      setUninstalling(false);
+    }
   };
 
   const doScan = async () => {
@@ -212,13 +273,28 @@ const DeviceDetailsPage: React.FC = () => {
         <div className="flex flex-wrap gap-1.5">
           <Pill icon={Activity} label="Sağlık" color="emerald" onClick={() => navigate(`/devices/${deviceId}/health`)} />
           <Pill icon={Monitor} label="Uzak Masaüstü" color="blue" onClick={() => navigate(`/devices/${deviceId}/rdp`)} disabled={!dev.online || !dev.vncInstalled} />
-          {!dev.vncInstalled && <Pill icon={Download} label={installingVnc ? "Kuruluyor..." : "VNC Kur"} color="cyan" onClick={doVnc} disabled={installingVnc || !dev.online} />}
+          <Pill
+            icon={dev.vncInstalled ? Wrench : Download}
+            label={installingVnc ? (dev.vncInstalled ? "Onarılıyor..." : "Kuruluyor...") : (dev.vncInstalled ? "VNC Onar" : "VNC Kur")}
+            color={dev.vncInstalled ? "amber" : "cyan"}
+            onClick={doVnc}
+            disabled={installingVnc || !dev.online}
+          />
           <Pill icon={Settings} label="Servisler" color="indigo" onClick={() => navigate(`/devices/${deviceId}/services`)} />
           <Pill icon={FolderOpen} label="Dosyalar" color="violet" onClick={() => navigate(`/devices/${deviceId}/files`)} />
           <Pill icon={Package} label="Yazılımlar" color="fuchsia" onClick={() => navigate(`/devices/${deviceId}/software`)} />
           <Pill icon={Terminal} label="Betik" color="amber" onClick={() => navigate(`/devices/${deviceId}/script`)} />
           <Pill icon={Radar} label={scanning ? "Taranıyor..." : "IP Tarama"} color="teal" onClick={doScan} disabled={scanning} />
           <Pill icon={Power} label={restarting ? "Gönderiliyor..." : "Yeniden Başlat"} color="red" onClick={doRestart} disabled={restarting || !dev.online} />
+          {isAdmin && (
+            <Pill
+              icon={Trash2}
+              label="Agent'ı Kaldır"
+              color="red"
+              onClick={() => { setUninstallError(null); setUninstallConfirmText(""); setUninstallOpen(true); }}
+              disabled={!dev.online}
+            />
+          )}
         </div>
       </div>
 
@@ -251,6 +327,7 @@ const DeviceDetailsPage: React.FC = () => {
           <InfoRow label="Kurulum Tarihi" value={fmt(dev.firstSeen)} accent />
           <InfoRow label="İşlemci" value={dev.cpuModel} icon={Cpu} />
           <InfoRow label="Bellek" value={fmtRam(dev.totalRamMB)} icon={MemoryStick} />
+          <InfoRow label="Seri No" value={dev.serialNumber} mono />
         </div>
       </section>
 
@@ -357,6 +434,112 @@ const DeviceDetailsPage: React.FC = () => {
             </div>
           )}
         </section>
+      )}
+
+      {/* ═══════════ VNC RESULT MODAL ═══════════ */}
+      {vncResult && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={() => setVncResult(null)}>
+          <div className={`w-full max-w-xl rounded-2xl border bg-ms-bg-soft shadow-2xl ${vncResult.ok ? 'border-emerald-500/40' : 'border-amber-500/40'}`} onClick={(e) => e.stopPropagation()}>
+            <div className={`flex items-start gap-3 border-b px-5 py-4 ${vncResult.ok ? 'border-emerald-500/20' : 'border-amber-500/20'}`}>
+              <span className={`p-2 rounded-xl ${vncResult.ok ? 'bg-emerald-500/10' : 'bg-amber-500/10'}`}>
+                <Wrench className={`w-5 h-5 ${vncResult.ok ? 'text-emerald-500' : 'text-amber-500'}`} />
+              </span>
+              <div className="flex-1">
+                <h3 className="text-base font-semibold text-ms-text">{vncResult.title}</h3>
+                <p className="text-xs text-ms-text-muted mt-0.5">{dev?.storeName || dev?.hostname}</p>
+              </div>
+              <button onClick={() => setVncResult(null)} className="p-1 text-ms-text-muted hover:text-ms-text">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="px-5 py-4">
+              <pre className="text-xs font-mono whitespace-pre-wrap bg-ms-bg rounded-lg p-3 border border-ms-border max-h-[60vh] overflow-auto text-ms-text">
+                {vncResult.output}
+              </pre>
+            </div>
+            <div className="flex justify-end gap-2 px-5 py-3 border-t border-ms-border">
+              <button onClick={() => setVncResult(null)} className="px-3 py-1.5 text-sm rounded-lg bg-ms-bg hover:bg-ms-hover-bg border border-ms-border text-ms-text">
+                Kapat
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ═══════════ UNINSTALL CONFIRMATION MODAL ═══════════ */}
+      {uninstallOpen && dev && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={() => !uninstalling && setUninstallOpen(false)}>
+          <div className="w-full max-w-lg rounded-2xl border border-red-500/40 bg-ms-bg-soft shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-start gap-3 border-b border-red-500/20 px-5 py-4">
+              <span className="p-2 rounded-xl bg-red-500/10">
+                <AlertTriangle className="w-5 h-5 text-red-500" />
+              </span>
+              <div className="flex-1">
+                <h3 className="text-base font-semibold text-ms-text">Agent'ı Tamamen Kaldır</h3>
+                <p className="text-xs text-ms-text-muted mt-0.5">{dev.storeName || dev.hostname} · {dev.ipAddress}</p>
+              </div>
+              <button
+                onClick={() => !uninstalling && setUninstallOpen(false)}
+                disabled={uninstalling}
+                className="p-1 text-ms-text-muted hover:text-ms-text disabled:opacity-40"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="px-5 py-4 space-y-3">
+              <p className="text-sm text-ms-text">
+                Bu islem cihazdaki <span className="font-semibold text-red-500">Orchestra agent'ini, TightVNC'yi, kurulum klasorunu ve loglari</span> tamamen kaldirir. Geri donus icin agent yeniden kurulmali.
+              </p>
+              <ul className="text-xs text-ms-text-muted space-y-1 list-disc pl-5">
+                <li><span className="font-mono">MudosoftAgentService</span> servisi durdurulup silinir</li>
+                <li>Tray uygulamasi (<span className="font-mono">MudoSoft.Tray.exe</span>) kapatilir</li>
+                <li>TightVNC msiexec ile sessizce kaldirilir, registry temizlenir</li>
+                <li><span className="font-mono">C:\Program Files\MudoSoft</span> ve update/log dosyalari silinir</li>
+                <li><span className="font-mono">MudoSoftRDHelper</span> scheduled task'i silinir</li>
+              </ul>
+
+              <div className="rounded-lg border border-red-500/30 bg-red-500/5 p-3">
+                <p className="text-xs text-red-500 dark:text-red-400 mb-2">
+                  Onaylamak icin hostname'i yazin: <span className="font-mono font-semibold">{dev.hostname}</span>
+                </p>
+                <input
+                  type="text"
+                  value={uninstallConfirmText}
+                  onChange={(e) => setUninstallConfirmText(e.target.value)}
+                  placeholder={dev.hostname || ""}
+                  disabled={uninstalling}
+                  autoFocus
+                  className="w-full px-3 py-2 bg-ms-panel border border-ms-border rounded-lg text-sm font-mono text-ms-text placeholder-ms-text-muted focus:outline-none focus:border-red-500/50 disabled:opacity-50"
+                />
+              </div>
+
+              {uninstallError && (
+                <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-500 dark:text-red-400">
+                  {uninstallError}
+                </div>
+              )}
+            </div>
+
+            <div className="flex items-center justify-end gap-2 border-t border-ms-border px-5 py-3">
+              <button
+                onClick={() => setUninstallOpen(false)}
+                disabled={uninstalling}
+                className="px-4 py-2 rounded-lg text-sm font-medium text-ms-text-muted hover:text-ms-text disabled:opacity-50"
+              >
+                Vazgec
+              </button>
+              <button
+                onClick={doUninstall}
+                disabled={uninstalling || uninstallConfirmText.trim() !== (dev.hostname || "")}
+                className="px-4 py-2 rounded-lg text-sm font-medium bg-red-600 hover:bg-red-500 text-white shadow-lg shadow-red-600/20 disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-2"
+              >
+                <Trash2 className="w-4 h-4" />
+                {uninstalling ? "Gonderiliyor..." : "Kaldir"}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

@@ -37,6 +37,7 @@ namespace Orchestra.Backend.Models
         public long TotalRamMB { get; set; }
         public long TotalDiskGB { get; set; }
         public string? GpuModel { get; set; }
+        public string? SerialNumber { get; set; } // BIOS Serial (Win32_BIOS.SerialNumber)
 
         // USER & SESSION
         public string? LastLoggedInUser { get; set; }
@@ -67,6 +68,10 @@ namespace Orchestra.Backend.Models
         public bool VncInstalled { get; set; }
         public string? VncPassword { get; set; } // Encrypted, per-device unique
         public int VncPort { get; set; } = 5900;
+
+        // VISIBILITY — true ise non-admin kullanıcılar bu cihazı listede görmez (admin görür ve toggle eder).
+        // Genel amaç: admin/team makineleri (laptop'lar, test PC'leri) operasyon ekibinden gizlemek.
+        public bool HiddenForNonAdmins { get; set; }
 
         // NAVIGATION PROPERTY
         public List<DeviceMetric> Metrics { get; set; } = new();

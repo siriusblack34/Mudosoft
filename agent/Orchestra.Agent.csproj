@@ -16,9 +16,9 @@
     <Description>Orchestra Retail POS Agent</Description>
     
     <!-- Agent Version - Önemli: Her güncellemede artır! -->
-    <Version>1.0.0.67</Version>
-    <AssemblyVersion>1.0.0.67</AssemblyVersion>
-    <FileVersion>1.0.0.67</FileVersion>
+    <Version>1.0.0.72</Version>
+    <AssemblyVersion>1.0.0.72</AssemblyVersion>
+    <FileVersion>1.0.0.72</FileVersion>
 
     <GenerateEmbeddedFilesManifest>false</GenerateEmbeddedFilesManifest>
   </PropertyGroup>

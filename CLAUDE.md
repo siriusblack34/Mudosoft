@@ -1,7 +1,7 @@
-# MudoSoft - Claude Code Instructions
+# Orchestra - Claude Code Instructions
 
 ## Project Overview
-RMM (Remote Management & Monitoring) system for retail POS environments.
+Orchestra (eski adı: MudoSoft RMM) — kurumsal RMM platformu (mağaza, merkez, sunucu, network cihazları). Detaylar memory'de.
 
 ## Tech Stack
 - **Backend:** ASP.NET Core 8, PostgreSQL, SignalR — `backend/`
@@ -9,7 +9,7 @@ RMM (Remote Management & Monitoring) system for retail POS environments.
 - **Agent:** .NET 8 Windows Service — `agent/`
 - **Shared DTOs:** Class Library — `shared/`
 - **RD Helper:** Windows app for WebRTC streaming — `helper/`
-- **Solution:** `mudosoft.sln`
+- **Solution:** `orchestra.sln` (eski adı: `mudosoft.sln`)
 
 ## Build & Run Commands
 ```bash
@@ -25,7 +25,7 @@ cd frontend && npm run dev
 cd agent && dotnet build
 
 # Full solution
-dotnet build mudosoft.sln
+dotnet build orchestra.sln
 ```
 
 ## Key Conventions

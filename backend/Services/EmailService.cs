@@ -108,7 +108,7 @@ public class EmailService : IEmailService
         if (string.IsNullOrWhiteSpace(recipient))
             return (false, "Test e-postasi icin alici adresi bulunamadi");
 
-        var subject = $"[MudoSoft] SMTP Test E-postasi - {DateTime.Now:dd.MM.yyyy HH:mm}";
+        var subject = $"[Orchestra] SMTP Test E-postasi - {DateTime.Now:dd.MM.yyyy HH:mm}";
         var htmlBody = BuildTestEmailHtml(requestedBy, recipient, config);
 
         try
@@ -257,7 +257,7 @@ public class EmailService : IEmailService
             Password = password,
             UseSsl = settings.GetValueOrDefault("smtp:useSsl", "false") == "true",
             FromAddress = settings.GetValueOrDefault("smtp:fromAddress", ""),
-            FromName = settings.GetValueOrDefault("smtp:fromName", "MudoSoft RMM")
+            FromName = settings.GetValueOrDefault("smtp:fromName", "Orchestra")
         };
     }
 
@@ -314,7 +314,7 @@ public class EmailService : IEmailService
     <h2 style='margin: 0; font-size: 18px;'>SMTP Test E-postasi</h2>
   </div>
   <div style='background: #f8fafc; padding: 24px; border: 1px solid #e2e8f0; border-top: none; border-radius: 0 0 8px 8px;'>
-    <p style='margin-top: 0; color: #0f172a;'>Bu ileti, MudoSoft RMM SMTP ayarlarinin gercek teslimatini dogrulamak icin gonderildi.</p>
+    <p style='margin-top: 0; color: #0f172a;'>Bu ileti, Orchestra SMTP ayarlarinin gercek teslimatini dogrulamak icin gonderildi.</p>
     <table style='width: 100%; border-collapse: collapse;'>
       <tr><td style='padding: 8px 0; color: #64748b; width: 160px;'>Talep Eden:</td><td style='padding: 8px 0; font-weight: 600;'>{safeRequestedBy}</td></tr>
       <tr><td style='padding: 8px 0; color: #64748b;'>Alici:</td><td style='padding: 8px 0; font-weight: 600;'>{recipient}</td></tr>
@@ -336,6 +336,6 @@ public class EmailService : IEmailService
         public string Password { get; set; } = "";
         public bool UseSsl { get; set; }
         public string FromAddress { get; set; } = "";
-        public string FromName { get; set; } = "MudoSoft RMM";
+        public string FromName { get; set; } = "Orchestra";
     }
 }

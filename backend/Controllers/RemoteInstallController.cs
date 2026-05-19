@@ -3,7 +3,9 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Orchestra.Backend.Data;
 using Orchestra.Backend.Models;
+using Orchestra.Backend.Services;
 using System.Diagnostics;
+using System.Net;
 using System.Text.Json;
 
 namespace Orchestra.Backend.Controllers;
@@ -18,6 +20,8 @@ public class RemoteInstallController : ControllerBase
     private readonly OrchestraDbContext _db;
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly CommandQueue _commandQueue;
+    private readonly ActivityLogService _activity;
+    private readonly ILdapDirectoryService _ad;
     private readonly string _updatesPath;
     private readonly string _toolsPath;
 
@@ -30,13 +34,17 @@ public class RemoteInstallController : ControllerBase
         OrchestraDbContext db,
         IServiceScopeFactory scopeFactory,
         CommandQueue commandQueue,
-        IWebHostEnvironment env)
+        IWebHostEnvironment env,
+        ActivityLogService activity,
+        ILdapDirectoryService ad)
     {
         _logger = logger;
         _config = config;
         _db = db;
         _scopeFactory = scopeFactory;
         _commandQueue = commandQueue;
+        _activity = activity;
+        _ad = ad;
         _updatesPath = Path.Combine(env.ContentRootPath, "updates");
         _toolsPath = Path.GetFullPath(Path.Combine(env.ContentRootPath, "..", "agent", "tools"));
     }
@@ -576,26 +584,18 @@ public class RemoteInstallController : ControllerBase
     }
 
     [HttpPost]
-    public IActionResult StartInstall([FromBody] RemoteInstallRequest request)
+    public async Task<IActionResult> StartInstall([FromBody] RemoteInstallRequest request)
     {
         if (string.IsNullOrWhiteSpace(request.IpAddress))
             return BadRequest(new { error = "IP adresi gerekli" });
 
-        if (!System.Net.IPAddress.TryParse(request.IpAddress.Trim(), out _))
+        if (!IPAddress.TryParse(request.IpAddress.Trim(), out var parsedIp) ||
+            parsedIp.AddressFamily != System.Net.Sockets.AddressFamily.InterNetwork)
             return BadRequest(new { error = "Geçersiz IP adresi" });
 
-        var ip = request.IpAddress.Trim();
+        var ip = parsedIp.ToString();
 
-        var storeCode = request.StoreCode?.Trim();
-        if (string.IsNullOrEmpty(storeCode))
-        {
-            var parts = ip.Split('.');
-            if (parts.Length == 4 && int.TryParse(parts[2], out var octet) && octet > 1)
-                storeCode = octet.ToString();
-            else
-                return BadRequest(new { error = "Mağaza kodu tespit edilemedi, manuel girin" });
-        }
-
+        var storeCode = await ResolveStoreCodeForInstall(ip, request.StoreCode);
         lock (_lock)
         {
             if (_installations.TryGetValue(ip, out var existing) && existing.Phase == "running")
@@ -631,15 +631,135 @@ public class RemoteInstallController : ControllerBase
 
         _ = Task.Run(() => RunInstallAsync(status, ip, storeCode, backendUrl, zipPath));
 
+        _ = _activity.LogAsync("RemoteInstall", "Start", $"{storeCode}@{ip}", $"InstallId: {installId}");
         return Ok(new { installId, ip, storeCode, message = "Kurulum başlatıldı" });
+    }
+
+    private async Task<string> ResolveStoreCodeForInstall(string ip, string? requestedStoreCode)
+    {
+        var manualStoreCode = NormalizeStoreCode(requestedStoreCode);
+        if (!string.IsNullOrEmpty(manualStoreCode))
+            return manualStoreCode;
+
+        var dbStoreCode = await _db.StoreDevices
+            .AsNoTracking()
+            .Where(d => d.CalculatedIpAddress == ip)
+            .Select(d => (int?)d.StoreCode)
+            .FirstOrDefaultAsync();
+        if (dbStoreCode is > 0)
+            return dbStoreCode.Value.ToString();
+
+        var parts = ip.Split('.');
+        if (parts.Length == 4 &&
+            parts[0] == "192" &&
+            parts[1] == "168" &&
+            int.TryParse(parts[2], out var storeOctet) &&
+            storeOctet > 1)
+        {
+            return storeOctet.ToString();
+        }
+
+        // Manual IP installs should still be possible for temporary/non-store subnets.
+        return "0";
+    }
+
+    private static string? NormalizeStoreCode(string? storeCode)
+    {
+        if (string.IsNullOrWhiteSpace(storeCode))
+            return null;
+
+        var digits = new string(storeCode.Where(char.IsDigit).ToArray());
+        if (digits.Length == 0)
+            return null;
+
+        return int.TryParse(digits, out var parsed) && parsed > 0
+            ? parsed.ToString()
+            : null;
+    }
+
+    [HttpPost("by-hostname")]
+    [Authorize(Roles = "Admin")]
+    public async Task<IActionResult> StartInstallByHostname([FromBody] BatchInstallByHostnameRequest request, CancellationToken ct)
+    {
+        if (request?.Hostnames == null || request.Hostnames.Count == 0)
+            return BadRequest(new { error = "En az bir hostname gerekli" });
+
+        var latestFile = Path.Combine(_updatesPath, "latest.json");
+        if (!System.IO.File.Exists(latestFile))
+            return BadRequest(new { error = "Agent paketi bulunamadı. Önce bir build yapın." });
+        var latestJson = System.IO.File.ReadAllText(latestFile);
+        var latest = JsonSerializer.Deserialize<JsonElement>(latestJson);
+        var fileName = latest.GetProperty("fileName").GetString();
+        var zipPath = Path.Combine(_updatesPath, fileName!);
+        if (!System.IO.File.Exists(zipPath))
+            return BadRequest(new { error = $"Agent ZIP bulunamadı: {fileName}" });
+
+        var backendUrl = _config["Agent:BackendUrl"] ?? "http://10.0.210.99:5102";
+        var results = new List<object>();
+
+        foreach (var hostnameRaw in request.Hostnames.Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            var hostname = hostnameRaw?.Trim();
+            if (string.IsNullOrEmpty(hostname))
+            {
+                results.Add(new { hostname = hostnameRaw, ok = false, error = "boş" });
+                continue;
+            }
+
+            var ip = await _ad.ResolveHostnameAsync(hostname, ct);
+            if (string.IsNullOrEmpty(ip))
+            {
+                results.Add(new { hostname, ok = false, error = "DNS çözümleme başarısız" });
+                continue;
+            }
+
+            lock (_lock)
+            {
+                if (_installations.TryGetValue(ip, out var existing) && existing.Phase == "running")
+                {
+                    results.Add(new { hostname, ip, ok = false, error = "Zaten kurulum devam ediyor" });
+                    continue;
+                }
+            }
+
+            var storeCode = await ResolveStoreCodeForInstall(ip, request.StoreCode);
+            var installId = Guid.NewGuid().ToString("N")[..8];
+            var status = new InstallStatus
+            {
+                Id = installId,
+                IpAddress = ip,
+                StoreCode = storeCode,
+                Phase = "running",
+                Steps = new List<InstallStep>(),
+                StartedAt = DateTime.UtcNow
+            };
+            lock (_lock) { _installations[ip] = status; }
+
+            _ = Task.Run(() => RunInstallAsync(status, ip, storeCode, backendUrl, zipPath));
+            _ = _activity.LogAsync("RemoteInstall", "Start (AD)", $"{storeCode}@{hostname}({ip})", $"InstallId: {installId}");
+
+            results.Add(new { hostname, ip, installId, storeCode, ok = true });
+        }
+
+        return Ok(new { results });
+    }
+
+    public class BatchInstallByHostnameRequest
+    {
+        public List<string> Hostnames { get; set; } = new();
+        public string? StoreCode { get; set; }
     }
 
     [HttpGet("status")]
     public IActionResult GetStatus([FromQuery] string ip)
     {
+        var statusIp = IPAddress.TryParse(ip?.Trim(), out var parsedIp)
+            ? parsedIp.ToString()
+            : ip?.Trim() ?? "";
+
         lock (_lock)
         {
-            if (_installations.TryGetValue(ip, out var status))
+            if (_installations.TryGetValue(statusIp, out var status))
                 return Ok(status);
         }
         return NotFound(new { error = "Kurulum kaydı bulunamadı" });
@@ -817,46 +937,105 @@ try {
         await System.IO.File.WriteAllTextAsync(configPath, configJson);
 
         var scriptPath = Path.Combine(Path.GetTempPath(), $"mudocopy_{ip.Replace('.', '_')}.ps1");
+        // ZIP'i tek dosya olarak hedefe gonder + WMI ile hedefte extract et.
+        // 750 kucuk dosyayi SMB uzerinden tek tek kopyalamak AV scan + handshake overhead'i ile saatler suruyor;
+        // tek 72MB transfer + lokal extract dakikalar yerine saniyeler aliyor.
         var script = @"
 $ErrorActionPreference = 'Stop'
 $ip = '" + ip + @"'
 $zipPath = '" + zipPath.Replace("'", "''") + @"'
 $configPath = '" + configPath.Replace("'", "''") + @"'
+$localTools = '" + _toolsPath.Replace("'", "''") + @"'
 try {
     $remotePath = ""\\$ip\C$\Program Files\MudoSoft\Agent""
+    $remoteTemp = ""\\$ip\C$\temp""
+    if (!(Test-Path $remoteTemp)) { New-Item -Path $remoteTemp -ItemType Directory -Force | Out-Null }
     if (!(Test-Path $remotePath)) { New-Item -Path $remotePath -ItemType Directory -Force | Out-Null }
 
-    # C:\temp kullan - $env:TEMP 8.3 kisa path dondurebilir, Copy-Item -Recurse bozuluyor
-    if (!(Test-Path 'C:\temp')) { New-Item -Path 'C:\temp' -ItemType Directory -Force | Out-Null }
-    $tempDir = 'C:\temp\MudoInstall_' + $ip.Replace('.','_') + '_' + (Get-Random)
-    if (Test-Path $tempDir) { Remove-Item $tempDir -Recurse -Force }
-    New-Item -Path $tempDir -ItemType Directory -Force | Out-Null
+    # 1) ZIP'i tek SMB transfer ile hedefe gonder
+    $remoteZip = Join-Path $remoteTemp 'mudoagent.zip'
+    Copy-Item -Path $zipPath -Destination $remoteZip -Force
 
-    # ZIP'i once IP'ye ozel temp dizine kopyala, sonra extract et (concurrent lock onleme)
-    $zipCopy = Join-Path $tempDir 'agent.zip'
-    Copy-Item -Path $zipPath -Destination $zipCopy -Force
-    Expand-Archive -Path $zipCopy -DestinationPath $tempDir -Force
-    Remove-Item $zipCopy -Force
+    # 2) Hedefte calistirilacak extract script'ini gonder
+    # AV (anti-virus) anlik dosya tarama yapinca Expand-Archive IOException aliyor.
+    # Bunun yerine .NET ZipFile API'siyle dosya-bazli retry-with-backoff yapiyoruz.
+    $extractScript = @'
+$ErrorActionPreference = 'Stop'
+Add-Type -AssemblyName System.IO.Compression.FileSystem
+try {
+    $dest = 'C:\Program Files\MudoSoft\Agent'
+    if (!(Test-Path $dest)) { New-Item -Path $dest -ItemType Directory -Force | Out-Null }
 
-    # Remove appsettings from ZIP (will write fresh)
-    $cf = Join-Path $tempDir 'appsettings.json'
-    if (Test-Path $cf) { Remove-Item $cf -Force }
+    $zip = [System.IO.Compression.ZipFile]::OpenRead('C:\temp\mudoagent.zip')
+    try {
+        foreach ($entry in $zip.Entries) {
+            if ([string]::IsNullOrEmpty($entry.Name)) { continue }
+            $target = Join-Path $dest $entry.FullName
+            $targetDir = Split-Path $target -Parent
+            if (!(Test-Path $targetDir)) { New-Item -Path $targetDir -ItemType Directory -Force | Out-Null }
 
-    robocopy $tempDir $remotePath /E /NFL /NDL /NJH /NJS /NC /NS /NP | Out-Null
-    if ($LASTEXITCODE -ge 8) { throw ""robocopy failed with exit code $LASTEXITCODE"" }
+            # AV scan kilidi: 5 retry x exponential backoff (100/200/400/800/1600ms)
+            $attempt = 0
+            while ($true) {
+                try {
+                    [System.IO.Compression.ZipFileExtensions]::ExtractToFile($entry, $target, $true)
+                    break
+                } catch [System.IO.IOException] {
+                    $attempt++
+                    if ($attempt -ge 5) { throw }
+                    Start-Sleep -Milliseconds (100 * [Math]::Pow(2, $attempt - 1))
+                }
+            }
+        }
+    } finally { $zip.Dispose() }
 
-    # Copy fresh config
+    Remove-Item (Join-Path $dest 'appsettings.json') -Force -ErrorAction SilentlyContinue
+    Remove-Item 'C:\temp\mudoagent.zip' -Force -ErrorAction SilentlyContinue
+    New-Item 'C:\temp\mudoagent.done' -ItemType File -Force | Out-Null
+} catch {
+    $_.Exception.Message | Set-Content 'C:\temp\mudoagent.error' -Force
+}
+'@
+    $remoteScript = Join-Path $remoteTemp 'mudoagent_extract.ps1'
+    Set-Content -Path $remoteScript -Value $extractScript -Force
+
+    # Eski flag dosyalarini temizle
+    Remove-Item ""$remoteTemp\mudoagent.done"" -Force -ErrorAction SilentlyContinue
+    Remove-Item ""$remoteTemp\mudoagent.error"" -Force -ErrorAction SilentlyContinue
+
+    # 3) WMI ile hedefte extract'i tetikle (Win32_Process.Create)
+    $extractCmd = 'powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File C:\temp\mudoagent_extract.ps1'
+    $r = Invoke-WmiMethod -ComputerName $ip -Class Win32_Process -Name Create -ArgumentList $extractCmd -ErrorAction Stop
+    if ($r.ReturnValue -ne 0) { throw ""WMI process create failed (return=$($r.ReturnValue))"" }
+
+    # 4) Extract tamamlanmasini bekle — max 5dk (168MB lokal extract ~30sn, AV varsa 2-3dk)
+    $doneFile = ""$remoteTemp\mudoagent.done""
+    $errorFile = ""$remoteTemp\mudoagent.error""
+    $extracted = $false
+    for ($i = 0; $i -lt 100; $i++) {
+        Start-Sleep -Seconds 3
+        if (Test-Path $errorFile) {
+            $errMsg = Get-Content $errorFile -Raw
+            Remove-Item $errorFile -Force -ErrorAction SilentlyContinue
+            throw ""Extract hatasi: $errMsg""
+        }
+        if (Test-Path $doneFile) { $extracted = $true; break }
+    }
+    if (!$extracted) { throw 'Extract 5dk icinde tamamlanmadi' }
+    Remove-Item $doneFile -Force -ErrorAction SilentlyContinue
+    Remove-Item $remoteScript -Force -ErrorAction SilentlyContinue
+
+    # 5) Fresh appsettings.json yaz (kucuk dosya)
     Copy-Item -Path $configPath -Destination (Join-Path $remotePath 'appsettings.json') -Force
 
-    # Copy tools folder (tightvnc.msi etc.)
-    $localTools = '" + _toolsPath.Replace("'", "''") + @"'
+    # 6) Tools klasoru (3 dosya, ~31MB) — robocopy yeterli
     $remoteTools = Join-Path $remotePath 'tools'
     if (Test-Path $localTools) {
         if (!(Test-Path $remoteTools)) { New-Item -Path $remoteTools -ItemType Directory -Force | Out-Null }
-        robocopy $localTools $remoteTools /E /NFL /NDL /NJH /NJS /NC /NS /NP | Out-Null
+        robocopy $localTools $remoteTools /E /R:2 /W:5 /NFL /NDL /NJH /NJS /NC /NS /NP | Out-Null
+        if ($LASTEXITCODE -ge 8) { throw ""robocopy tools failed with exit code $LASTEXITCODE"" }
     }
 
-    Remove-Item $tempDir -Recurse -Force -ErrorAction SilentlyContinue
     Write-Output 'COPY_OK'
 } catch {
     Write-Output ""COPY_FAIL: $($_.Exception.Message)""
@@ -931,7 +1110,7 @@ try {
 
     # DelayedAutoStart, description, failure policy (kritik degil, sessiz gec)
     reg.exe add ""\\$ip\HKLM\SYSTEM\CurrentControlSet\Services\$svcName"" /v DelayedAutoStart /t REG_DWORD /d 1 /f 2>&1 | Out-Null
-    cmd /c ""sc.exe \\$ip description $svcName \""MudoSoft RMM Agent\"""" 2>&1 | Out-Null
+    cmd /c ""sc.exe \\$ip description $svcName \""Orchestra Agent\"""" 2>&1 | Out-Null
     cmd /c ""sc.exe \\$ip failure $svcName reset= 86400 actions= restart/5000/restart/10000/restart/30000"" 2>&1 | Out-Null
 
     # Servisi baslat
@@ -986,7 +1165,7 @@ try {
     /// <summary>
     /// Run a .ps1 file — avoids bash/cmd UNC path escaping issues
     /// </summary>
-    private async Task<(int ExitCode, string Output)> RunPsFile(string scriptPath)
+    private async Task<(int ExitCode, string Output)> RunPsFile(string scriptPath, TimeSpan? timeout = null)
     {
         var psi = new ProcessStartInfo
         {
@@ -999,10 +1178,24 @@ try {
         };
 
         using var process = Process.Start(psi)!;
-        var output = await process.StandardOutput.ReadToEndAsync();
-        var error = await process.StandardError.ReadToEndAsync();
-        await process.WaitForExitAsync();
+        var hardTimeout = timeout ?? TimeSpan.FromMinutes(10);
+        using var cts = new CancellationTokenSource(hardTimeout);
 
+        var stdoutTask = process.StandardOutput.ReadToEndAsync();
+        var stderrTask = process.StandardError.ReadToEndAsync();
+
+        try
+        {
+            await process.WaitForExitAsync(cts.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            try { process.Kill(entireProcessTree: true); } catch { }
+            return (-1, $"TIMEOUT after {hardTimeout.TotalSeconds:0}s");
+        }
+
+        var output = await stdoutTask;
+        var error = await stderrTask;
         var combined = string.IsNullOrWhiteSpace(error) ? output.Trim() : $"{output.Trim()}\n{error.Trim()}";
         return (process.ExitCode, combined);
     }

@@ -206,42 +206,168 @@ namespace Orchestra.Backend.Controllers
                 .FirstOrDefaultAsync(d => d.DeviceId == deviceId);
             if (device == null) return NotFound();
 
-            string? hostname = null;
-            string? serialNumber = null;
+            // Oncelik sirasi (her alan icin manuel override en yuksek):
+            //   hostname:     StoreDevices.Hostname > Devices.Hostname > SQL SERVERPROPERTY
+            //   serialNumber: StoreDevices.SerialNumber > Devices.SerialNumber
+            string? hostname = string.IsNullOrWhiteSpace(device.Hostname) ? null : device.Hostname;
+            string? serialNumber = string.IsNullOrWhiteSpace(device.SerialNumber) ? null : device.SerialNumber;
             string? hostnameError = null;
             string? serialError = null;
 
-            try
+            if (string.IsNullOrWhiteSpace(hostname) || string.IsNullOrWhiteSpace(serialNumber))
             {
-                var ht = await _remoteSqlService.ExecuteQueryAsync(
-                    device.DbConnectionString,
-                    "SELECT CAST(SERVERPROPERTY('MachineName') AS NVARCHAR(256)) AS Value");
-                if (ht?.Rows.Count > 0)
-                    hostname = ht.Rows[0]["Value"]?.ToString();
-            }
-            catch (Exception ex) { hostnameError = ex.Message; }
-
-            try
-            {
-                var st = await _remoteSqlService.ExecuteQueryAsync(
-                    device.DbConnectionString,
-                    "EXEC xp_cmdshell 'wmic bios get SerialNumber /value'");
-                if (st != null)
+                var managed = await _db.Devices.AsNoTracking()
+                    .Where(d => d.IpAddress == device.CalculatedIpAddress)
+                    .Select(d => new { d.Hostname, d.SerialNumber })
+                    .FirstOrDefaultAsync();
+                if (managed != null)
                 {
-                    foreach (DataRow row in st.Rows)
-                    {
-                        var line = row["output"]?.ToString()?.Trim() ?? "";
-                        if (line.StartsWith("SerialNumber=", StringComparison.OrdinalIgnoreCase))
-                        {
-                            serialNumber = line.Split('=', 2)[1].Trim();
-                            break;
-                        }
-                    }
+                    if (string.IsNullOrWhiteSpace(hostname))
+                        hostname = string.IsNullOrWhiteSpace(managed.Hostname) ? null : managed.Hostname;
+                    if (string.IsNullOrWhiteSpace(serialNumber))
+                        serialNumber = managed.SerialNumber;
                 }
             }
-            catch (Exception ex) { serialError = ex.Message; }
 
-            return Ok(new { hostname, serialNumber, hostnameError, serialError });
+            if (string.IsNullOrWhiteSpace(hostname))
+            {
+                try
+                {
+                    var ht = await _remoteSqlService.ExecuteQueryAsync(
+                        device.DbConnectionString,
+                        "SELECT CAST(SERVERPROPERTY('MachineName') AS NVARCHAR(256)) AS Value");
+                    if (ht?.Rows.Count > 0)
+                        hostname = ht.Rows[0]["Value"]?.ToString();
+                }
+                catch (Exception ex) { hostnameError = ex.Message; }
+            }
+
+            if (string.IsNullOrWhiteSpace(serialNumber))
+            {
+                serialError = "Seri henuz cekilmedi — bir sonraki aylik sync'te doldurulacak.";
+            }
+
+            var printerSerialNumber = string.IsNullOrWhiteSpace(device.PrinterSerialNumber) ? null : device.PrinterSerialNumber;
+
+            return Ok(new { hostname, serialNumber, hostnameError, serialError, printerSerialNumber });
+        }
+
+        // ===========================================================
+        // 3b) KASA MANUEL BILGI GUNCELLEME (hostname / BIOS seri / yazici sicil)
+        //     Body'de gonderilmeyen (undefined) alanlar dokunulmaz; null gonderilen temizlenir.
+        // ===========================================================
+        public class UpdateManualInfoRequest
+        {
+            public string? Hostname { get; set; }
+            public string? SerialNumber { get; set; }
+            public string? PrinterSerialNumber { get; set; }
+            // Hangi alanlarin gonderildigini ayirt etmek icin
+            public bool HasHostname { get; set; }
+            public bool HasSerialNumber { get; set; }
+            public bool HasPrinterSerialNumber { get; set; }
+        }
+
+        [HttpPut("devices/{deviceId}/manual-info")]
+        public async Task<IActionResult> UpdateManualInfo(string deviceId, [FromBody] System.Text.Json.JsonElement body)
+        {
+            var device = await _db.StoreDevices.FirstOrDefaultAsync(d => d.DeviceId == deviceId);
+            if (device == null) return NotFound(new { error = "Device not found" });
+
+            string? Norm(string? v) { var t = v?.Trim(); return string.IsNullOrWhiteSpace(t) ? null : t; }
+
+            if (body.TryGetProperty("hostname", out var hp))
+                device.Hostname = hp.ValueKind == System.Text.Json.JsonValueKind.Null ? null : Norm(hp.GetString());
+            if (body.TryGetProperty("serialNumber", out var sp))
+                device.SerialNumber = sp.ValueKind == System.Text.Json.JsonValueKind.Null ? null : Norm(sp.GetString());
+            if (body.TryGetProperty("printerSerialNumber", out var pp))
+                device.PrinterSerialNumber = pp.ValueKind == System.Text.Json.JsonValueKind.Null ? null : Norm(pp.GetString());
+
+            await _db.SaveChangesAsync();
+            _logger.LogInformation("Kasa manuel bilgi guncellendi: {DeviceId} host={Host} serial={Serial} printer={Printer} by {User}",
+                deviceId, device.Hostname, device.SerialNumber, device.PrinterSerialNumber, User?.Identity?.Name);
+
+            return Ok(new
+            {
+                deviceId,
+                hostname = device.Hostname,
+                serialNumber = device.SerialNumber,
+                printerSerialNumber = device.PrinterSerialNumber
+            });
+        }
+
+        // Geriye uyumluluk: eski endpoint duruyor
+        public class UpdatePrinterSerialRequest
+        {
+            public string? PrinterSerialNumber { get; set; }
+        }
+
+        [HttpPut("devices/{deviceId}/printer-serial")]
+        public async Task<IActionResult> UpdatePrinterSerial(string deviceId, [FromBody] UpdatePrinterSerialRequest req)
+        {
+            var device = await _db.StoreDevices.FirstOrDefaultAsync(d => d.DeviceId == deviceId);
+            if (device == null) return NotFound(new { error = "Device not found" });
+
+            var trimmed = req.PrinterSerialNumber?.Trim();
+            device.PrinterSerialNumber = string.IsNullOrWhiteSpace(trimmed) ? null : trimmed;
+            await _db.SaveChangesAsync();
+
+            _logger.LogInformation("Printer sicil manuel guncellendi: {DeviceId} -> {Value} by {User}",
+                deviceId, device.PrinterSerialNumber ?? "(temizlendi)", User?.Identity?.Name);
+
+            return Ok(new { deviceId, printerSerialNumber = device.PrinterSerialNumber });
+        }
+
+        // ===========================================================
+        // 3d) TEK KASA ICIN PRINTER SICIL'I YENIDEN CEK (Geçici SQL kesintisi sonrasi retry icin)
+        // ===========================================================
+        [HttpPost("devices/{deviceId}/refresh-printer-serial")]
+        public async Task<IActionResult> RefreshPrinterSerial(string deviceId, CancellationToken ct)
+        {
+            var device = await _db.StoreDevices.FirstOrDefaultAsync(d => d.DeviceId == deviceId);
+            if (device == null) return NotFound(new { error = "Device not found" });
+            if (string.IsNullOrWhiteSpace(device.DbConnectionString))
+                return BadRequest(new { error = "Cihazin DB connection string'i yok" });
+
+            try
+            {
+                var dt = await _remoteSqlService.ExecuteQueryAsync(
+                    device.DbConnectionString,
+                    "SELECT TOP 1 PARAMETER_1 AS sicil FROM TRANSACTION_RESULT WHERE PARAMETER_1 LIKE 'YAB%' ORDER BY CREATE_DATE DESC");
+
+                var raw = dt?.Rows.Count > 0 ? dt.Rows[0]["sicil"]?.ToString()?.Trim() : null;
+                if (string.IsNullOrWhiteSpace(raw))
+                    return Ok(new { deviceId, printerSerialNumber = device.PrinterSerialNumber, message = "Kasanin DB'sinde YAB ile baslayan kayit bulunamadi" });
+
+                device.PrinterSerialNumber = raw;
+                await _db.SaveChangesAsync();
+                _logger.LogInformation("Printer sicil tek-kasa refresh: {DeviceId} -> {Serial}", deviceId, raw);
+                return Ok(new { deviceId, printerSerialNumber = raw });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { error = ex.Message });
+            }
+        }
+
+        // ===========================================================
+        // 3c) PRINTER SICIL TUM KASALAR ICIN SYNC (Admin manuel tetik)
+        // ===========================================================
+        [HttpPost("devices/sync-printer-serials")]
+        [Authorize(Roles = "Admin")]
+        public async Task<IActionResult> SyncPrinterSerials(
+            [FromServices] PrinterSerialSyncService syncService,
+            CancellationToken ct)
+        {
+            var result = await syncService.RunSyncAsync(ct);
+            return Ok(new
+            {
+                skipped = result.Skipped,
+                total = result.Total,
+                updated = result.Updated,
+                unchanged = result.Unchanged,
+                failed = result.Failed,
+                completedAtUtc = result.CompletedAtUtc?.ToString("o")
+            });
         }
 
         // ===========================================================

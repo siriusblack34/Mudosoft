@@ -62,8 +62,9 @@ type HoverState = {
     bucket: ProvinceBucket;
     x: number;
     y: number;
+    rectWidth: number;
+    rectHeight: number;
     anchorRight: boolean;
-    anchorAbove: boolean;
 };
 
 const STATUS_WEIGHT: Record<StoreStatus, number> = {
@@ -132,7 +133,7 @@ const PROVINCES: ProvincePoint[] = [
     { name: "Manisa", x: 178, y: 233 },
     { name: "Mardin", x: 755, y: 315 },
     { name: "Mersin", x: 505, y: 315, aliases: ["mersin forum", "yat limani", "yat limanı"] },
-    { name: "Muğla", x: 221, y: 318, aliases: ["anthaven", "avenue", "bodrum", "fethiye", "gocek", "göcek", "gurece", "gürece", "marmaris", "milta", "midtown", "netsel", "turgutreis", "yalikavak", "yalıkavak"] },
+    { name: "Muğla", x: 221, y: 318, aliases: ["anthaven", "avenue", "bodrum", "dalaman", "datca", "datça", "fethiye", "gocek", "göcek", "gurece", "gürece", "koycegiz", "köyceğiz", "marmaris", "milta", "midtown", "netsel", "ortaca", "turgutreis", "ula", "yalikavak", "yalıkavak"] },
     { name: "Muş", x: 790, y: 227 },
     { name: "Nevşehir", x: 504, y: 210 },
     { name: "Niğde", x: 525, y: 245 },
@@ -323,7 +324,7 @@ function buildMapData(stores: StoreMapStore[]) {
 }
 
 const TurkeyStoreMap: React.FC<{ c: MapPalette; stores: StoreMapStore[] }> = ({ c, stores }) => {
-    const { provinces, unmatched } = React.useMemo(() => buildMapData(stores), [stores]);
+    const { provinces } = React.useMemo(() => buildMapData(stores), [stores]);
     const [hovered, setHovered] = React.useState<HoverState | null>(null);
     const criticalStores = stores.filter((store) => store.status === "critical");
     const watchStores = stores.filter((store) => store.status === "watch");
@@ -339,8 +340,9 @@ const TurkeyStoreMap: React.FC<{ c: MapPalette; stores: StoreMapStore[] }> = ({ 
             bucket,
             x,
             y,
+            rectWidth: rect.width,
+            rectHeight: rect.height,
             anchorRight: x > rect.width - 330,
-            anchorAbove: y > rect.height - 190,
         });
     }, []);
 
@@ -372,37 +374,64 @@ const TurkeyStoreMap: React.FC<{ c: MapPalette; stores: StoreMapStore[] }> = ({ 
             <div
                 className="relative rounded-xl border"
                 onMouseLeave={() => setHovered(null)}
-                style={{ borderColor: c.borderStrong, background: `radial-gradient(circle at 50% 40%, ${c.skySoft}, transparent 42%), ${c.track}` }}
+                style={{
+                    borderColor: c.borderStrong,
+                    background: `radial-gradient(ellipse at 50% 35%, ${c.sky}18, transparent 55%), linear-gradient(180deg, ${c.track} 0%, ${c.cardSoft} 100%)`,
+                }}
             >
-                <svg viewBox={TURKEY_MAP_VIEW_BOX} className="h-[260px] w-full lg:h-[300px]" role="img" aria-label="Türkiye mağaza dağılım haritası">
+                <svg viewBox={TURKEY_MAP_VIEW_BOX} className="h-[280px] w-full lg:h-[340px]" role="img" aria-label="Türkiye mağaza dağılım haritası">
                     <defs>
-                        <linearGradient id="turkey-map-fill" x1="0" x2="1" y1="0" y2="1">
-                            <stop offset="0%" stopColor={c.sky} stopOpacity="0.28" />
-                            <stop offset="48%" stopColor={c.violet} stopOpacity="0.18" />
-                            <stop offset="100%" stopColor={c.emerald} stopOpacity="0.18" />
+                        <linearGradient id="turkey-map-fill" x1="0" x2="0" y1="0" y2="1">
+                            <stop offset="0%" stopColor={c.emerald} stopOpacity="0.32" />
+                            <stop offset="50%" stopColor={c.sky} stopOpacity="0.22" />
+                            <stop offset="100%" stopColor={c.violet} stopOpacity="0.26" />
                         </linearGradient>
-                        <filter id="map-soft-glow" x="-20%" y="-20%" width="140%" height="140%">
-                            <feGaussianBlur stdDeviation="4" result="blur" />
-                            <feMerge>
-                                <feMergeNode in="blur" />
-                                <feMergeNode in="SourceGraphic" />
-                            </feMerge>
+                        <radialGradient id="turkey-map-relief" cx="50%" cy="40%" r="60%">
+                            <stop offset="0%" stopColor="#ffffff" stopOpacity="0.10" />
+                            <stop offset="100%" stopColor="#000000" stopOpacity="0.18" />
+                        </radialGradient>
+                        <filter id="map-drop" x="-10%" y="-10%" width="120%" height="130%">
+                            <feGaussianBlur in="SourceAlpha" stdDeviation="3" />
+                            <feOffset dx="0" dy="3" result="offsetblur" />
+                            <feComponentTransfer><feFuncA type="linear" slope="0.45" /></feComponentTransfer>
+                            <feMerge><feMergeNode /><feMergeNode in="SourceGraphic" /></feMerge>
+                        </filter>
+                        <filter id="map-inner-shadow">
+                            <feGaussianBlur in="SourceAlpha" stdDeviation="2" />
+                            <feOffset dx="0" dy="1" />
+                            <feComposite in2="SourceAlpha" operator="arithmetic" k2="-1" k3="1" result="shadowDiff" />
+                            <feFlood floodColor="#ffffff" floodOpacity="0.18" />
+                            <feComposite in2="shadowDiff" operator="in" />
+                            <feComposite in2="SourceGraphic" operator="over" />
                         </filter>
                     </defs>
 
                     <path
                         d={TURKEY_MAP_PATH}
+                        fill={c.borderStrong}
+                        opacity="0.55"
+                        transform="translate(0,4)"
+                    />
+                    <path
+                        d={TURKEY_MAP_PATH}
                         fill="url(#turkey-map-fill)"
                         stroke={c.borderStrong}
-                        strokeWidth="1.6"
-                        filter="url(#map-soft-glow)"
+                        strokeWidth="1.4"
+                        strokeLinejoin="round"
+                        filter="url(#map-drop)"
+                    />
+                    <path
+                        d={TURKEY_MAP_PATH}
+                        fill="url(#turkey-map-relief)"
+                        stroke="none"
+                        opacity="0.85"
                     />
                     <path
                         d={TURKEY_MAP_PATH}
                         fill="none"
                         stroke={c.sky}
-                        strokeOpacity="0.24"
-                        strokeWidth="0.8"
+                        strokeOpacity="0.45"
+                        strokeWidth="0.6"
                     />
 
                     {provinces.map((bucket) => {
@@ -472,18 +501,11 @@ const TurkeyStoreMap: React.FC<{ c: MapPalette; stores: StoreMapStore[] }> = ({ 
                 {hovered && <ProvinceTooltip c={c} hover={hovered} />}
             </div>
 
-            <div className="mt-3 grid gap-2 lg:grid-cols-[1fr_auto]">
-                <div className="flex flex-wrap items-center gap-2 text-[10px]" style={{ color: c.muted }}>
-                    <LegendDot color={c.emerald} label="Sağlıklı / çalışan il" />
-                    <LegendDot color={c.amber} label="Kısmi sorun" />
-                    <LegendDot color={c.rose} label="Tam kesinti, yanıp söner" />
-                    <LegendDot color={c.slate} label="Gri rozet: planlı kapalı mağaza" />
-                </div>
-                <div className="text-[10px]" style={{ color: unmatched.length > 0 ? c.amber : c.subtle }}>
-                    {unmatched.length > 0
-                        ? `İl eşleşmeyen: ${unmatched.length} (${unmatched.slice(0, 3).map((store) => store.code).join(", ")}${unmatched.length > 3 ? "..." : ""})`
-                        : "Tüm mağazalar il ile eşleşti"}
-                </div>
+            <div className="mt-3 flex flex-wrap items-center gap-2 text-[10px]" style={{ color: c.muted }}>
+                <LegendDot color={c.emerald} label="Sağlıklı / çalışan il" />
+                <LegendDot color={c.amber} label="Kısmi sorun" />
+                <LegendDot color={c.rose} label="Tam kesinti, yanıp söner" />
+                <LegendDot color={c.slate} label="Gri rozet: planlı kapalı mağaza" />
             </div>
         </div>
     );
@@ -506,48 +528,53 @@ const LegendDot: React.FC<{ color: string; label: string }> = ({ color, label })
 
 const ProvinceTooltip: React.FC<{ c: MapPalette; hover: HoverState }> = ({ c, hover }) => {
     const { bucket } = hover;
-    const issueStores = bucket.stores
-        .filter((store) => store.status !== "stable" || store.closedPos > 0)
-        .sort((a, b) => storeSortScore(b) - storeSortScore(a) || b.offlinePos - a.offlinePos || a.code - b.code);
-    const shownStores = (issueStores.length > 0 ? issueStores : [...bucket.stores].sort((a, b) => a.code - b.code)).slice(0, 9);
-    const hiddenHealthyCount = bucket.stores.length - shownStores.length;
+    const sortedStores = [...bucket.stores].sort(
+        (a, b) => storeSortScore(b) - storeSortScore(a) || b.offlinePos - a.offlinePos || a.code - b.code
+    );
     const color = statusColor(bucket.status, c);
     const criticalCount = bucket.stores.filter((store) => store.status === "critical").length;
     const watchCount = bucket.stores.filter((store) => store.status === "watch").length;
     const plannedCount = closedAffectedStoreCount(bucket);
 
-    const top = Math.max(10, hover.anchorAbove ? hover.y - 184 : hover.y + 14);
+    const tooltipMaxHeight = Math.max(200, hover.rectHeight - 16);
+    const idealTop = hover.y + 14;
+    const top = Math.min(Math.max(8, idealTop), Math.max(8, hover.rectHeight - tooltipMaxHeight - 8));
     const positionStyle: React.CSSProperties = {
         top,
-        ...(hover.anchorRight ? { right: 12 } : { left: hover.x + 14 }),
+        maxHeight: tooltipMaxHeight,
+        ...(hover.anchorRight ? { right: 12 } : { left: Math.min(hover.x + 14, hover.rectWidth - 332) }),
     };
 
     return (
         <div
-            className="pointer-events-none absolute z-30 w-[320px] rounded-xl border p-3 shadow-2xl backdrop-blur-md"
+            className="absolute z-30 flex w-[320px] flex-col rounded-xl border shadow-2xl backdrop-blur-md"
             style={{ ...positionStyle, background: c.cardSoft, borderColor: color + "55", boxShadow: `0 18px 50px rgba(0,0,0,0.38), 0 0 24px ${color}18` }}
         >
-            <div className="mb-2 flex items-start justify-between gap-3">
-                <div>
-                    <div className="text-sm font-black" style={{ color: c.text }}>{bucket.province.name}</div>
-                    <div className="text-[10px]" style={{ color: c.muted }}>
-                        {bucket.stores.length} mağaza, POS {bucket.onlinePos}/{bucket.activePos} online
+            <div className="shrink-0 border-b p-3" style={{ borderColor: color + "22" }}>
+                <div className="flex items-start justify-between gap-3">
+                    <div>
+                        <div className="text-sm font-black" style={{ color: c.text }}>{bucket.province.name}</div>
+                        <div className="text-[10px]" style={{ color: c.muted }}>
+                            {bucket.stores.length} mağaza, POS {bucket.onlinePos}/{bucket.activePos} online
+                        </div>
                     </div>
+                    <span className="rounded-full px-2 py-1 text-[9px] font-black uppercase" style={{ background: color + "22", color }}>
+                        {statusLabel(bucket.status)}
+                    </span>
                 </div>
-                <span className="rounded-full px-2 py-1 text-[9px] font-black uppercase" style={{ background: color + "22", color }}>
-                    {statusLabel(bucket.status)}
-                </span>
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                    {criticalCount > 0 && <MiniStat label="Tam" value={criticalCount} color={c.rose} />}
+                    {watchCount > 0 && <MiniStat label="Kısmi" value={watchCount} color={c.amber} />}
+                    {plannedCount > 0 && <MiniStat label="Planlı" value={plannedCount} color={c.slate} />}
+                    {criticalCount === 0 && watchCount === 0 && plannedCount === 0 && <MiniStat label="Sorunsuz" value={bucket.stores.length} color={c.emerald} />}
+                </div>
             </div>
 
-            <div className="mb-2 flex flex-wrap gap-1.5">
-                {criticalCount > 0 && <MiniStat label="Tam" value={criticalCount} color={c.rose} />}
-                {watchCount > 0 && <MiniStat label="Kısmi" value={watchCount} color={c.amber} />}
-                {plannedCount > 0 && <MiniStat label="Planlı" value={plannedCount} color={c.slate} />}
-                {criticalCount === 0 && watchCount === 0 && plannedCount === 0 && <MiniStat label="Sorunsuz" value={bucket.stores.length} color={c.emerald} />}
-            </div>
-
-            <div className="space-y-1.5">
-                {shownStores.map((store) => {
+            <div
+                className="min-h-0 flex-1 space-y-1.5 overflow-y-auto p-3"
+                onWheel={(e) => e.stopPropagation()}
+            >
+                {sortedStores.map((store) => {
                     const storeColor = storeBadgeColor(store, c);
                     const age = fmtAge(store.since);
                     return (
@@ -568,12 +595,6 @@ const ProvinceTooltip: React.FC<{ c: MapPalette; hover: HoverState }> = ({ c, ho
                     );
                 })}
             </div>
-
-            {hiddenHealthyCount > 0 && (
-                <div className="mt-2 rounded-lg px-2.5 py-1.5 text-[10px]" style={{ background: c.track, color: c.subtle }}>
-                    +{hiddenHealthyCount} mağaza listede gizlendi; öncelik kapalı/sorunlu mağazalarda.
-                </div>
-            )}
         </div>
     );
 };

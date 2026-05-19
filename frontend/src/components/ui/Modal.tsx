@@ -7,6 +7,8 @@ interface ModalProps {
   title: string;
   children: React.ReactNode;
   size?: 'sm' | 'md' | 'lg' | 'xl';
+  /** Backdrop'a tıklayınca kapansın mı (default true). Form modallerinde false ver. */
+  dismissOnBackdrop?: boolean;
 }
 
 const sizeClasses = {
@@ -16,13 +18,13 @@ const sizeClasses = {
   xl: 'max-w-4xl',
 };
 
-const Modal: React.FC<ModalProps> = ({ isOpen, onClose, title, children, size = 'md' }) => {
+const Modal: React.FC<ModalProps> = ({ isOpen, onClose, title, children, size = 'md', dismissOnBackdrop = true }) => {
   if (!isOpen) return null;
 
   return (
     <div
       className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4 animate-fade-in"
-      onClick={onClose}
+      onClick={dismissOnBackdrop ? onClose : undefined}
     >
       <div
         className={`bg-ms-bg-soft border border-ms-border rounded-xl shadow-2xl w-full ${sizeClasses[size]} max-h-[90vh] flex flex-col`}

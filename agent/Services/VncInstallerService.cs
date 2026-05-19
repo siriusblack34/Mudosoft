@@ -40,53 +40,65 @@ public sealed class VncInstallerService
     /// </summary>
     public async Task<(bool Success, string Output)> InstallAndConfigureAsync(CancellationToken ct = default)
     {
+        var diag = new StringBuilder();
         try
         {
             _logger.LogInformation("[VNC] Starting VNC installation process...");
 
             // 1. Check if TightVNC is already installed
             bool alreadyInstalled = IsTightVncInstalled();
+            diag.AppendLine(alreadyInstalled ? "TightVNC: zaten kurulu (repair modu)" : "TightVNC: kurulu degil (kurulum yapilacak)");
 
             if (!alreadyInstalled)
             {
-                // 2. Download TightVNC MSI from backend or use bundled one
                 var msiPath = await GetTightVncMsiAsync(ct);
                 if (string.IsNullOrEmpty(msiPath))
-                {
-                    return (false, "TightVNC MSI bulunamadı veya indirilemedi");
-                }
+                    return (false, diag.AppendLine("HATA: TightVNC MSI bulunamadi/indirilemedi").ToString());
 
-                // 3. Silent install TightVNC (server only, no viewer)
                 var installResult = await SilentInstallAsync(msiPath, ct);
-                if (!installResult.Success)
-                {
-                    return installResult;
-                }
-            }
-            else
-            {
-                _logger.LogInformation("[VNC] TightVNC is already installed");
+                diag.AppendLine("MSI install: " + installResult.Output);
+                if (!installResult.Success) return (false, diag.ToString());
             }
 
-            // 4. Generate or load existing password
+            // 2. Servisi enable + auto-start moduna al
+            var ensureStatus = EnsureServiceAutoStart();
+            diag.AppendLine("Servis config: " + ensureStatus);
+
+            // 3. Password yukle/uret + registry yaz + control komutlari
             var password = GetOrGeneratePassword();
-
-            // 5. Configure TightVNC password via registry
             ConfigureTightVncPassword(password);
+            SetPasswordViaRegistry(password);
+            ApplyLoopbackFix();
+            diag.AppendLine("Registry + control parametreleri yazildi (LoopbackOnly=0, RfbPort=5900, AcceptConnections=1)");
 
-            // 6. Ensure TightVNC service is running
-            EnsureServiceRunning();
+            // 4. Servisi guvenli sekilde restart et (stuck process kill fallback'li)
+            var restartStatus = RestartVncServiceHard();
+            diag.AppendLine("Servis restart: " + restartStatus);
 
-            // 7. Report to backend
+            // 5. Firewall kuralini garantile
+            var fwStatus = EnsureFirewallRule();
+            diag.AppendLine("Firewall: " + fwStatus);
+
+            // 6. Bind dogrulama
+            var bindStatus = VerifyVncBinding();
+            diag.AppendLine("Bind: " + bindStatus);
+            _logger.LogInformation("[VNC] Bind status: {Status}", bindStatus);
+
+            // 7. Backend'e raporla
             await ReportVncStatusAsync(password, ct);
+            diag.AppendLine("Backend'e raporlandi");
 
-            _logger.LogInformation("[VNC] VNC installation and configuration complete");
-            return (true, $"VNC kuruldu ve yapılandırıldı. Port: 5900 | VNC_PWD={password}");
+            var ok = bindStatus.StartsWith("OK");
+            diag.AppendLine(ok
+                ? $"SONUC: VNC hazir. Port 5900 dinleniyor. VNC_PWD={password}"
+                : $"SONUC UYARI: bind durumu '{bindStatus}'. VNC_PWD={password}");
+            return (ok, diag.ToString());
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "[VNC] VNC installation failed");
-            return (false, $"VNC kurulum hatası: {ex.Message}");
+            diag.AppendLine("EXCEPTION: " + ex.Message);
+            return (false, diag.ToString());
         }
     }
 
@@ -351,13 +363,244 @@ public sealed class VncInstallerService
                 key.SetValue("AcceptConnections", 1, RegistryValueKind.DWord);
                 key.SetValue("AcceptHttpConnections", 0, RegistryValueKind.DWord);
                 key.SetValue("RfbPort", 5900, RegistryValueKind.DWord);
-                _logger.LogInformation("[VNC] TightVNC configured via registry");
+                // 5900'in 0.0.0.0'a bind etmesini garantile — varsayilan bazi kurulumlarda 127.0.0.1 only oluyor
+                key.SetValue("LoopbackOnly", 0, RegistryValueKind.DWord);
+                key.SetValue("AllowLoopback", 1, RegistryValueKind.DWord);
+                _logger.LogInformation("[VNC] TightVNC configured via registry (LoopbackOnly=0 forced)");
             }
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "[VNC] Failed to configure TightVNC via registry");
         }
+    }
+
+    /// <summary>
+    /// tvnserver hâlâ ayakta ise -controlservice ile parametreleri set et.
+    /// SetPasswordViaRegistry zaten registry'yi yazıyor, ama tvnserver service runtime cache'i
+    /// nedeniyle bazen registry'yi okumuyor — bu sayede çift kanal.
+    /// </summary>
+    private void ApplyLoopbackFix()
+    {
+        var tvnPath = FindTvnServerPath();
+        if (tvnPath == null) return;
+        try
+        {
+            foreach (var param in new[] { "LoopbackOnly=0", "AllowLoopback=1", "RfbPort=5900", "AcceptConnections=1" })
+            {
+                var psi = new ProcessStartInfo
+                {
+                    FileName = tvnPath,
+                    Arguments = $"-controlservice -setparam {param}",
+                    UseShellExecute = false,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    CreateNoWindow = true
+                };
+                var p = Process.Start(psi);
+                p?.WaitForExit(8000);
+            }
+            _logger.LogInformation("[VNC] LoopbackOnly fix applied via tvnserver control");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "[VNC] tvnserver control LoopbackOnly fix failed");
+        }
+    }
+
+    /// <summary>
+    /// tvnserver servisinin StartType=auto olmasini ve mevcut oldugunu garantile.
+    /// </summary>
+    private string EnsureServiceAutoStart()
+    {
+        try
+        {
+            var query = RunProcess("sc.exe", "query tvnserver", 5000);
+            if (query.exitCode != 0)
+                return $"servis bulunamadi (sc query rc={query.exitCode}, out={Truncate(query.stdout, 120)})";
+
+            var cfg = RunProcess("sc.exe", "config tvnserver start= auto", 5000);
+            return cfg.exitCode == 0
+                ? "start=auto olarak ayarlandi"
+                : $"sc config rc={cfg.exitCode}: {Truncate(cfg.stderr, 120)}";
+        }
+        catch (Exception ex)
+        {
+            return "exception: " + ex.Message;
+        }
+    }
+
+    /// <summary>
+    /// tvnserver'i guvenli sekilde restart eder. net stop fail olursa process kill fallback.
+    /// </summary>
+    private string RestartVncServiceHard()
+    {
+        var report = new StringBuilder();
+        try
+        {
+            // 1) Once nazikce durdur
+            var stop = RunProcess("sc.exe", "stop tvnserver", 15000);
+            report.Append("stop rc=").Append(stop.exitCode);
+            if (stop.exitCode != 0)
+            {
+                // Servis zaten durmus olabilir (1062 = service not started) — bunu hata sayma
+                if (!stop.stdout.Contains("1062") && !stop.stderr.Contains("1062"))
+                {
+                    report.Append(" (stuck olabilir, process kill)");
+                    KillTvnProcesses();
+                }
+            }
+
+            // Servisin gercekten durdugunu dogrula (max 8sn)
+            for (int i = 0; i < 8; i++)
+            {
+                var q = RunProcess("sc.exe", "query tvnserver", 3000);
+                if (q.stdout.Contains("STOPPED")) break;
+                Thread.Sleep(1000);
+            }
+
+            // Eger hala calisiyorsa kill
+            if (IsTvnRunning())
+            {
+                report.Append(" | hala calisiyor → process kill");
+                KillTvnProcesses();
+                Thread.Sleep(1500);
+            }
+
+            // 2) Baslat
+            var start = RunProcess("sc.exe", "start tvnserver", 15000);
+            report.Append(" | start rc=").Append(start.exitCode);
+            if (start.exitCode != 0)
+                report.Append(" stderr=").Append(Truncate(start.stderr, 100));
+
+            // 3) RUNNING durumunu bekle
+            for (int i = 0; i < 10; i++)
+            {
+                var q = RunProcess("sc.exe", "query tvnserver", 3000);
+                if (q.stdout.Contains("RUNNING")) { report.Append(" | RUNNING"); break; }
+                Thread.Sleep(1000);
+            }
+
+            return report.ToString();
+        }
+        catch (Exception ex)
+        {
+            return report.Append(" | exception ").Append(ex.Message).ToString();
+        }
+    }
+
+    private void KillTvnProcesses()
+    {
+        foreach (var name in new[] { "tvnserver", "tvnserver_64" })
+        {
+            try
+            {
+                foreach (var p in Process.GetProcessesByName(name))
+                {
+                    try { p.Kill(true); p.WaitForExit(5000); }
+                    catch { /* yetki yok ya da zaten oldu */ }
+                }
+            }
+            catch { /* ignore */ }
+        }
+    }
+
+    private bool IsTvnRunning()
+    {
+        try { return Process.GetProcessesByName("tvnserver").Length > 0
+                  || Process.GetProcessesByName("tvnserver_64").Length > 0; }
+        catch { return false; }
+    }
+
+    /// <summary>
+    /// Windows Firewall'da 5900/TCP icin gelen baglanti kuralini garantile.
+    /// Mevcut kurali silip yeniden olusturur (idempotent).
+    /// </summary>
+    private string EnsureFirewallRule()
+    {
+        const string ruleName = "Orchestra TightVNC 5900";
+        try
+        {
+            // Once varsa sil (sessizce gec)
+            RunProcess("netsh.exe", $"advfirewall firewall delete rule name=\"{ruleName}\"", 5000);
+
+            var add = RunProcess("netsh.exe",
+                $"advfirewall firewall add rule name=\"{ruleName}\" dir=in action=allow protocol=TCP localport=5900 profile=any",
+                5000);
+            return add.exitCode == 0 ? "kural eklendi" : $"netsh rc={add.exitCode}: {Truncate(add.stdout + add.stderr, 100)}";
+        }
+        catch (Exception ex)
+        {
+            return "exception: " + ex.Message;
+        }
+    }
+
+    private static (int exitCode, string stdout, string stderr) RunProcess(string file, string args, int timeoutMs)
+    {
+        try
+        {
+            var psi = new ProcessStartInfo
+            {
+                FileName = file,
+                Arguments = args,
+                UseShellExecute = false,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                CreateNoWindow = true
+            };
+            using var p = Process.Start(psi);
+            if (p == null) return (-1, "", "Process.Start returned null");
+            var stdout = p.StandardOutput.ReadToEnd();
+            var stderr = p.StandardError.ReadToEnd();
+            if (!p.WaitForExit(timeoutMs))
+            {
+                try { p.Kill(true); } catch { }
+                return (-2, stdout, stderr + " | TIMEOUT");
+            }
+            return (p.ExitCode, stdout, stderr);
+        }
+        catch (Exception ex)
+        {
+            return (-3, "", ex.Message);
+        }
+    }
+
+    private static string Truncate(string s, int n)
+    {
+        if (string.IsNullOrEmpty(s)) return "";
+        s = s.Replace("\r", " ").Replace("\n", " ").Trim();
+        return s.Length <= n ? s : s.Substring(0, n) + "…";
+    }
+
+    /// <summary>
+    /// 5900 portu 0.0.0.0'a bind olmus mu doğrula.
+    /// </summary>
+    private string VerifyVncBinding()
+    {
+        try
+        {
+            var psi = new ProcessStartInfo
+            {
+                FileName = "netstat",
+                Arguments = "-an",
+                UseShellExecute = false,
+                RedirectStandardOutput = true,
+                CreateNoWindow = true
+            };
+            var p = Process.Start(psi);
+            if (p == null) return "netstat çalıştırılamadı";
+            var output = p.StandardOutput.ReadToEnd();
+            p.WaitForExit(5000);
+
+            var lines = output.Split('\n')
+                .Where(l => l.Contains(":5900") && l.Contains("LISTENING"))
+                .Select(l => l.Trim())
+                .ToList();
+            if (lines.Count == 0) return "5900 dinleyici bulunamadı";
+            if (lines.Any(l => l.StartsWith("TCP    0.0.0.0:5900"))) return "OK 0.0.0.0:5900 LISTENING";
+            return "UYARI " + string.Join(" | ", lines);
+        }
+        catch (Exception ex) { return "verify failed: " + ex.Message; }
     }
 
     /// <summary>

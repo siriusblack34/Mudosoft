@@ -39,6 +39,7 @@ namespace Orchestra.Backend.Services
             using var scope = _serviceProvider.CreateScope();
             var db = scope.ServiceProvider.GetRequiredService<OrchestraDbContext>();
             var cleanupService = scope.ServiceProvider.GetRequiredService<IInboxCleanupService>();
+            var stockCleanupService = scope.ServiceProvider.GetRequiredService<IStockCleanupService>();
 
             var now = DateTime.UtcNow;
 
@@ -62,6 +63,12 @@ namespace Orchestra.Backend.Services
                         var result = await cleanupService.CleanAllAsync();
                         task.LastResult = $"Success ({result.successCount}/{result.totalCount} deleted)";
                         _logger.LogInformation("✅ Görev Tamamlandý: {Result}", task.LastResult);
+                    }
+                    else if (task.TaskType == "StockCleanup")
+                    {
+                        var r = await stockCleanupService.CleanStoresWithErrorsAsync(stoppingToken);
+                        task.LastResult = $"Success (cleaned={r.CleanedCount}, skipped={r.SkippedCleanCount}, offline={r.OfflineCount}, error={r.ErrorCount}, total={r.TotalChecked})";
+                        _logger.LogInformation("✅ StockCleanup Tamamlandı: {Result}", task.LastResult);
                     }
                     else
                     {

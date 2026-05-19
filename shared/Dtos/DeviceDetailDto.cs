@@ -31,6 +31,7 @@ namespace Orchestra.Shared.Dtos
         public long TotalRamMB { get; set; }
         public long TotalDiskGB { get; set; }
         public string? GpuModel { get; set; }
+        public string? SerialNumber { get; set; }
 
         // User & Session
         public string? LastLoggedInUser { get; set; }
