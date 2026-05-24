@@ -32,7 +32,7 @@ public class RdpController : ControllerBase
     {
         var device = await _db.Devices.AsNoTracking()
             .Where(d => d.Id == deviceId)
-            .Select(d => new { d.IpAddress, d.Hostname, d.Online, d.VncInstalled, d.VncPassword, d.VncPort })
+            .Select(d => new { d.IpAddress, d.RemoteSourceIp, d.Hostname, d.Online, d.VncInstalled, d.VncPassword, d.VncPort })
             .FirstOrDefaultAsync();
 
         if (device == null)
@@ -68,24 +68,44 @@ public class RdpController : ControllerBase
             });
         }
 
-        // TCP test to VNC port
+        // TCP test to VNC port. Önce self-report IP'yi dene; multi-NIC laptop'larda agent
+        // yanlış NIC seçebiliyor (VPN/Hyper-V virtual switch). Fail olursa heartbeat'ten gelen
+        // gerçek RemoteSourceIp ile yeniden dene.
         var vncPort = device.VncPort > 0 ? device.VncPort : 5900;
         bool vncReachable = false;
-        try
+        string reachableIp = device.IpAddress;
+
+        async Task<bool> TryConnectAsync(string host)
         {
-            using var tcp = new TcpClient();
-            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(3));
-            await tcp.ConnectAsync(device.IpAddress, vncPort, cts.Token);
-            vncReachable = true;
+            try
+            {
+                using var tcp = new TcpClient();
+                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(3));
+                await tcp.ConnectAsync(host, vncPort, cts.Token);
+                return true;
+            }
+            catch { return false; }
         }
-        catch { }
+
+        vncReachable = await TryConnectAsync(device.IpAddress);
+
+        if (!vncReachable
+            && !string.IsNullOrWhiteSpace(device.RemoteSourceIp)
+            && device.RemoteSourceIp != device.IpAddress)
+        {
+            if (await TryConnectAsync(device.RemoteSourceIp))
+            {
+                vncReachable = true;
+                reachableIp = device.RemoteSourceIp;
+            }
+        }
 
         return Ok(new
         {
             online = device.Online,
             vncReachable,
             vncInstalled = true,
-            ipAddress = device.IpAddress,
+            ipAddress = reachableIp,
             hostname = device.Hostname ?? "",
             vncPassword = device.VncPassword,
             activeSessionCount = _sessionManager.ActiveSessionCount,

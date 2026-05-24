@@ -23,11 +23,11 @@ public class AgentService : IAgentService
         _dbContext = dbContext;
     }
 
-    public async Task HandleHeartbeatAsync(DeviceHeartbeatDto dto)
+    public async Task HandleHeartbeatAsync(DeviceHeartbeatDto dto, string? remoteSourceIp = null)
     {
-        _logger.LogInformation("Heartbeat from {DeviceId} CPU:{Cpu} RAM:{Ram} DISK:{Disk} | User:{User} BootTime:{Boot}",
+        _logger.LogInformation("Heartbeat from {DeviceId} CPU:{Cpu} RAM:{Ram} DISK:{Disk} | User:{User} BootTime:{Boot} | ReportedIp:{Reported} RemoteIp:{Remote}",
             dto.DeviceId, dto.CpuUsage, dto.RamUsage, dto.DiskUsage,
-            dto.LastLoggedInUser ?? "(null)", dto.UptimeSince);
+            dto.LastLoggedInUser ?? "(null)", dto.UptimeSince, dto.IpAddress, remoteSourceIp ?? "(null)");
 
         var device = await _dbContext.Devices.FindAsync(dto.DeviceId);
 
@@ -54,6 +54,8 @@ public class AgentService : IAgentService
         // Basic Info
         device.Hostname = dto.Hostname;
         device.IpAddress = dto.IpAddress;
+        if (!string.IsNullOrWhiteSpace(remoteSourceIp))
+            device.RemoteSourceIp = remoteSourceIp;
         device.Online = true;
         device.LastSeen = DateTime.UtcNow;
 

@@ -802,6 +802,10 @@ export const apiClient = {
         return this.post(`/api/updates/trigger-all?backendUrl=${encodeURIComponent(backendUrl)}`);
     },
 
+    triggerUpdate(deviceId: string, backendUrl: string): Promise<{ commandId: string; message: string }> {
+        return this.post(`/api/updates/trigger?deviceId=${encodeURIComponent(deviceId)}&backendUrl=${encodeURIComponent(backendUrl)}`);
+    },
+
     buildNewAgent(): Promise<void> {
         return this.post("/api/updates/build");
     },

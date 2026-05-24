@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using Orchestra.Backend.Data;
@@ -11,9 +12,11 @@ using Orchestra.Backend.Data;
 namespace Orchestra.Backend.Migrations
 {
     [DbContext(typeof(OrchestraDbContext))]
-    partial class OrchestraDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260523133920_AddRemoteSourceIpToDevice")]
+    partial class AddRemoteSourceIpToDevice
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder

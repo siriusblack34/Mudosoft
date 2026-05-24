@@ -40,7 +40,10 @@ public class AgentController : ControllerBase
         if (dto == null)
             return BadRequest("DTO null");
 
-        await _service.HandleHeartbeatAsync(dto);
+        // Agent self-report yanlış NIC seçmiş olabilir (multi-NIC laptop'larda VPN/virtual switch karışıklığı).
+        // Backend'in TCP connection'da gördüğü gerçek source IP'yi de saklayalım — /rdp/check fallback'i için.
+        var remoteIp = HttpContext.Connection.RemoteIpAddress?.MapToIPv4().ToString();
+        await _service.HandleHeartbeatAsync(dto, remoteIp);
         return Ok();
     }
 

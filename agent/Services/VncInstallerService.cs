@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Security.Cryptography;
+using System.ServiceProcess;
 using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Configuration;
@@ -104,26 +105,27 @@ public sealed class VncInstallerService
 
     private bool IsTightVncInstalled()
     {
-        // Check registry for TightVNC
-        var paths = new[]
+        // En kesin kanıt: tvnserver Windows servisi mevcut mu?
+        // Registry/exe tek başına yetmez — Trend Micro Apex One gibi AV'lar TightVNC'yi kaldırdığında
+        // servisi ve exe'yi siler ama registry artığı bırakabilir (veya tersi). Bu yarı-kaldırma
+        // durumunda agent eskiden "kurulu" sanıp repair moduna giriyor, MSI install atlıyordu →
+        // servis olmadığı için restart fail oluyor, port dinleyici yok.
+        bool hasService;
+        try
         {
-            @"SOFTWARE\TightVNC",
-            @"SOFTWARE\WOW6432Node\TightVNC"
-        };
-
-        foreach (var path in paths)
-        {
-            using var key = Registry.LocalMachine.OpenSubKey(path);
-            if (key != null) return true;
+            using var sc = new ServiceController("tvnserver");
+            var _ = sc.Status;  // erişim throw atmıyorsa service mevcut
+            hasService = true;
         }
+        catch { hasService = false; }
 
-        // Check if tvnserver.exe exists in common locations
+        if (!hasService) return false;  // service yoksa kurulu sayma → fresh MSI install tetiklensin
+
         var exePaths = new[]
         {
             @"C:\Program Files\TightVNC\tvnserver.exe",
             @"C:\Program Files (x86)\TightVNC\tvnserver.exe"
         };
-
         return exePaths.Any(File.Exists);
     }
 

@@ -36,6 +36,11 @@ const AgentUpdatePage: React.FC = () => {
     const [devices, setDevices] = useState<DeviceVersion[]>([]);
     const [history, setHistory] = useState<HistoryEntry[]>([]);
 
+    // Seçili cihazlara güncelleme — toplu dağıtım öncesi test için
+    const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+    const [bulkTriggering, setBulkTriggering] = useState(false);
+    const [bulkProgress, setBulkProgress] = useState<{ done: number; total: number; failed: number } | null>(null);
+
     // Build state
     const [isBuilding, setIsBuilding] = useState(false);
     const [buildStatus, setBuildStatus] = useState("");
@@ -145,6 +150,56 @@ const AgentUpdatePage: React.FC = () => {
             const msg = err instanceof Error ? err.message : 'Bilinmeyen hata';
             setMessage({ text: `Hata: ${msg}`, type: 'error' });
         } finally { setTriggering(false); }
+    };
+
+    const toggleSelect = (id: string) => {
+        setSelectedIds(prev => {
+            const next = new Set(prev);
+            if (next.has(id)) next.delete(id); else next.add(id);
+            return next;
+        });
+    };
+
+    const toggleSelectAll = () => {
+        setSelectedIds(prev => {
+            if (prev.size === devices.length) return new Set();
+            return new Set(devices.map(d => d.id));
+        });
+    };
+
+    const clearSelection = () => setSelectedIds(new Set());
+
+    const handleTriggerSelected = async () => {
+        if (selectedIds.size === 0) return;
+        if (!latestVersion?.version || latestVersion.version === 'none') {
+            setMessage({ text: "Önce bir versiyon yükleyin", type: 'error' });
+            return;
+        }
+        if (!remoteBackendUrl.trim()) {
+            setMessage({ text: "Backend URL gerekli", type: 'error' });
+            return;
+        }
+        const ids = Array.from(selectedIds);
+        setBulkTriggering(true);
+        setBulkProgress({ done: 0, total: ids.length, failed: 0 });
+        setMessage(null);
+        let failed = 0;
+        for (let i = 0; i < ids.length; i++) {
+            try {
+                await apiClient.triggerUpdate(ids[i], remoteBackendUrl);
+            } catch (err) {
+                failed++;
+                console.error(`triggerUpdate ${ids[i]} failed`, err);
+            }
+            setBulkProgress({ done: i + 1, total: ids.length, failed });
+        }
+        setBulkTriggering(false);
+        setMessage({
+            text: failed === 0
+                ? `${ids.length} cihaza güncelleme komutu gönderildi.`
+                : `${ids.length} cihazdan ${ids.length - failed} başarılı, ${failed} başarısız.`,
+            type: failed === 0 ? 'success' : 'error'
+        });
     };
 
     const handleBuildNewAgent = async () => {
@@ -311,15 +366,47 @@ const AgentUpdatePage: React.FC = () => {
 
             {/* Device Versions Table */}
             <section className="bg-ms-panel p-6 rounded-2xl border border-ms-border shadow-lg">
-                <h2 className="text-lg font-medium mb-4 flex items-center gap-2">
-                    <MonitorSmartphone className="w-5 h-5 text-blue-400" />
-                    Cihaz Versiyonları
-                    <span className="text-sm text-slate-500 font-normal ml-2">({devices.length} cihaz)</span>
-                </h2>
+                <div className="flex items-center justify-between mb-4 gap-4 flex-wrap">
+                    <h2 className="text-lg font-medium flex items-center gap-2">
+                        <MonitorSmartphone className="w-5 h-5 text-blue-400" />
+                        Cihaz Versiyonları
+                        <span className="text-sm text-slate-500 font-normal ml-2">({devices.length} cihaz)</span>
+                        {selectedIds.size > 0 && (
+                            <span className="text-sm font-normal ml-2 px-2 py-0.5 rounded-full bg-violet-900/40 text-violet-300 border border-violet-700">
+                                {selectedIds.size} seçili
+                            </span>
+                        )}
+                    </h2>
+                    <div className="flex items-center gap-2">
+                        {selectedIds.size > 0 && (
+                            <button onClick={clearSelection}
+                                className="text-xs px-3 py-1.5 rounded-lg text-slate-300 hover:bg-slate-700 transition-colors">
+                                Seçimi Temizle
+                            </button>
+                        )}
+                        <button onClick={handleTriggerSelected}
+                            disabled={bulkTriggering || selectedIds.size === 0 || !latestVersion?.version || latestVersion.version === 'none'}
+                            className="text-sm px-4 py-2 rounded-xl bg-violet-600 hover:bg-violet-500 disabled:opacity-40 disabled:cursor-not-allowed text-white flex items-center gap-2 transition-colors font-medium">
+                            <Rocket className="w-4 h-4" />
+                            {bulkTriggering && bulkProgress
+                                ? `Gönderiliyor ${bulkProgress.done}/${bulkProgress.total}${bulkProgress.failed > 0 ? ` (${bulkProgress.failed} hata)` : ''}`
+                                : `Seçili Cihazları Güncelle${selectedIds.size > 0 ? ` (${selectedIds.size})` : ''}`}
+                        </button>
+                    </div>
+                </div>
                 <div className="overflow-x-auto">
                     <table className="w-full text-sm">
                         <thead>
                             <tr className="text-left text-slate-400 border-b border-slate-700">
+                                <th className="pb-3 pr-4 w-8">
+                                    <input type="checkbox"
+                                        checked={devices.length > 0 && selectedIds.size === devices.length}
+                                        ref={el => { if (el) el.indeterminate = selectedIds.size > 0 && selectedIds.size < devices.length; }}
+                                        onChange={toggleSelectAll}
+                                        className="w-4 h-4 accent-violet-500 cursor-pointer"
+                                        title="Tümünü seç / Tümünü temizle"
+                                    />
+                                </th>
                                 <th className="pb-3 pr-4">Durum</th>
                                 <th className="pb-3 pr-4">Cihaz</th>
                                 <th className="pb-3 pr-4">Mağaza</th>
@@ -330,7 +417,16 @@ const AgentUpdatePage: React.FC = () => {
                         </thead>
                         <tbody>
                             {devices.map((d) => (
-                                <tr key={d.id} className="border-b border-slate-800 hover:bg-slate-800/30">
+                                <tr key={d.id}
+                                    onClick={() => toggleSelect(d.id)}
+                                    className={`border-b border-slate-800 cursor-pointer transition-colors ${selectedIds.has(d.id) ? 'bg-violet-900/20 hover:bg-violet-900/30' : 'hover:bg-slate-800/30'}`}>
+                                    <td className="py-3 pr-4" onClick={e => e.stopPropagation()}>
+                                        <input type="checkbox"
+                                            checked={selectedIds.has(d.id)}
+                                            onChange={() => toggleSelect(d.id)}
+                                            className="w-4 h-4 accent-violet-500 cursor-pointer"
+                                        />
+                                    </td>
                                     <td className="py-3 pr-4">
                                         {d.online
                                             ? <Wifi className="w-4 h-4 text-emerald-400" />
@@ -358,7 +454,7 @@ const AgentUpdatePage: React.FC = () => {
                                 </tr>
                             ))}
                             {devices.length === 0 && (
-                                <tr><td colSpan={6} className="py-6 text-center text-slate-500">Henüz cihaz yok</td></tr>
+                                <tr><td colSpan={7} className="py-6 text-center text-slate-500">Henüz cihaz yok</td></tr>
                             )}
                         </tbody>
                     </table>

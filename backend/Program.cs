@@ -278,6 +278,7 @@ builder.Services.AddSingleton<Orchestra.Backend.Services.SerialNumberSyncService
 builder.Services.AddHostedService(sp => sp.GetRequiredService<Orchestra.Backend.Services.SerialNumberSyncService>());
 builder.Services.AddSingleton<Orchestra.Backend.Services.PrinterSerialSyncService>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<Orchestra.Backend.Services.PrinterSerialSyncService>());
+builder.Services.AddHostedService<Orchestra.Backend.Services.TelemetryRetentionWorker>();
 if (OperatingSystem.IsWindows())
     builder.Services.AddHostedService<Orchestra.Backend.Services.UserInstallWatcherService>();
 builder.Services.AddHttpClient("internal", c =>

@@ -76,7 +76,7 @@ internal static class VncWebSocketHandler
         var db = context.RequestServices.GetRequiredService<OrchestraDbContext>();
         var device = await db.Devices.AsNoTracking()
             .Where(d => d.Id == deviceId)
-            .Select(d => new { d.IpAddress, d.Hostname, d.Online, d.VncInstalled, d.VncPassword, d.VncPort })
+            .Select(d => new { d.IpAddress, d.RemoteSourceIp, d.Hostname, d.Online, d.VncInstalled, d.VncPassword, d.VncPort })
             .FirstOrDefaultAsync();
 
         string? targetIp = device?.IpAddress;
@@ -105,6 +105,22 @@ internal static class VncWebSocketHandler
 
         var vncPassword = device.VncPassword;
         var vncPort = device.VncPort > 0 ? device.VncPort : 5900;
+
+        // Self-report IP'ye 5900 ulaşamıyorsa RemoteSourceIp fallback (multi-NIC laptop'larda agent yanlış NIC raporlar).
+        if (!string.IsNullOrWhiteSpace(device.RemoteSourceIp) && device.RemoteSourceIp != targetIp)
+        {
+            bool primaryReachable;
+            try
+            {
+                using var probe = new System.Net.Sockets.TcpClient();
+                using var probeCts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+                await probe.ConnectAsync(targetIp, vncPort, probeCts.Token);
+                primaryReachable = true;
+            }
+            catch { primaryReachable = false; }
+
+            if (!primaryReachable) targetIp = device.RemoteSourceIp;
+        }
 
         // 4. Open raw TCP connection to VNC server
         var sessionManager = context.RequestServices.GetRequiredService<VncSessionManager>();

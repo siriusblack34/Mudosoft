@@ -1,6 +1,7 @@
 // siriusblack34/mudosoft/Mudosoft-138a269b679ef64544ce6a0b899393e338ef513e/agent/Services/HeartbeatService.cs
 
-using System.Net.Http.Json; 
+using System.Net;
+using System.Net.Http.Json;
 using System.Net.NetworkInformation;
 using System.Net.Sockets;
 using Microsoft.Extensions.Logging;
@@ -160,18 +161,42 @@ public sealed class HeartbeatService : IHeartbeatSender
     
     private string GetLocalIp()
     {
-        foreach (var nic in NetworkInterface.GetAllNetworkInterfaces())
+        // Backend'e fake UDP "connect" — paket gitmez, OS sadece hangi local IP'yi
+        // route edeceğine karar verir. Multi-NIC laptop'larda (VPN + Hyper-V virtual
+        // switch + Wi-Fi + Ethernet) backend'e gerçekte hangi IP'den ulaşılıyorsa onu döndürür.
+        try
         {
-            if (nic.OperationalStatus != OperationalStatus.Up)
-                continue;
-
-            var props = nic.GetIPProperties();
-            foreach (var addr in props.UnicastAddresses)
+            if (!string.IsNullOrWhiteSpace(_config.BackendUrl))
             {
-                if (addr.Address.AddressFamily == AddressFamily.InterNetwork)
-                    return addr.Address.ToString();
+                var backendHost = new Uri(_config.BackendUrl).Host;
+                using var s = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, 0);
+                s.Connect(backendHost, 65530);
+                if (s.LocalEndPoint is IPEndPoint ep && ep.Address.AddressFamily == AddressFamily.InterNetwork)
+                    return ep.Address.ToString();
             }
         }
+        catch { /* fallback aşağıda */ }
+
+        // Fallback: default gateway'i olan ilk Up NIC'in IPv4'ünü ver — virtual switch'leri ele
+        try
+        {
+            foreach (var nic in NetworkInterface.GetAllNetworkInterfaces())
+            {
+                if (nic.OperationalStatus != OperationalStatus.Up) continue;
+                var props = nic.GetIPProperties();
+                var hasGateway = props.GatewayAddresses
+                    .Any(g => g.Address.AddressFamily == AddressFamily.InterNetwork
+                              && !g.Address.Equals(IPAddress.Any));
+                if (!hasGateway) continue;
+                foreach (var addr in props.UnicastAddresses)
+                {
+                    if (addr.Address.AddressFamily == AddressFamily.InterNetwork)
+                        return addr.Address.ToString();
+                }
+            }
+        }
+        catch { }
+
         return "0.0.0.0";
     }
 }

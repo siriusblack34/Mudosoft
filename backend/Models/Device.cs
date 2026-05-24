@@ -69,6 +69,11 @@ namespace Orchestra.Backend.Models
         public string? VncPassword { get; set; } // Encrypted, per-device unique
         public int VncPort { get; set; } = 5900;
 
+        // Heartbeat source — backend'in HttpContext.Connection.RemoteIpAddress'ten gördüğü
+        // gerçek NAT-sonrası IP. IpAddress (agent self-report) yanlış NIC'i seçtiğinde
+        // (multi-NIC laptop'larda VPN + virtual switch karışıklığı) fallback olarak kullanılır.
+        public string? RemoteSourceIp { get; set; }
+
         // VISIBILITY — true ise non-admin kullanıcılar bu cihazı listede görmez (admin görür ve toggle eder).
         // Genel amaç: admin/team makineleri (laptop'lar, test PC'leri) operasyon ekibinden gizlemek.
         public bool HiddenForNonAdmins { get; set; }
