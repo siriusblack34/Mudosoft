@@ -13,6 +13,7 @@ public sealed class CollectorsConfig
     public NetworkSpeedConfig NetworkSpeed { get; set; } = new();
     public UptimeReportConfig UptimeReport { get; set; } = new();
     public ScheduledCleanupConfig ScheduledCleanup { get; set; } = new();
+    public GeniusPosConfig GeniusPos { get; set; } = new();
 }
 
 public class CollectorBaseConfig
@@ -94,4 +95,9 @@ public sealed class CleanupTarget
 {
     public string Path { get; set; } = "";
     public int MaxAgeDays { get; set; } = 7;
+}
+
+public sealed class GeniusPosConfig : CollectorBaseConfig
+{
+    public new int IntervalSeconds { get; set; } = 900; // 15 dakika
 }

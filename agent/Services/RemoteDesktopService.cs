@@ -10,7 +10,7 @@ using System.Drawing;
 using System.Drawing.Imaging;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
-using System.Diagnostics; // Added for Process
+using System.Diagnostics;
 
 namespace Orchestra.Agent.Services;
 
@@ -22,21 +22,35 @@ public class RemoteDesktopService : BackgroundService
     private readonly AgentConfig _config;
     private HubConnection? _hubConnection;
     private bool _isStreaming = false;
-    private readonly int _targetWidth = 1600; 
-    private readonly int _jpegQuality = 75; 
     private readonly InputSimulator _inputSimulator;
-    
     private readonly RemoteDesktopConfig _rdConfig;
-    private Process? _helperProcess;
-    
-    // Monitor selection: -1 = all monitors (virtual screen), 0+ = specific monitor index
-    private int _selectedMonitor = 0; // Default: Monitor 1
+
+    // Monitor selection: -1 = all monitors (virtual screen), 0+ = specific monitor
+    private int _selectedMonitor = 0;
+
+    // Streaming quality — controllable from frontend via hub message
+    private int _jpegQuality = 75;
+    private int _targetWidth = 1600;
+
+    // ── Manager-mode state ─────────────────────────────────────────────
+    // Exponential backoff for helper launch retries
+    private int _helperRetryCount = 0;
+    private DateTime _nextHelperAttempt = DateTime.MinValue;
+    private static readonly TimeSpan[] _backoffIntervals =
+    {
+        TimeSpan.FromSeconds(5),
+        TimeSpan.FromSeconds(15),
+        TimeSpan.FromSeconds(30),
+        TimeSpan.FromSeconds(60),
+        TimeSpan.FromSeconds(120),
+        TimeSpan.FromSeconds(300)  // max 5 min
+    };
 
     public RemoteDesktopService(
         ILogger<RemoteDesktopService> logger,
         IDeviceIdentityProvider identityProvider,
         IOptions<AgentConfig> config,
-        RemoteDesktopConfig rdConfig) // Inject Mode
+        RemoteDesktopConfig rdConfig)
     {
         _logger = logger;
         _identityProvider = identityProvider;
@@ -47,243 +61,250 @@ public class RemoteDesktopService : BackgroundService
 
     private void LogDebug(string message)
     {
-        try
-        {
-            File.AppendAllText(@"C:\Users\Public\mudosoft_manager_debug.log", $"{DateTime.Now}: {message}{Environment.NewLine}");
-        }
+        try { File.AppendAllText(@"C:\Users\Public\mudosoft_manager_debug.log", $"{DateTime.Now}: {message}{Environment.NewLine}"); }
         catch { }
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        LogDebug($"ExecuteAsync Started. Mode: {_rdConfig.Mode}");
+        LogDebug($"ExecuteAsync started. Mode: {_rdConfig.Mode}");
         if (_rdConfig.Mode == "Helper")
-        {
             await RunHelperMode(stoppingToken);
-        }
         else
-        {
             await RunManagerMode(stoppingToken);
-        }
     }
 
-    // --- HELPER MODE (User Session) ---
+    // ── HELPER MODE (User Session) ────────────────────────────────────
+
     private async Task RunHelperMode(CancellationToken stoppingToken)
     {
         LogDebug("Helper Mode initializing...");
-        
-        // Immediately write heartbeat so manager knows we're alive
         UpdateHelperHeartbeat();
-        LogDebug("Heartbeat written immediately");
-        
+
         try
         {
             var deviceId = _identityProvider.GetDeviceId();
             var hubUrl = $"{_config.BackendUrl}/hubs/desktop";
-            LogDebug($"Connecting to hub: {hubUrl} with deviceId: {deviceId}");
+            LogDebug($"Connecting to hub: {hubUrl} deviceId: {deviceId}");
 
             _hubConnection = new HubConnectionBuilder()
                 .WithUrl(hubUrl, options =>
                 {
-                    options.ApplicationMaxBufferSize = 5 * 1024 * 1024; // 5MB
+                    options.ApplicationMaxBufferSize = 5 * 1024 * 1024;
                 })
-                .WithAutomaticReconnect()
+                .WithAutomaticReconnect(new[] { TimeSpan.Zero, TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(10), TimeSpan.FromSeconds(30) })
                 .Build();
 
-            // Re-register on reconnect so backend knows our new connectionId
             _hubConnection.Reconnected += async (connectionId) =>
             {
-                _logger.LogInformation("🔄 Helper reconnected, re-registering device...");
+                LogDebug("Helper reconnected — re-registering...");
                 try
                 {
                     await _hubConnection.InvokeAsync("RegisterDevice", deviceId);
-                    _logger.LogInformation("✅ Device re-registered after reconnect");
+                    LogDebug("Re-registered after reconnect");
                 }
-                catch (Exception ex)
-                {
-                    _logger.LogWarning("Re-register failed: {Message}", ex.Message);
-                }
+                catch (Exception ex) { LogDebug($"Re-register failed: {ex.Message}"); }
             };
 
-        // 0. Input Listener
-        _hubConnection.On<InputEventDto>("PerformInput", (input) =>
-        {
-            try
+            _hubConnection.On<InputEventDto>("PerformInput", input =>
             {
-                _inputSimulator.HandleInput(input, GetScreenBounds());
-            }
-            catch (Exception ex)
+                try { _inputSimulator.HandleInput(input, GetScreenBounds()); }
+                catch (Exception ex) { _logger.LogWarning("Input error: {Msg}", ex.Message); }
+            });
+
+            _hubConnection.On("StartStreaming", () =>
             {
-                _logger.LogWarning("Input error: {Message}", ex.Message);
-            }
-        });
+                LogDebug("StartStreaming received");
+                _isStreaming = true;
+            });
 
-        // 1. Dinleyiciler
-        _hubConnection.On("StartStreaming", () =>
-        {
-            _logger.LogInformation("🖥️ Uzak masaüstü yayını BAŞLATILIYOR...");
-            _isStreaming = true;
-        });
-
-        _hubConnection.On("StopStreaming", () =>
-        {
-            _logger.LogInformation("⏹️ Uzak masaüstü yayını DURDURULDU.");
-            _isStreaming = false;
-        });
-
-        // Monitor selection handler (-1 = all, 0+ = specific monitor)
-        _hubConnection.On<int>("SelectMonitor", (monitorIndex) =>
-        {
-            _selectedMonitor = monitorIndex;
-            _logger.LogInformation("🖥️ Monitör seçildi: {Monitor}", monitorIndex == -1 ? "Tümü" : $"Monitör {monitorIndex + 1}");
-        });
-
-        // 2. Bağlan
-        while (!stoppingToken.IsCancellationRequested)
-        {
-            try
+            _hubConnection.On("StopStreaming", () =>
             {
-                if (_hubConnection.State == HubConnectionState.Disconnected)
+                LogDebug("StopStreaming received");
+                _isStreaming = false;
+            });
+
+            _hubConnection.On<int>("SelectMonitor", monitorIndex =>
+            {
+                _selectedMonitor = monitorIndex;
+                LogDebug($"Monitor selected: {monitorIndex}");
+            });
+
+            // Quality control from frontend
+            _hubConnection.On<int, int>("SetQuality", (quality, width) =>
+            {
+                _jpegQuality = Math.Clamp(quality, 20, 95);
+                _targetWidth = Math.Clamp(width, 640, 1920);
+                LogDebug($"Quality set: JPEG={_jpegQuality} Width={_targetWidth}");
+            });
+
+            while (!stoppingToken.IsCancellationRequested)
+            {
+                try
                 {
-                    await _hubConnection.StartAsync(stoppingToken);
-                    _logger.LogInformation("📡 RemoteDesktop Helper Hub'a bağlanıldı!");
-                    
-                    // Kendimizi kaydettirelim
-                    await _hubConnection.InvokeAsync("RegisterDevice", deviceId, stoppingToken);
+                    if (_hubConnection.State == HubConnectionState.Disconnected)
+                    {
+                        await _hubConnection.StartAsync(stoppingToken);
+                        LogDebug("Hub connected!");
+                        await _hubConnection.InvokeAsync("RegisterDevice", deviceId, stoppingToken);
+                        _isStreaming = true;
+                    }
 
-                    // Helper başladığında otomatik yayına başlasın mı? 
-                    // Backend "StartStreaming" gönderene kadar bekleyebiliriz ama 
-                    // basitlik için Helper açıldığı an yayına hazır olsun.
-                    _isStreaming = true; 
+                    if (_isStreaming && _hubConnection.State == HubConnectionState.Connected)
+                    {
+                        UpdateHelperHeartbeat();
+                        await CaptureAndSendFrame(deviceId);
+                        await Task.Delay(10, stoppingToken);
+                    }
+                    else
+                    {
+                        UpdateHelperHeartbeat();
+                        await Task.Delay(1000, stoppingToken);
+                    }
                 }
-
-                // 3. Streaming Döngüsü
-                if (_isStreaming && _hubConnection.State == HubConnectionState.Connected)
+                catch (OperationCanceledException) { break; }
+                catch (Exception ex)
                 {
-                    // Helper çalıştığını bildir (flag dosyası)
+                    LogDebug($"Helper loop error: {ex.Message}");
+                    _isStreaming = false;
                     UpdateHelperHeartbeat();
-                    
-                    await CaptureAndSendFrame(deviceId);
-                    await Task.Delay(10, stoppingToken); // Minimize latency
-                }
-                else
-                {
-                    // Streaming değilken de heartbeat gönder (Manager bekleyebilir)
-                    UpdateHelperHeartbeat();
-                    await Task.Delay(1000, stoppingToken);
+                    await Task.Delay(5000, stoppingToken);
                 }
             }
-            catch (Exception ex)
-            {
-                LogDebug($"Helper loop error: {ex.Message}");
-                _logger.LogError(ex, "RemoteDesktop Helper hatası");
-                _isStreaming = false; 
-                UpdateHelperHeartbeat(); // Keep heartbeat even on error
-                await Task.Delay(5000, stoppingToken);
-            }
-        }
         }
         catch (Exception ex)
         {
-            LogDebug($"Helper FATAL error: {ex}");
+            LogDebug($"Helper FATAL: {ex}");
             _logger.LogError(ex, "Helper fatal error");
         }
     }
 
-    // --- MANAGER MODE (Service Session 0) ---
+    // ── MANAGER MODE (Service Session 0) ─────────────────────────────
+
     private async Task RunManagerMode(CancellationToken stoppingToken)
     {
-        LogDebug("🛡️ RemoteDesktop Manager başlatıldı. Oturum bekleniyor...");
+        LogDebug("Manager mode started. Monitoring helper...");
 
         while (!stoppingToken.IsCancellationRequested)
         {
             try
             {
-                // Helper zaten çalışıyor mu kontrol et (flag dosyasıyla)
-                if (!IsHelperRunning())
+                if (!IsHelperAlive())
                 {
-                    // Aktif oturum var mı?
-                    try 
+                    if (DateTime.Now < _nextHelperAttempt)
                     {
-                        uint sessionId = SessionInterop.WTSGetActiveConsoleSessionId();
-                        if (sessionId != 0xFFFFFFFF)
+                        // Backoff — wait, don't spam
+                        await Task.Delay(1000, stoppingToken);
+                        continue;
+                    }
+
+                    uint sessionId;
+                    try { sessionId = SessionInterop.WTSGetActiveConsoleSessionId(); }
+                    catch (Exception ex)
+                    {
+                        LogDebug($"Session check error: {ex.Message}");
+                        ScheduleNextAttempt();
+                        await Task.Delay(5000, stoppingToken);
+                        continue;
+                    }
+
+                    if (sessionId == 0xFFFFFFFF)
+                    {
+                        // No active user session yet — reset retry count, try again soon
+                        _helperRetryCount = 0;
+                        _nextHelperAttempt = DateTime.MinValue;
+                        await Task.Delay(10000, stoppingToken);
+                        continue;
+                    }
+
+                    LogDebug($"Active session: {sessionId}. Launching helper (attempt #{_helperRetryCount + 1})...");
+                    bool launched = LaunchHelper(sessionId);
+                    ScheduleNextAttempt();
+
+                    if (launched)
+                    {
+                        // Wait a moment before checking if helper came alive
+                        await Task.Delay(3000, stoppingToken);
+                        if (IsHelperAlive())
                         {
-                            LogDebug($"👤 Aktif Session bulundu: {sessionId}. Helper başlatılıyor...");
-                            LaunchHelper(sessionId);
+                            LogDebug("Helper is alive!");
+                            _helperRetryCount = 0;
+                            _nextHelperAttempt = DateTime.MinValue;
                         }
                     }
-                    catch (Exception ex) 
-                    {
-                         LogDebug($"Session Check Error: {ex.Message}");
-                    }
+                }
+                else
+                {
+                    // Helper healthy — reset retry state
+                    _helperRetryCount = 0;
+                    _nextHelperAttempt = DateTime.MinValue;
                 }
             }
+            catch (OperationCanceledException) { break; }
             catch (Exception ex)
             {
-                LogDebug($"Manager Loop Error: {ex.Message}");
+                LogDebug($"Manager loop error: {ex.Message}");
             }
 
             await Task.Delay(10000, stoppingToken);
         }
     }
-    
+
+    private void ScheduleNextAttempt()
+    {
+        var idx = Math.Min(_helperRetryCount, _backoffIntervals.Length - 1);
+        var delay = _backoffIntervals[idx];
+        _helperRetryCount++;
+        _nextHelperAttempt = DateTime.Now.Add(delay);
+        LogDebug($"Next helper launch attempt in {delay.TotalSeconds}s (retry #{_helperRetryCount})");
+    }
+
+    // ── Helper Lifecycle ──────────────────────────────────────────────
+
     private static readonly string HelperFlagPath = @"C:\Users\Public\MudoSoftHelper.flag";
-    
-    private bool IsHelperRunning()
+
+    private bool IsHelperAlive()
     {
         try
         {
-            // Flag dosyası var mı ve son 60 saniye içinde güncellendi mi?
-            if (File.Exists(HelperFlagPath))
+            if (!File.Exists(HelperFlagPath)) return false;
+            var lastWrite = File.GetLastWriteTime(HelperFlagPath);
+            var age = (DateTime.Now - lastWrite).TotalSeconds;
+            if (age > 60)
             {
-                var lastWrite = File.GetLastWriteTime(HelperFlagPath);
-                if ((DateTime.Now - lastWrite).TotalSeconds < 60)
-                {
-                    return true; // Helper çalışıyor
-                }
+                LogDebug($"Helper flag stale ({age:0}s old) — helper crashed or stopped");
+                return false;
             }
-            return false;
+            return true;
         }
-        catch
-        {
-            return false;
-        }
+        catch { return false; }
     }
-    
+
     private void UpdateHelperHeartbeat()
     {
-        try
-        {
-            // Flag dosyasını güncelle (varlığını ve son yazma zamanını)
-            File.WriteAllText(HelperFlagPath, DateTime.Now.ToString("o"));
-        }
+        try { File.WriteAllText(HelperFlagPath, DateTime.Now.ToString("o")); }
         catch { }
     }
 
-    private void LaunchHelper(uint sessionId)
+    private bool LaunchHelper(uint sessionId)
     {
         try
         {
             string exePath = Environment.ProcessPath!;
             string taskName = "MudoSoft_RDHelper";
-            
-            LogDebug($"Switching to Task Scheduler launch method for Helper: {exePath}");
 
-            // Find out who to run this as
             string? activeUsername = SessionInterop.GetUsernameForSession(sessionId);
-            LogDebug($"Target Username for Task: {activeUsername ?? "UNKNOWN"}");
+            LogDebug($"Launching helper for user: {activeUsername ?? "UNKNOWN"}, session: {sessionId}");
 
-            string userPrincipalNode = string.IsNullOrEmpty(activeUsername) 
-                ? "<LogonType>InteractiveToken</LogonType>" 
+            string userPrincipalNode = string.IsNullOrEmpty(activeUsername)
+                ? "<LogonType>InteractiveToken</LogonType>"
                 : $"<UserId>{activeUsername}</UserId>\n      <LogonType>InteractiveToken</LogonType>";
-            
-            // 1. Create Task XML dynamically using standard S-1-5-32-545 (Users group) SID
-            // This ensures it runs interactively for the currently logged-on user
+
             string xmlPath = Path.Combine(Path.GetTempPath(), "rdhelper_task.xml");
             string xmlContent = $@"<?xml version=""1.0"" encoding=""UTF-16""?>
 <Task version=""1.2"" xmlns=""http://schemas.microsoft.com/windows/2004/02/mit/task"">
   <RegistrationInfo>
-    <Description>MudoSoft Remote Desktop Helper Launcher</Description>
+    <Description>MudoSoft Remote Desktop Helper</Description>
   </RegistrationInfo>
   <Triggers />
   <Principals>
@@ -319,52 +340,48 @@ public class RemoteDesktopService : BackgroundService
   </Actions>
 </Task>";
             File.WriteAllText(xmlPath, xmlContent, System.Text.Encoding.Unicode);
-            
-            // 2. Register the scheduled task (Force overwrite if exists)
-            var psiCreate = new ProcessStartInfo("schtasks.exe", $"/create /tn \"{taskName}\" /xml \"{xmlPath}\" /f")
-            {
-                CreateNoWindow = true,
-                UseShellExecute = false,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true
-            };
-            using (var pCreate = Process.Start(psiCreate))
-            {
-                pCreate?.WaitForExit();
-                var err = pCreate?.StandardError.ReadToEnd();
-                if (!string.IsNullOrEmpty(err)) LogDebug($"SchTasks Create Error: {err}");
-            }
-            
-            // 3. Trigger the scheduled task (This seamlessly hands it over to the interactive session)
-            LogDebug("Running the scheduled task interactively...");
-            var psiRun = new ProcessStartInfo("schtasks.exe", $"/run /tn \"{taskName}\"")
-            {
-                CreateNoWindow = true,
-                UseShellExecute = false,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true
-            };
-            using (var pRun = Process.Start(psiRun))
-            {
-                pRun?.WaitForExit();
-                var err = pRun?.StandardError.ReadToEnd();
-                if (!string.IsNullOrEmpty(err)) LogDebug($"SchTasks Run Error: {err}");
-            }
-            
-            LogDebug("🚀 Helper task scheduled effectively!");
-            
-            // Cleanup temp file
+
+            // Register task (force overwrite)
+            var (createOut, createErr) = RunProcess("schtasks.exe",
+                $"/create /tn \"{taskName}\" /xml \"{xmlPath}\" /f");
+            if (!string.IsNullOrEmpty(createErr))
+                LogDebug($"schtasks create err: {createErr}");
+
+            // Run task
+            var (runOut, runErr) = RunProcess("schtasks.exe", $"/run /tn \"{taskName}\"");
+            if (!string.IsNullOrEmpty(runErr))
+                LogDebug($"schtasks run err: {runErr}");
+
             try { File.Delete(xmlPath); } catch { }
+
+            LogDebug("Helper task scheduled and triggered");
+            return true;
         }
         catch (Exception ex)
         {
-            LogDebug($"Helper Task Scheduler Launch FAILED: {ex}");
+            LogDebug($"LaunchHelper failed: {ex}");
+            return false;
         }
     }
 
+    private static (string stdout, string stderr) RunProcess(string exe, string args)
+    {
+        var psi = new ProcessStartInfo(exe, args)
+        {
+            CreateNoWindow = true,
+            UseShellExecute = false,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true
+        };
+        using var proc = Process.Start(psi)!;
+        proc.WaitForExit(5000);
+        return (proc.StandardOutput.ReadToEnd(), proc.StandardError.ReadToEnd());
+    }
+
+    // ── Screen Capture ───────────────────────────────────────────────
+
     private async Task CaptureAndSendFrame(string deviceId)
     {
-        // ... (Existing Logic)
         try
         {
             if (!OperatingSystem.IsWindows()) return;
@@ -372,156 +389,100 @@ public class RemoteDesktopService : BackgroundService
             var bounds = GetScreenBounds();
             using var bitmap = new Bitmap(bounds.Width, bounds.Height);
             using (var g = Graphics.FromImage(bitmap))
-            {
-                // Use bounds.Location for correct capture of specific monitors
                 g.CopyFromScreen(bounds.Location, Point.Empty, bounds.Size);
-            }
 
             using var resized = ResizeImage(bitmap, _targetWidth);
-            
             using var stream = new MemoryStream();
             SaveJpeg(resized, stream, _jpegQuality);
-            
             var imageBytes = stream.ToArray();
 
             if (_hubConnection != null)
-            {
                 await _hubConnection.InvokeAsync("StreamFrame", deviceId, imageBytes);
-            }
         }
-        catch (Exception ex)
-        {
-            // _logger.LogWarning("Ekran yakalama başarısız: {Message}", ex.Message);
-        }
+        catch { /* suppress per-frame errors */ }
     }
-    // ... (Helper Methods: GetScreenBounds, ResizeImage, SaveJpeg...)
-    
-    // P/Invoke for monitor enumeration (avoiding Windows Forms dependency)
+
     private delegate bool MonitorEnumDelegate(IntPtr hMonitor, IntPtr hdcMonitor, ref RECT lprcMonitor, IntPtr dwData);
-    
+
     [DllImport("user32.dll")]
     private static extern bool EnumDisplayMonitors(IntPtr hdc, IntPtr lprcClip, MonitorEnumDelegate lpfnEnum, IntPtr dwData);
-    
+
     [StructLayout(LayoutKind.Sequential)]
-    private struct RECT
-    {
-        public int Left;
-        public int Top;
-        public int Right;
-        public int Bottom;
-    }
-    
+    private struct RECT { public int Left, Top, Right, Bottom; }
+
     private List<Rectangle> _monitorBounds = new();
     private DateTime _lastMonitorRefresh = DateTime.MinValue;
-    
+
     private void RefreshMonitorList()
     {
-        // Only refresh every 5 seconds to avoid overhead
         if ((DateTime.Now - _lastMonitorRefresh).TotalSeconds < 5 && _monitorBounds.Count > 0)
             return;
-        
-        // Build new list atomically — never clear the old list to avoid
-        // brief empty state that causes fallback to MON1
+
         var newList = new List<Rectangle>();
-        EnumDisplayMonitors(IntPtr.Zero, IntPtr.Zero, (IntPtr hMonitor, IntPtr hdcMonitor, ref RECT lprcMonitor, IntPtr dwData) =>
-        {
-            newList.Add(new Rectangle(
-                lprcMonitor.Left,
-                lprcMonitor.Top,
-                lprcMonitor.Right - lprcMonitor.Left,
-                lprcMonitor.Bottom - lprcMonitor.Top));
-            return true;
-        }, IntPtr.Zero);
-        
-        // Atomic swap — old list stays valid until this assignment
-        if (newList.Count > 0)
-        {
-            _monitorBounds = newList;
-        }
+        EnumDisplayMonitors(IntPtr.Zero, IntPtr.Zero,
+            (IntPtr hMonitor, IntPtr hdcMonitor, ref RECT r, IntPtr data) =>
+            {
+                newList.Add(new Rectangle(r.Left, r.Top, r.Right - r.Left, r.Bottom - r.Top));
+                return true;
+            }, IntPtr.Zero);
+
+        if (newList.Count > 0) _monitorBounds = newList;
         _lastMonitorRefresh = DateTime.Now;
     }
-    
+
     private Rectangle GetScreenBounds()
     {
-        // If specific monitor selected, enumerate monitors
         if (_selectedMonitor >= 0)
         {
             RefreshMonitorList();
-            if (_selectedMonitor < _monitorBounds.Count)
-            {
-                return _monitorBounds[_selectedMonitor];
-            }
-            // Fallback to first monitor if index out of range
-            if (_monitorBounds.Count > 0)
-            {
-                return _monitorBounds[0];
-            }
+            if (_selectedMonitor < _monitorBounds.Count) return _monitorBounds[_selectedMonitor];
+            if (_monitorBounds.Count > 0) return _monitorBounds[0];
         }
-        
-        // Default: all monitors (virtual screen)
         return GetVirtualScreenBounds();
     }
-    
+
     private Rectangle GetVirtualScreenBounds()
     {
         int vLeft = InputSimulator.GetSystemMetrics(InputSimulator.SM_XVIRTUALSCREEN);
         int vTop = InputSimulator.GetSystemMetrics(InputSimulator.SM_YVIRTUALSCREEN);
         int vWidth = InputSimulator.GetSystemMetrics(InputSimulator.SM_CXVIRTUALSCREEN);
         int vHeight = InputSimulator.GetSystemMetrics(InputSimulator.SM_CYVIRTUALSCREEN);
-
-        if (vWidth == 0) vWidth = InputSimulator.GetSystemMetrics(0); 
+        if (vWidth == 0) vWidth = InputSimulator.GetSystemMetrics(0);
         if (vHeight == 0) vHeight = InputSimulator.GetSystemMetrics(1);
-
         return new Rectangle(vLeft, vTop, vWidth, vHeight);
     }
-    
-    // Helper to get monitor count for frontend
+
     public static int GetMonitorCount()
     {
-        var count = 0;
-        EnumDisplayMonitors(IntPtr.Zero, IntPtr.Zero, (IntPtr hMonitor, IntPtr hdcMonitor, ref RECT lprcMonitor, IntPtr dwData) =>
-        {
-            count++;
-            return true;
-        }, IntPtr.Zero);
+        int count = 0;
+        EnumDisplayMonitors(IntPtr.Zero, IntPtr.Zero,
+            (IntPtr h, IntPtr hdc, ref RECT r, IntPtr d) => { count++; return true; }, IntPtr.Zero);
         return count;
     }
 
     private Bitmap ResizeImage(Bitmap image, int width)
     {
         int height = (int)((double)image.Height * width / image.Width);
-        var destRect = new Rectangle(0, 0, width, height);
-        var destImage = new Bitmap(width, height);
-        destImage.SetResolution(image.HorizontalResolution, image.VerticalResolution);
-        using (var graphics = Graphics.FromImage(destImage))
-        {
-            graphics.CompositingMode = System.Drawing.Drawing2D.CompositingMode.SourceCopy;
-            graphics.CompositingQuality = System.Drawing.Drawing2D.CompositingQuality.HighSpeed;
-            graphics.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.Low;
-            graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.HighSpeed;
-            graphics.PixelOffsetMode = System.Drawing.Drawing2D.PixelOffsetMode.HighSpeed;
-            using (var wrapMode = new ImageAttributes())
-            {
-                wrapMode.SetWrapMode(System.Drawing.Drawing2D.WrapMode.TileFlipXY);
-                graphics.DrawImage(image, destRect, 0, 0, image.Width, image.Height, GraphicsUnit.Pixel, wrapMode);
-            }
-        }
-        return destImage;
+        var dest = new Bitmap(width, height);
+        dest.SetResolution(image.HorizontalResolution, image.VerticalResolution);
+        using var g = Graphics.FromImage(dest);
+        g.CompositingMode = System.Drawing.Drawing2D.CompositingMode.SourceCopy;
+        g.CompositingQuality = System.Drawing.Drawing2D.CompositingQuality.HighSpeed;
+        g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.Low;
+        g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.HighSpeed;
+        g.PixelOffsetMode = System.Drawing.Drawing2D.PixelOffsetMode.HighSpeed;
+        using var wrapMode = new ImageAttributes();
+        wrapMode.SetWrapMode(System.Drawing.Drawing2D.WrapMode.TileFlipXY);
+        g.DrawImage(image, new Rectangle(0, 0, width, height), 0, 0, image.Width, image.Height, GraphicsUnit.Pixel, wrapMode);
+        return dest;
     }
 
     private void SaveJpeg(Bitmap image, MemoryStream stream, long quality)
     {
-        var jpgEncoder = GetEncoder(ImageFormat.Jpeg);
-        var myEncoder = System.Drawing.Imaging.Encoder.Quality;
-        var myEncoderParameters = new EncoderParameters(1);
-        var myEncoderParameter = new EncoderParameter(myEncoder, quality);
-        myEncoderParameters.Param[0] = myEncoderParameter;
-        image.Save(stream, jpgEncoder, myEncoderParameters);
-    }
-
-    private ImageCodecInfo GetEncoder(ImageFormat format)
-    {
-        ImageCodecInfo[] codecs = ImageCodecInfo.GetImageEncoders();
-        return codecs.FirstOrDefault(codec => codec.FormatID == format.Guid) ?? codecs[0];
+        var encoder = ImageCodecInfo.GetImageEncoders().FirstOrDefault(c => c.FormatID == ImageFormat.Jpeg.Guid)
+            ?? ImageCodecInfo.GetImageEncoders()[0];
+        var encoderParams = new EncoderParameters(1);
+        encoderParams.Param[0] = new EncoderParameter(System.Drawing.Imaging.Encoder.Quality, quality);
+        image.Save(stream, encoder, encoderParams);
     }
 }

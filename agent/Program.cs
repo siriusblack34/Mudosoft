@@ -137,6 +137,7 @@ var hostBuilder = Host.CreateDefaultBuilder(args)
         services.AddSingleton<ICollector, NetworkSpeedCollector>();
         services.AddSingleton<ICollector, UptimeReportCollector>();
         services.AddSingleton<ICollector, ScheduledCleanupCollector>();
+        services.AddSingleton<ICollector, GeniusPosCollector>();
         // Emergency hotfix:
         // Suspend non-essential collectors until we re-enable them one by one safely.
         // services.AddHostedService<CollectorOrchestrator>();

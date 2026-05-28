@@ -246,6 +246,9 @@ builder.Services.AddScoped<Orchestra.Backend.Services.InventoryImportService>();
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<Orchestra.Backend.Services.ActivityLogService>();
 
+// 3.5. Health Score Service
+builder.Services.AddScoped<Orchestra.Backend.Services.HealthScoreService>();
+
 // 4. CommandQueue
 builder.Services.AddSingleton<CommandQueue>();
 
@@ -279,6 +282,7 @@ builder.Services.AddHostedService(sp => sp.GetRequiredService<Orchestra.Backend.
 builder.Services.AddSingleton<Orchestra.Backend.Services.PrinterSerialSyncService>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<Orchestra.Backend.Services.PrinterSerialSyncService>());
 builder.Services.AddHostedService<Orchestra.Backend.Services.TelemetryRetentionWorker>();
+builder.Services.AddHostedService<Orchestra.Backend.Services.BirthdayNotificationService>();
 if (OperatingSystem.IsWindows())
     builder.Services.AddHostedService<Orchestra.Backend.Services.UserInstallWatcherService>();
 builder.Services.AddHttpClient("internal", c =>

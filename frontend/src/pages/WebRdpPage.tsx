@@ -11,11 +11,12 @@ import {
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type Phase = "checking" | "connecting" | "connected" | "disconnected" | "error";
+type Phase = "checking" | "connecting" | "reconnecting" | "connected" | "disconnected" | "error";
 
 const PHASE_LABELS: Record<Phase, string> = {
     checking:     "Cihaz kontrol ediliyor...",
     connecting:   "VNC baglantisi kuruluyor...",
+    reconnecting: "Yeniden baglaniliyor...",
     connected:    "Bagli",
     disconnected: "Baglanti kesildi",
     error:        "Baglanti hatasi",
@@ -73,6 +74,8 @@ export default function WebRdpPage() {
     const [retryKey, setRetryKey] = useState(0);
     const reconnectCountRef = useRef(0);
     const MAX_RECONNECT = 3;
+    const [reconnectCountdown, setReconnectCountdown] = useState(0);
+    const reconnectTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
     // VNC onar (agent uzerinden)
     const [repairing, setRepairing] = useState(false);
@@ -203,6 +206,11 @@ export default function WebRdpPage() {
         };
     }, [phase]);
 
+    // ── Reconnect timer cleanup ─────────────────────────────────────────────
+    useEffect(() => {
+        return () => { if (reconnectTimerRef.current) clearInterval(reconnectTimerRef.current); };
+    }, []);
+
     // ── Fullscreen listener ─────────────────────────────────────────────────
     useEffect(() => {
         const h = () => setIsFullscreen(!!document.fullscreenElement);
@@ -318,7 +326,7 @@ export default function WebRdpPage() {
 
     // ── Computed ────────────────────────────────────────────────────────────
 
-    const isConnecting = phase === "checking" || phase === "connecting";
+    const isConnecting = phase === "checking" || phase === "connecting" || phase === "reconnecting";
     const showOverlay  = isConnecting || phase === "error" || phase === "disconnected";
 
     // Dual-monitor CSS
@@ -381,10 +389,26 @@ export default function WebRdpPage() {
                         {fmtTime(elapsedSeconds)}
                     </span>
 
-                    {/* Ping */}
-                    <div className="flex items-center gap-1 shrink-0" title={pingMs !== null ? `${pingMs}ms gecikme` : "Gecikme olculuyor"}>
-                        <div className={`w-1.5 h-1.5 rounded-full ${pingColor(pingMs)}`} />
-                        <span className="text-xs text-gray-500 tabular-nums w-10">
+                    {/* Ping / latency */}
+                    <div className="flex items-center gap-1.5 shrink-0"
+                        title={pingMs !== null ? `${pingMs}ms gecikme — ${pingMs <= 50 ? "Mukemmel" : pingMs <= 150 ? "Iyi" : "Yuksek"}` : "Gecikme olculuyor"}>
+                        <div className="flex items-end gap-px h-3.5">
+                            {[1, 2, 3].map(bar => {
+                                const lit = pingMs === null ? false :
+                                    bar === 1 ? true :
+                                    bar === 2 ? pingMs <= 150 :
+                                    pingMs <= 50;
+                                const color = lit
+                                    ? (pingMs !== null && pingMs > 150 ? "bg-red-400" : pingMs !== null && pingMs > 50 ? "bg-amber-400" : "bg-emerald-400")
+                                    : "bg-gray-600";
+                                return <div key={bar} className={`w-1 rounded-sm ${color}`} style={{ height: `${bar * 4}px` }} />;
+                            })}
+                        </div>
+                        <span className={`text-xs tabular-nums w-10 ${
+                            pingMs === null ? "text-gray-500" :
+                            pingMs > 150 ? "text-red-400" :
+                            pingMs > 50  ? "text-amber-400" : "text-emerald-400"
+                        }`}>
                             {pingMs !== null ? `${pingMs}ms` : "—"}
                         </span>
                     </div>
@@ -485,11 +509,29 @@ export default function WebRdpPage() {
                         <span className="text-sm font-medium text-white">Goruntu Kalitesi</span>
                         <button onClick={() => setShowQualityPanel(false)} className="text-gray-400 hover:text-white text-xs">✕</button>
                     </div>
+                    {/* Quick presets */}
+                    <div className="flex gap-1.5 mb-4">
+                        {([
+                            { label: "Dusuk", q: 3, c: 7 },
+                            { label: "Orta", q: 6, c: 3 },
+                            { label: "Yuksek", q: 9, c: 0 },
+                        ] as const).map(p => (
+                            <button key={p.label}
+                                onClick={() => { setQualityLevel(p.q); setCompressionLevel(p.c); }}
+                                className={`flex-1 py-1 text-xs rounded-lg border transition-colors ${
+                                    qualityLevel === p.q && compressionLevel === p.c
+                                        ? "bg-blue-600 border-blue-500 text-white"
+                                        : "bg-gray-700 border-white/10 text-gray-300 hover:bg-gray-600"
+                                }`}>
+                                {p.label}
+                            </button>
+                        ))}
+                    </div>
                     <div className="space-y-4">
                         <div>
                             <div className="flex justify-between mb-1">
                                 <label className="text-xs text-gray-400">Kalite (yuksek = daha net)</label>
-                                <span className="text-xs text-gray-300 font-mono">{qualityLevel}</span>
+                                <span className="text-xs text-blue-300 font-mono">{qualityLevel}/9</span>
                             </div>
                             <input type="range" min={0} max={9} value={qualityLevel}
                                 onChange={e => setQualityLevel(+e.target.value)}
@@ -501,7 +543,7 @@ export default function WebRdpPage() {
                         <div>
                             <div className="flex justify-between mb-1">
                                 <label className="text-xs text-gray-400">Sikistirma (yuksek = daha az bant)</label>
-                                <span className="text-xs text-gray-300 font-mono">{compressionLevel}</span>
+                                <span className="text-xs text-blue-300 font-mono">{compressionLevel}/9</span>
                             </div>
                             <input type="range" min={0} max={9} value={compressionLevel}
                                 onChange={e => setCompressionLevel(+e.target.value)}
@@ -511,6 +553,7 @@ export default function WebRdpPage() {
                             </div>
                         </div>
                     </div>
+                    <p className="text-[10px] text-gray-600 mt-3">Degisiklikler aninda uygulanir</p>
                 </div>
             )}
 
@@ -600,13 +643,24 @@ export default function WebRdpPage() {
                                 setTimeout(detect, 150);
                             }}
                             onDisconnect={(e: any) => {
+                                if (reconnectTimerRef.current) clearInterval(reconnectTimerRef.current);
                                 if (e?.detail?.clean) {
                                     reconnectCountRef.current = 0;
                                     setPhase("disconnected");
                                 } else if (reconnectCountRef.current < MAX_RECONNECT) {
                                     reconnectCountRef.current++;
-                                    setPhase("connecting");
-                                    setTimeout(() => setRetryKey(k => k + 1), 3000);
+                                    const delay = Math.min(3 * reconnectCountRef.current, 9); // 3s, 6s, 9s
+                                    setReconnectCountdown(delay);
+                                    setPhase("reconnecting");
+                                    let remaining = delay;
+                                    reconnectTimerRef.current = setInterval(() => {
+                                        remaining--;
+                                        setReconnectCountdown(remaining);
+                                        if (remaining <= 0) {
+                                            if (reconnectTimerRef.current) clearInterval(reconnectTimerRef.current);
+                                            setRetryKey(k => k + 1);
+                                        }
+                                    }, 1000);
                                 } else {
                                     reconnectCountRef.current = 0;
                                     setPhase("error");
@@ -635,22 +689,53 @@ export default function WebRdpPage() {
                 <div className="absolute inset-0 top-12 bg-gray-950/90 backdrop-blur-sm flex items-center justify-center z-40">
                     <div className="bg-gray-800/90 border border-white/10 rounded-2xl p-8 max-w-md w-full mx-4 shadow-2xl">
                         <h2 className="text-lg font-semibold text-white mb-6 text-center">
-                            {phase === "error" || phase === "disconnected" ? "Baglanti Durumu" : "Web RDP Baglantisi"}
+                            {phase === "error" ? "Baglanti Hatasi" :
+                             phase === "disconnected" ? "Baglanti Kesildi" :
+                             phase === "reconnecting" ? "Yeniden Baglaniliyor" : "Web RDP Baglantisi"}
                         </h2>
                         <div className="space-y-4 mb-6">
                             <ProgressStep label="Cihaz Kontrolu" status={
                                 phase === "checking" ? "active" :
-                                phase === "error" && errorMsg.includes("cevrimdisi") ? "error" : "done"
+                                (phase === "error" && errorMsg.includes("cevrimdisi")) ? "error" : "done"
                             } />
                             <ProgressStep label={
                                 reconnectCountRef.current > 0
                                     ? `VNC Baglantisi (Deneme ${reconnectCountRef.current}/${MAX_RECONNECT})`
                                     : "VNC Baglantisi"
                             } status={
-                                phase === "checking" ? "pending" : phase === "connecting" ? "active" :
-                                phase === "error" && !errorMsg.includes("cevrimdisi") ? "error" : "done"
+                                phase === "checking" ? "pending" :
+                                (phase === "connecting") ? "active" :
+                                phase === "reconnecting" ? "active" :
+                                (phase === "error" && !errorMsg.includes("cevrimdisi")) ? "error" :
+                                phase === "disconnected" ? "error" : "done"
                             } />
                         </div>
+
+                        {/* Reconnect countdown */}
+                        {phase === "reconnecting" && (
+                            <div className="mb-4 bg-amber-500/10 border border-amber-500/30 rounded-xl p-4 text-center">
+                                <p className="text-amber-300 text-sm mb-2">
+                                    Baglanti koptu — {reconnectCountdown}sn sonra yeniden denenecek
+                                    <span className="text-amber-400/60 ml-2">({reconnectCountRef.current}/{MAX_RECONNECT})</span>
+                                </p>
+                                <div className="w-full bg-gray-700 rounded-full h-1.5">
+                                    <div
+                                        className="bg-amber-400 h-1.5 rounded-full transition-all duration-1000"
+                                        style={{ width: `${(reconnectCountdown / (3 * reconnectCountRef.current)) * 100}%` }}
+                                    />
+                                </div>
+                                <button
+                                    onClick={() => {
+                                        if (reconnectTimerRef.current) clearInterval(reconnectTimerRef.current);
+                                        setRetryKey(k => k + 1);
+                                    }}
+                                    className="mt-3 px-3 py-1 bg-amber-600/50 hover:bg-amber-500/60 text-amber-200 text-xs rounded-lg transition-colors"
+                                >
+                                    Simdi Dene
+                                </button>
+                            </div>
+                        )}
+
                         {(phase === "error" || phase === "disconnected") && (
                             <div className="space-y-4">
                                 {errorMsg && (
@@ -663,7 +748,6 @@ export default function WebRdpPage() {
                                         <pre className="text-[11px] text-emerald-200 font-mono whitespace-pre-wrap text-left">{repairMsg}</pre>
                                     </div>
                                 )}
-                                {/* VNC port erisilemiyorsa onar butonunu goster */}
                                 {(errorMsg.toLowerCase().includes("vnc port") || errorMsg.toLowerCase().includes("erisilebilir")) && deviceId && (
                                     <button
                                         onClick={async () => {

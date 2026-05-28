@@ -1,4 +1,6 @@
 import ShellLayout from "./layout/ShellLayout";
+import HealthScoreDashboardPage from "./pages/HealthScoreDashboardPage";
+import GeniusPosHealthPage from "./pages/GeniusPosHealthPage";
 import DashboardPage from "./pages/DashboardPage";
 import DevicesPage from "./pages/DevicesPage";
 import DeviceDetailsPage from "./pages/DeviceDetailsPage";
@@ -415,6 +417,22 @@ const routes = [
                 element: (
                     <ShellLayout>
                         <StoreOpeningDetailPage />
+                    </ShellLayout>
+                ),
+            },
+            {
+                path: "/health-score",
+                element: (
+                    <ShellLayout>
+                        <HealthScoreDashboardPage />
+                    </ShellLayout>
+                ),
+            },
+            {
+                path: "/genius-pos",
+                element: (
+                    <ShellLayout>
+                        <GeniusPosHealthPage />
                     </ShellLayout>
                 ),
             },
