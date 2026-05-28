@@ -20,6 +20,7 @@ import {
   FileBarChart2,
   FileCode,
   HardDrive,
+  HeartPulse,
   History,
   KeyRound,
   LayoutDashboard,
@@ -32,6 +33,7 @@ import {
   Radio,
   RefreshCw,
   Settings,
+  ShoppingCart,
   Sparkles,
   StickyNote,
   Users,
@@ -102,6 +104,15 @@ export const navGroups: NavGroup[] = [
       { to: '/ag-teshis', label: 'Ağ Teşhis', icon: <Activity className="h-4 w-4" />, shortcut: 'Alt+4' },
       { to: '/actions', label: 'İşlem Geçmişi', icon: <History className="h-4 w-4" /> },
       { to: '/notes', label: 'Notlar', icon: <StickyNote className="h-4 w-4" /> },
+    ],
+  },
+  {
+    title: 'Sağlık & POS',
+    shortLabel: 'Sağlık',
+    icon: <HeartPulse className="h-5 w-5" />,
+    items: [
+      { to: '/health-score', label: 'Agent Sağlık Skoru', icon: <HeartPulse className="h-4 w-4" /> },
+      { to: '/genius-pos', label: 'Genius POS Sağlığı', icon: <ShoppingCart className="h-4 w-4" /> },
     ],
   },
   {
