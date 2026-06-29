@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { User, Lock, ArrowRight, Loader2, AlertCircle, Building2, KeyRound, X, Eye, EyeOff, ShieldAlert, CheckCircle2 } from 'lucide-react';
+import { User, Lock, ArrowRight, Loader2, AlertCircle, KeyRound, X, Eye, EyeOff, ShieldAlert, CheckCircle2 } from 'lucide-react';
 import { API_BASE_URL } from '../lib/apiClient';
 import { useAuth } from '../contexts/AuthContext';
 import { useMenuVisibility } from '../contexts/MenuVisibilityContext';
@@ -12,7 +12,6 @@ const LoginPage: React.FC = () => {
   const { refresh: refreshMenus } = useMenuVisibility();
   const [isLoading, setIsLoading] = useState(false);
   const [formData, setFormData] = useState({ username: '', password: '' });
-  const [useLdap, setUseLdap] = useState<boolean>(() => localStorage.getItem('loginUseLdap') === '1');
   const [error, setError] = useState('');
   const [shake, setShake] = useState(false);
   const [capsLockOn, setCapsLockOn] = useState(false);
@@ -64,11 +63,6 @@ const LoginPage: React.FC = () => {
     setFormData({ username: '', password: '' });
     setTimeout(() => usernameRef.current?.focus(), 0);
   };
-
-  // Son login tercihini hatırla
-  useEffect(() => {
-    localStorage.setItem('loginUseLdap', useLdap ? '1' : '0');
-  }, [useLdap]);
 
   // Kilitliyken her saniye sayaç güncelle
   useEffect(() => {
@@ -126,7 +120,7 @@ const LoginPage: React.FC = () => {
         body: JSON.stringify({
           username: formData.username,
           password: formData.password,
-          useLdap,
+          useLdap: true,
         }),
       });
 
@@ -304,18 +298,6 @@ const LoginPage: React.FC = () => {
                 </button>
               </div>
             </div>
-
-            {/* Domain hesabıyla giriş */}
-            <label className="flex items-center gap-2 text-xs text-ms-text-muted cursor-pointer select-none">
-              <input
-                type="checkbox"
-                checked={useLdap}
-                onChange={(e) => setUseLdap(e.target.checked)}
-                className="rounded border-ms-border bg-ms-bg accent-violet-500"
-              />
-              <Building2 className="w-3.5 h-3.5" />
-              <span>Domain hesabıyla giriş</span>
-            </label>
 
             {/* Hata mesajı + başarısız deneme sayacı */}
             {error && !isLocked && (

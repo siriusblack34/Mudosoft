@@ -47,7 +47,7 @@ const AgentUpdatePage: React.FC = () => {
     const [buildError, setBuildError] = useState("");
 
     const [remoteBackendUrl, setRemoteBackendUrl] = useState(() => {
-        return localStorage.getItem('remoteBackendUrl') || 'http://10.0.210.99:5102';
+        return localStorage.getItem('remoteBackendUrl') || window.location.origin;
     });
 
     const fetchLatestVersion = useCallback(async () => {

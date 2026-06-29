@@ -1,6 +1,9 @@
 import ShellLayout from "./layout/ShellLayout";
+import CampaignSyncPage from "./pages/CampaignSyncPage";
 import HealthScoreDashboardPage from "./pages/HealthScoreDashboardPage";
-import GeniusPosHealthPage from "./pages/GeniusPosHealthPage";
+import NobetciTakipPage from "./pages/NobetciTakipPage";
+import VardiyaRaporPage from "./pages/VardiyaRaporPage";
+import PlaybookPage from "./pages/PlaybookPage";
 import DashboardPage from "./pages/DashboardPage";
 import DevicesPage from "./pages/DevicesPage";
 import DeviceDetailsPage from "./pages/DeviceDetailsPage";
@@ -48,6 +51,10 @@ import GundemPage from "./pages/GundemPage";
 import OutageMailPage from "./pages/OutageMailPage";
 import ActiveSessionsPage from "./pages/ActiveSessionsPage";
 import SessionHistoryPage from "./pages/SessionHistoryPage";
+import ServiceMonitorPage from "./pages/ServiceMonitorPage";
+import GeniusPosHealthPage from "./pages/GeniusPosHealthPage";
+import YazicilarPage from "./pages/YazicilarPage";
+import KampanyaKontrolPage from "./pages/KampanyaKontrolPage";
 import { Navigate } from "react-router-dom";
 
 const routes = [
@@ -171,6 +178,14 @@ const routes = [
                 element: (
                     <ShellLayout>
                         <RouterPage />
+                    </ShellLayout>
+                ),
+            },
+            {
+                path: "/yazicilar",
+                element: (
+                    <ShellLayout>
+                        <YazicilarPage />
                     </ShellLayout>
                 ),
             },
@@ -349,6 +364,14 @@ const routes = [
                 ),
             },
             {
+                path: "/service-monitor",
+                element: (
+                    <ShellLayout>
+                        <ServiceMonitorPage />
+                    </ShellLayout>
+                ),
+            },
+            {
                 path: "/remote/sessions",
                 element: (
                     <ShellLayout>
@@ -429,7 +452,47 @@ const routes = [
                 ),
             },
             {
-                path: "/genius-pos",
+                path: "/nobetci-takip",
+                element: (
+                    <ShellLayout>
+                        <NobetciTakipPage />
+                    </ShellLayout>
+                ),
+            },
+            {
+                path: "/vardiya-raporu",
+                element: (
+                    <ShellLayout>
+                        <VardiyaRaporPage />
+                    </ShellLayout>
+                ),
+            },
+            {
+                path: "/playbooks",
+                element: (
+                    <ShellLayout>
+                        <PlaybookPage />
+                    </ShellLayout>
+                ),
+            },
+            {
+                path: "/kampanya-senkron",
+                element: (
+                    <ShellLayout>
+                        <CampaignSyncPage />
+                    </ShellLayout>
+                ),
+            },
+            {
+                path: "/kampanya-kontrol",
+                element: (
+                    <ShellLayout>
+                        <KampanyaKontrolPage />
+                    </ShellLayout>
+                ),
+            },
+            {
+                path: "/genius-pos-sagligi",
                 element: (
                     <ShellLayout>
                         <GeniusPosHealthPage />

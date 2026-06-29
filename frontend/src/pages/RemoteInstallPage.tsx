@@ -15,7 +15,7 @@ interface InstallStatus {
     id: string;
     ipAddress: string;
     storeCode: string;
-    phase: "pending" | "running" | "done" | "warn" | "error";
+    phase: "pending" | "queued" | "running" | "done" | "warn" | "error";
     error?: string;
     steps: InstallStep[];
     startedAt: string;
@@ -87,6 +87,8 @@ export default function RemoteInstallPage() {
     const withAgentCount = devices.filter(d => hasAgent(d)).length;
 
     const filteredDevices = devices.filter(d => {
+        const dt = d.deviceType?.toUpperCase();
+        if (dt === "ROUTER" || dt?.startsWith("YAZICI")) return false;
         if (agentFilter === "noAgent" && hasAgent(d)) return false;
         if (agentFilter === "withAgent" && !hasAgent(d)) return false;
         if (typeFilter !== "all" && d.deviceType !== typeFilter) return false;
@@ -160,11 +162,12 @@ export default function RemoteInstallPage() {
                 const status = await apiClient.get<InstallStatus>(
                     `/api/agent/remote-install/status?ip=${encodeURIComponent(ip)}`
                 );
+                const active = status.phase === "running" || status.phase === "queued";
                 setTargets(prev => prev.map(t =>
-                    t.ip === ip ? { ...t, status, polling: status.phase === "running" } : t
+                    t.ip === ip ? { ...t, status, polling: active } : t
                 ));
-                if (status.phase === "running") {
-                    setTimeout(poll, 1500);
+                if (active) {
+                    setTimeout(poll, status.phase === "queued" ? 2000 : 1500);
                 }
             } catch (err: any) {
                 const msg = err?.message || "Kurulum durumu okunamadi";
@@ -210,10 +213,11 @@ export default function RemoteInstallPage() {
                 const status = await apiClient.get<InstallStatus>(
                     `/api/agent/remote-install/status?ip=${encodeURIComponent(ip)}`
                 );
+                const active2 = status.phase === "running" || status.phase === "queued";
                 setTargets(prev => prev.map(t =>
-                    t.ip === ip ? { ...t, status, polling: status.phase === "running" } : t
+                    t.ip === ip ? { ...t, status, polling: active2 } : t
                 ));
-                if (status.phase === "running") pollStatus(ip);
+                if (active2) pollStatus(ip);
                 return;
             } catch {
                 // Status yoksa POST gercekten basarisiz olmus
@@ -380,6 +384,7 @@ export default function RemoteInstallPage() {
                                         <th className="text-left px-2 py-2">IP</th>
                                         <th className="text-left px-2 py-2">Tip</th>
                                         <th className="text-left px-2 py-2">Durum</th>
+                                        <th className="text-left px-2 py-2">Windows</th>
                                         <th className="text-left px-2 py-2">Agent</th>
                                     </tr>
                                 </thead>
@@ -423,6 +428,21 @@ export default function RemoteInstallPage() {
                                                     <span className={`w-2 h-2 rounded-full inline-block ${
                                                         device.isOnline ? "bg-emerald-400" : "bg-gray-600"
                                                     }`} />
+                                                </td>
+                                                <td className="px-2 py-2">
+                                                    {device.windowsVersion ? (
+                                                        <span className={`text-[9px] px-1.5 py-0.5 rounded border font-semibold ${
+                                                            device.windowsVersion.startsWith("Win11") ? "bg-violet-500/10 text-violet-300 border-violet-500/20" :
+                                                            device.windowsVersion.startsWith("Win10") ? "bg-sky-500/10 text-sky-300 border-sky-500/20" :
+                                                            device.windowsVersion.startsWith("Win 7") ? "bg-amber-500/10 text-amber-400 border-amber-500/20" :
+                                                            device.windowsVersion.includes("Server") ? "bg-emerald-500/10 text-emerald-300 border-emerald-500/20" :
+                                                            "bg-slate-500/10 text-slate-400 border-slate-500/20"
+                                                        }`}>
+                                                            {device.windowsVersion}
+                                                        </span>
+                                                    ) : (
+                                                        <span className="text-[9px] text-gray-600">—</span>
+                                                    )}
                                                 </td>
                                                 <td className="px-2 py-2">
                                                     {agent ? (
@@ -524,7 +544,13 @@ export default function RemoteInstallPage() {
                                         {target.polling && <Loader2 className="w-4 h-4 text-blue-400 animate-spin shrink-0" />}
                                     </div>
 
-                                    {target.status && (
+                                    {target.status?.phase === "queued" && (
+                                        <div className="ml-6 p-2.5 rounded-lg border bg-violet-500/5 border-violet-500/20 flex items-center gap-2">
+                                            <Loader2 className="w-3.5 h-3.5 text-violet-400 animate-spin shrink-0" />
+                                            <span className="text-xs text-violet-400">Kuyrukta bekliyor — sıra gelince başlayacak</span>
+                                        </div>
+                                    )}
+                                    {target.status && target.status.phase !== "queued" && (
                                         <div className={`ml-6 p-3 rounded-lg border ${
                                             target.status.phase === "done"  ? "bg-emerald-500/5 border-emerald-500/20" :
                                             target.status.phase === "warn"  ? "bg-amber-500/5 border-amber-500/20" :

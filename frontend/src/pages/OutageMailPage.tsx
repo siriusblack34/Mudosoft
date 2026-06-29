@@ -21,6 +21,8 @@ const OutageMailPage: React.FC = () => {
 
     // Düzenlenebilir önizleme
     const [editedText, setEditedText] = useState<string>('');
+    const [editedTo, setEditedTo] = useState<string>('');
+    const [editedCcText, setEditedCcText] = useState<string>('');
     const [isEditing, setIsEditing] = useState(false);
     const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -37,7 +39,6 @@ const OutageMailPage: React.FC = () => {
             const r = await apiClient.syncStoreAddresses();
             const missingNote = r.missingCount > 0 ? ` · ${r.missingCount} mağaza için adres bulunamadı` : '';
             setSyncResult({ ok: true, message: `GENIUS3'ten ${r.fetched} adres çekildi, ${r.updated} kayıt güncellendi${missingNote}.` });
-            // refresh stores
             const mgr = await apiClient.getStoreManagers();
             setStores(mgr);
         } catch (e: any) {
@@ -64,12 +65,14 @@ const OutageMailPage: React.FC = () => {
         })();
     }, []);
 
-    // Preview — form degisince backend'den al
+    // Preview — form değişince backend'den al
     useEffect(() => {
         if (selectedCodes.length === 0) {
             setPreview(null);
             setPreviewError('');
             setEditedText('');
+            setEditedTo('');
+            setEditedCcText('');
             setIsEditing(false);
             return;
         }
@@ -85,6 +88,8 @@ const OutageMailPage: React.FC = () => {
                 const p = await apiClient.previewOutageMail(req);
                 setPreview(p);
                 setEditedText(p.plainText);
+                setEditedTo(p.to);
+                setEditedCcText(p.cc.join(', '));
                 setIsEditing(false);
             } catch (e: any) {
                 setPreviewError(e?.message || 'Önizleme alınamadı');
@@ -104,17 +109,44 @@ const OutageMailPage: React.FC = () => {
         }
     }, [editedText, isEditing]);
 
+    const handleToggleEdit = () => {
+        if (!isEditing && preview) {
+            // Düzenlemeye başlarken preview değerlerini yükle (eğer daha önce değiştirilmediyse)
+            setEditedTo(prev => prev || preview.to);
+            setEditedCcText(prev => prev || preview.cc.join(', '));
+        }
+        setIsEditing(e => !e);
+    };
+
+    const handleReset = () => {
+        if (!preview) return;
+        setEditedText(preview.plainText);
+        setEditedTo(preview.to);
+        setEditedCcText(preview.cc.join(', '));
+        setIsEditing(false);
+    };
+
+    const isModified = preview
+        ? (editedText !== preview.plainText || editedTo !== preview.to || editedCcText !== preview.cc.join(', '))
+        : false;
+
     const handleSend = async () => {
         if (selectedCodes.length === 0 || !preview) return;
         setSending(true);
         setSendResult(null);
         try {
-            const isManuallyEdited = editedText !== preview.plainText;
+            const isTextEdited = editedText !== preview.plainText;
+            const isToEdited = editedTo.trim() !== preview.to;
+            const parsedCc = editedCcText.split(',').map(e => e.trim()).filter(Boolean);
+            const isCcEdited = parsedCc.join(',') !== preview.cc.join(',');
+
             const req: OutageMailRequest = {
                 storeCodes: selectedCodes,
                 issueKey,
                 additionalNotes: additionalNotes.trim() || undefined,
-                editedPlainText: isManuallyEdited ? editedText : undefined,
+                editedPlainText: isTextEdited ? editedText : undefined,
+                toOverride: isToEdited ? editedTo.trim() : undefined,
+                ccOverride: isCcEdited ? parsedCc : undefined,
             };
             const res = await apiClient.sendOutageMail(req);
             if (res.success) {
@@ -211,7 +243,7 @@ const OutageMailPage: React.FC = () => {
                         </div>
                     </div>
 
-                    {/* Alici + not */}
+                    {/* Alıcı + not */}
                     <div className="card space-y-3">
                         <div className="space-y-1 text-[12px] text-ms-text-muted">
                             <div>Mail "Merhaba Onur Bey" olarak başlar.</div>
@@ -351,7 +383,7 @@ const OutageMailPage: React.FC = () => {
                                 {previewLoading && <Loader2 className="w-3.5 h-3.5 animate-spin text-ms-text-muted" />}
                                 {preview && (
                                     <button
-                                        onClick={() => { setIsEditing(!isEditing); }}
+                                        onClick={handleToggleEdit}
                                         className={`flex items-center gap-1 text-[11px] px-2 py-1 rounded-md transition-colors ${
                                             isEditing
                                                 ? 'bg-violet-600/20 text-violet-300 border border-violet-500/40'
@@ -377,9 +409,28 @@ const OutageMailPage: React.FC = () => {
                             <div>
                                 {/* Mail header */}
                                 <div className="space-y-1 mb-4 pb-3 border-b border-ms-border text-[13px]">
-                                    <HeaderRow label="Kime" value={preview.to} />
-                                    {preview.cc.length > 0 && (
-                                        <HeaderRow label="CC" value={preview.cc.join(', ')} />
+                                    {isEditing ? (
+                                        <>
+                                            <EditableHeaderRow
+                                                label="Kime"
+                                                value={editedTo}
+                                                onChange={setEditedTo}
+                                                placeholder="alıcı@turkcell.com.tr"
+                                            />
+                                            <EditableHeaderRow
+                                                label="CC"
+                                                value={editedCcText}
+                                                onChange={setEditedCcText}
+                                                placeholder="cc1@ornek.com, cc2@ornek.com"
+                                            />
+                                        </>
+                                    ) : (
+                                        <>
+                                            <HeaderRow label="Kime" value={editedTo || preview.to} />
+                                            {(editedCcText || preview.cc.join(', ')) && (
+                                                <HeaderRow label="CC" value={editedCcText || preview.cc.join(', ')} />
+                                            )}
+                                        </>
                                     )}
                                     <HeaderRow label="Konu" value={preview.subject} bold />
                                 </div>
@@ -399,11 +450,11 @@ const OutageMailPage: React.FC = () => {
                                     </pre>
                                 )}
 
-                                {editedText !== preview.plainText && (
+                                {isModified && (
                                     <div className="mt-2 flex items-center gap-2">
                                         <span className="text-[11px] text-violet-400">Manuel düzenlendi</span>
                                         <button
-                                            onClick={() => { setEditedText(preview.plainText); setIsEditing(false); }}
+                                            onClick={handleReset}
                                             className="text-[11px] text-ms-text-muted hover:text-violet-400 transition-colors"
                                         >
                                             Sıfırla
@@ -439,7 +490,7 @@ const OutageMailPage: React.FC = () => {
                             )}
                         </button>
                         <p className="text-[11px] text-ms-text-muted mt-2 text-center">
-                            Canlı alıcı: <span className="font-mono">onur.karagoz@turkcell.com.tr</span><br />
+                            Canlı alıcı: <span className="font-mono">{preview ? (editedTo || preview.to) : 'onur.karagoz@turkcell.com.tr'}</span><br />
                             CC: <span className="font-mono">MudoBTDestek@mudo.com.tr</span> ve gönderen teknisyen
                         </p>
                     </div>
@@ -455,6 +506,26 @@ const HeaderRow: React.FC<{ label: string; value: string; bold?: boolean }> = ({
             {label}
         </span>
         <span className={`flex-1 ${bold ? 'font-semibold text-ms-text' : 'text-ms-text'}`}>{value}</span>
+    </div>
+);
+
+const EditableHeaderRow: React.FC<{
+    label: string;
+    value: string;
+    onChange: (v: string) => void;
+    placeholder?: string;
+}> = ({ label, value, onChange, placeholder }) => (
+    <div className="flex items-center gap-3">
+        <span className="w-12 text-[11px] font-semibold uppercase tracking-wider text-ms-text-muted shrink-0">
+            {label}
+        </span>
+        <input
+            type="text"
+            value={value}
+            onChange={e => onChange(e.target.value)}
+            placeholder={placeholder}
+            className="flex-1 bg-ms-panel border border-violet-500/40 rounded-md px-2 py-0.5 text-[13px] text-ms-text focus:outline-none focus:ring-1 focus:ring-violet-500/50"
+        />
     </div>
 );
 

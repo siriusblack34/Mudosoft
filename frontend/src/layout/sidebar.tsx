@@ -20,7 +20,6 @@ import {
   FileBarChart2,
   FileCode,
   HardDrive,
-  HeartPulse,
   History,
   KeyRound,
   LayoutDashboard,
@@ -33,6 +32,8 @@ import {
   Radio,
   RefreshCw,
   Settings,
+  Shield,
+  ShieldCheck,
   ShoppingCart,
   Sparkles,
   StickyNote,
@@ -41,6 +42,9 @@ import {
   WifiOff,
   Wrench,
   X,
+  Zap,
+  CalendarCheck,
+  Tag,
 } from 'lucide-react';
 
 export interface NavItem {
@@ -80,6 +84,7 @@ export const navGroups: NavGroup[] = [
       { to: '/store-openings', label: 'Mağaza Açılışları', icon: <ClipboardList className="h-4 w-4" />, matchPaths: ['/store-openings'] },
       { to: '/bilgisayarlar', label: 'Bilgisayarlar', icon: <Monitor className="h-4 w-4" /> },
       { to: '/kasa', label: 'Kasalar', icon: <Archive className="h-4 w-4" /> },
+      { to: '/yazicilar', label: 'Yazıcılar', icon: <Printer className="h-4 w-4" /> },
       { to: '/routerlar', label: 'Routerlar', icon: <Activity className="h-4 w-4" /> },
       { to: '/store-managers', label: 'Mağaza Müdürleri', icon: <Users className="h-4 w-4" /> },
     ],
@@ -100,19 +105,13 @@ export const navGroups: NavGroup[] = [
     shortLabel: 'Operasyon',
     icon: <Wrench className="h-5 w-5" />,
     items: [
+      { to: '/service-monitor', label: 'Servis Monitörü', icon: <Shield className="h-4 w-4" /> },
       { to: '/ariza-bildirim', label: 'Arıza Bildirimleri', icon: <Mail className="h-4 w-4" /> },
       { to: '/ag-teshis', label: 'Ağ Teşhis', icon: <Activity className="h-4 w-4" />, shortcut: 'Alt+4' },
       { to: '/actions', label: 'İşlem Geçmişi', icon: <History className="h-4 w-4" /> },
       { to: '/notes', label: 'Notlar', icon: <StickyNote className="h-4 w-4" /> },
-    ],
-  },
-  {
-    title: 'Sağlık & POS',
-    shortLabel: 'Sağlık',
-    icon: <HeartPulse className="h-5 w-5" />,
-    items: [
-      { to: '/health-score', label: 'Agent Sağlık Skoru', icon: <HeartPulse className="h-4 w-4" /> },
-      { to: '/genius-pos', label: 'Genius POS Sağlığı', icon: <ShoppingCart className="h-4 w-4" /> },
+      { to: '/kampanya-senkron', label: 'Kampanya Senkron', icon: <ShieldCheck className="h-4 w-4" /> },
+      { to: '/kampanya-kontrol', label: 'Kampanya Kontrol', icon: <Tag className="h-4 w-4" /> },
     ],
   },
   {
@@ -128,6 +127,7 @@ export const navGroups: NavGroup[] = [
       { to: '/remote-install', label: 'Uzaktan Kurulum', icon: <Download className="h-4 w-4" /> },
       { to: '/active-directory', label: 'Active Directory', icon: <Building2 className="h-4 w-4" />, requiresAdmin: true },
       { to: '/batch-scripts', label: 'Acil Bat Çalıştır', icon: <FileCode className="h-4 w-4" /> },
+      { to: '/genius-pos-sagligi', label: 'Genius POS Sağlığı', icon: <ShoppingCart className="h-4 w-4" /> },
     ],
   },
   {
@@ -138,6 +138,7 @@ export const navGroups: NavGroup[] = [
       { to: '/offline-logs', label: 'Offline Geçmişi', icon: <WifiOff className="h-4 w-4" /> },
       { to: '/reports/store-outages', label: 'Mağaza Kesintileri', icon: <WifiOff className="h-4 w-4" /> },
       { to: '/reports/fault-density', label: 'Arıza Yoğunluğu', icon: <Activity className="h-4 w-4" /> },
+      { to: '/vardiya-raporu', label: 'Vardiya Devir Raporu', icon: <ClipboardList className="h-4 w-4" /> },
     ],
   },
   {
@@ -159,6 +160,15 @@ export const navGroups: NavGroup[] = [
       { to: '/personel', label: 'Personel', icon: <Contact className="h-4 w-4" /> },
       { to: '/gundem', label: 'IT Gündemi', icon: <Megaphone className="h-4 w-4" /> },
       { to: '/holidays', label: 'Resmi Tatiller', icon: <CalendarDays className="h-4 w-4" /> },
+      { to: '/nobetci-takip', label: 'Nöbetçi Takip', icon: <CalendarCheck className="h-4 w-4" /> },
+    ],
+  },
+  {
+    title: 'Otomasyon',
+    shortLabel: 'Otomasyon',
+    icon: <Zap className="h-5 w-5" />,
+    items: [
+      { to: '/playbooks', label: 'Playbook\'lar', icon: <Zap className="h-4 w-4" /> },
     ],
   },
   {
@@ -223,7 +233,7 @@ function sidebarPalette(isDark: boolean) {
 
 const Sidebar: React.FC = () => {
   const { isAdmin, fullName, role, username } = useAuth();
-  const { hiddenMenus } = useMenuVisibility();
+  const { allowedPaths } = useMenuVisibility();
   const { isDark } = useTheme();
   const navigate = useNavigate();
   const location = useLocation();
@@ -302,11 +312,11 @@ const Sidebar: React.FC = () => {
       .map((group) => {
         const items = isAdmin
           ? group.items
-          : group.items.filter((item) => !item.requiresAdmin && !hiddenMenus.includes(item.to));
+          : group.items.filter((item) => !item.requiresAdmin && allowedPaths.has(item.to));
         return { ...group, items };
       })
       .filter((group) => group.items.length > 0);
-  }, [hiddenMenus, isAdmin]);
+  }, [allowedPaths, isAdmin]);
 
   const closeSession = () => {
     ['isAuthenticated', 'token', 'tokenExpiresAt', 'username', 'role', 'fullName']

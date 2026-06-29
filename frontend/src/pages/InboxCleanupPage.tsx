@@ -28,14 +28,47 @@ const InboxCleanupPage: React.FC<InboxCleanupPageProps> = ({ embedded = false })
         setIsChecking(true);
         setStatusMessage(null);
         try {
-            const data = await apiClient.post<InboxStatus[]>("/api/inbox-cleanup/check-all", undefined, 300_000);
-            setDevices(data);
-            const now = new Date();
-            setLastChecked(now);
-            const dirty = data.filter(d => d.status === "dirty").length;
-            const clean = data.filter(d => d.status === "clean").length;
-            const offline = data.filter(d => d.status === "offline").length;
-            setStatusMessage(`✅ Kontrol tamamlandı: ${clean} temiz, ${dirty} dolu, ${offline} offline`);
+            // Job başlat — hemen döner, 502 yok
+            const { jobId, totalCount } = await apiClient.post<{ jobId: string; totalCount: number }>(
+                "/api/inbox-cleanup/check-all"
+            );
+            setStatusMessage(`Kontrol başlatıldı — ${totalCount} PC taranıyor...`);
+
+            // Sonuçları polling ile al, tablo dolmaya başlar
+            while (true) {
+                await new Promise(r => setTimeout(r, 1500));
+                const status = await apiClient.get<{
+                    totalCount: number;
+                    completedCount: number;
+                    isCompleted: boolean;
+                    error?: string;
+                    results: InboxStatus[];
+                }>(`/api/inbox-cleanup/check-all/${jobId}`);
+
+                if (status.results?.length > 0) {
+                    setDevices(status.results);
+                }
+                setStatusMessage(`Kontrol ediliyor... ${status.completedCount}/${status.totalCount}`);
+
+                if (status.isCompleted) {
+                    const final = status.results ?? [];
+                    const dirty = final.filter(d => d.status === "dirty").length;
+                    const clean = final.filter(d => d.status === "clean").length;
+                    const offline = final.filter(d => d.status === "offline").length;
+                    const error = final.filter(d => d.status === "error").length;
+
+                    if (status.error) {
+                        setStatusMessage(`❌ Kontrol hatası: ${status.error}`);
+                    } else {
+                        setStatusMessage(
+                            `✅ Kontrol tamamlandı: ${clean} temiz, ${dirty} dolu, ${offline} offline` +
+                            (error > 0 ? `, ${error} hata` : "")
+                        );
+                    }
+                    setLastChecked(new Date());
+                    break;
+                }
+            }
         } catch (err: any) {
             setStatusMessage(`❌ Hata: ${err.message}`);
         } finally {
@@ -49,7 +82,7 @@ const InboxCleanupPage: React.FC<InboxCleanupPageProps> = ({ embedded = false })
         try {
             await apiClient.post<any>(`/api/inbox-cleanup/clean/${deviceId}`);
             // Re-check this device
-            const updated = await apiClient.post<InboxStatus>(`/api/inbox-cleanup/check/${deviceId}`);
+            const updated = await apiClient.get<InboxStatus>(`/api/inbox-cleanup/check/${deviceId}`);
             setDevices(prev => prev.map(d => d.deviceId === deviceId ? updated : d));
             setStatusMessage(`✅ ${updated.storeName} temizlendi`);
         } catch (err: any) {

@@ -3,23 +3,26 @@ import { useParams, useNavigate } from "react-router-dom";
 import { VncScreen } from "react-vnc";
 import type { VncScreenHandle } from "react-vnc";
 import { API_BASE_URL, apiClient } from "../lib/apiClient";
+import * as signalR from "@microsoft/signalr";
 import {
     ArrowLeft, Maximize2, Minimize2,
     Clipboard, Loader2, Monitor,
     Camera, Settings, Upload, Download, Keyboard, Wrench,
+    Lock, Unlock, Video, StopCircle,
 } from "lucide-react";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type Phase = "checking" | "connecting" | "reconnecting" | "connected" | "disconnected" | "error";
+type Phase = "checking" | "waiting_consent" | "connecting" | "reconnecting" | "connected" | "disconnected" | "error";
 
 const PHASE_LABELS: Record<Phase, string> = {
-    checking:     "Cihaz kontrol ediliyor...",
-    connecting:   "VNC baglantisi kuruluyor...",
-    reconnecting: "Yeniden baglaniliyor...",
-    connected:    "Bagli",
-    disconnected: "Baglanti kesildi",
-    error:        "Baglanti hatasi",
+    checking:        "Cihaz kontrol ediliyor...",
+    waiting_consent: "Kullanicidan izin bekleniyor...",
+    connecting:      "VNC baglantisi kuruluyor...",
+    reconnecting:    "Yeniden baglaniliyor...",
+    connected:       "Bagli",
+    disconnected:    "Baglanti kesildi",
+    error:           "Baglanti hatasi",
 };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -110,47 +113,163 @@ export default function WebRdpPage() {
     const IDLE_WARN_MS      = 14 * 60 * 1000;
     const IDLE_DISCONNECT_MS = 15 * 60 * 1000;
 
+    // Consent (Merkez cihazları)
+    const [consentRequestId, setConsentRequestId] = useState<string | null>(null);
+    const [consentCountdown, setConsentCountdown] = useState(60);
+    const consentTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+    // Merkez cihaz bayrağı: VNC auth başarısız → otomatik yeniden deneme yeni consent döngüsüne giriyor
+    // Bu ref ile onDisconnect'te döngüyü engelle, direkt hata göster
+    const isCentralOfficeSessionRef = useRef(false);
+
+    // SignalR hub bağlantısı (overlay + input lock yönetimi için)
+    const hubRef = useRef<signalR.HubConnection | null>(null);
+
+    // Input lock
+    const [inputLocked, setInputLocked] = useState(false);
+
+    // Screen recording
+    const [isRecording, setIsRecording] = useState(false);
+    const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+    const recordingChunksRef = useRef<Blob[]>([]);
+
     const isDual = screenCount >= 2 && phase === "connected";
 
     // ── Pre-check (re-runs on retryKey) ────────────────────────────────────
     useEffect(() => {
         if (!deviceId) return;
         let cancelled = false;
+
         async function check() {
+            isCentralOfficeSessionRef.current = false; // yeni deneme başlıyor — Merkez bayrağını sıfırla
             setReady(false);
             setScreenDetected(false);
             setScreenCount(1);
             setPhase("checking");
+            setConsentRequestId(null);
             try {
                 const r = await apiClient.get<{
                     online: boolean; vncReachable: boolean; vncInstalled: boolean;
                     ipAddress: string; hostname: string;
                     activeSessionCount?: number; maxConnections?: number;
+                    activeSessionCountForDevice?: number;
+                    requiresConsent?: boolean;
+                    deviceBusy?: boolean;
                 }>(`/api/rdp/check/${deviceId}`);
                 if (cancelled) return;
+
                 setDeviceInfo({ hostname: r.hostname, ipAddress: r.ipAddress });
-                if (!r.online)       { setPhase("error"); setErrorMsg("Cihaz cevrimdisi"); return; }
-                if (!r.vncInstalled) { setPhase("error"); setErrorMsg("VNC kurulu degil."); return; }
-                if (!r.vncReachable) { setPhase("error"); setErrorMsg("VNC portu (5900) erisilebilir degil"); return; }
-                if ((r.activeSessionCount ?? 0) >= (r.maxConnections ?? 10)) {
-                    setPhase("error"); setErrorMsg("Maksimum oturum sayisina ulasildi"); return;
+                if (!r.online)       { setPhase("error"); setErrorMsg("Cihaz çevrimdışı"); return; }
+                if (!r.vncInstalled) { setPhase("error"); setErrorMsg("VNC kurulu değil."); return; }
+                if (!r.vncReachable) { setPhase("error"); setErrorMsg("VNC portu (5900) erişilemiyor"); return; }
+
+                // Tek oturum kuralı: bu cihaza bağlı biri var mı?
+                if (r.deviceBusy) {
+                    setPhase("error");
+                    setErrorMsg("Bu cihaza şu an başka bir teknisyen bağlı");
+                    return;
                 }
+
+                if ((r.activeSessionCount ?? 0) >= (r.maxConnections ?? 10)) {
+                    setPhase("error"); setErrorMsg("Maksimum oturum sayısına ulaşıldı"); return;
+                }
+
                 const token = localStorage.getItem("token");
-                if (!token) { setPhase("error"); setErrorMsg("Oturum bulunamadi"); return; }
-                const wsProtocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-                const apiHost = API_BASE_URL.replace(/^https?:\/\//, "");
-                setWsUrl(`${wsProtocol}//${apiHost}/ws/vnc?deviceId=${encodeURIComponent(deviceId!)}&access_token=${encodeURIComponent(token)}`);
-                setPhase("connecting");
-                setReady(true);
+                if (!token) { setPhase("error"); setErrorMsg("Oturum bulunamadı"); return; }
+
+                // Merkez cihazları için onay akışı
+                if (r.requiresConsent) {
+                    await startConsentFlow(deviceId!, token, cancelled);
+                    return;
+                }
+
+                buildWsAndConnect(deviceId!, token);
             } catch (err: unknown) {
                 if (!cancelled) {
                     setPhase("error");
-                    setErrorMsg((err instanceof Error ? err.message : null) || "Cihaz kontrolu basarisiz");
+                    setErrorMsg((err instanceof Error ? err.message : null) || "Cihaz kontrolü başarısız");
                 }
             }
         }
+
+        async function startConsentFlow(dId: string, token: string, isCancelled: boolean) {
+            setPhase("waiting_consent");
+            setConsentCountdown(60);
+            try {
+                const resp = await apiClient.post<{ requestId: string }>(`/api/rdp/consent-request/${dId}`);
+                if (isCancelled) return;
+                const reqId = resp.requestId;
+                setConsentRequestId(reqId);
+
+                // 60 sn geri sayım
+                let remaining = 60;
+                if (consentTimerRef.current) clearInterval(consentTimerRef.current);
+                consentTimerRef.current = setInterval(() => {
+                    remaining--;
+                    setConsentCountdown(remaining);
+                    if (remaining <= 0) {
+                        if (consentTimerRef.current) clearInterval(consentTimerRef.current);
+                    }
+                }, 1000);
+
+                // Polling: her 2sn status kontrol
+                const deadline = Date.now() + 62_000;
+                while (Date.now() < deadline) {
+                    await new Promise(r => setTimeout(r, 2000));
+                    if (isCancelled) return;
+                    try {
+                        const s = await apiClient.get<{
+                            status: string;
+                            denyReason?: string;
+                        }>(`/api/rdp/consent-status/${reqId}`);
+                        if (s.status === "approved") {
+                            if (consentTimerRef.current) clearInterval(consentTimerRef.current);
+                            buildWsAndConnect(dId, token, reqId);
+                            return;
+                        }
+                        if (s.status === "denied") {
+                            if (consentTimerRef.current) clearInterval(consentTimerRef.current);
+                            setPhase("error");
+                            setErrorMsg(
+                                s.denyReason === "lockscreen"
+                                    ? "Kullanıcı kilit ekranındadır, bağlantı sağlanamıyor"
+                                    : "Kullanıcı bağlantıyı reddetti"
+                            );
+                            return;
+                        }
+                        if (s.status === "timeout") {
+                            if (consentTimerRef.current) clearInterval(consentTimerRef.current);
+                            setPhase("error");
+                            setErrorMsg("Onay süresi doldu — kullanıcı yanıt vermedi (60 saniye)");
+                            return;
+                        }
+                    } catch { /* polling hatası — devam et */ }
+                }
+                // Zaman aşımı
+                if (consentTimerRef.current) clearInterval(consentTimerRef.current);
+                setPhase("error");
+                setErrorMsg("Onay süresi doldu");
+            } catch (err: unknown) {
+                setPhase("error");
+                setErrorMsg((err instanceof Error ? err.message : null) || "Onay isteği gönderilemedi");
+            }
+        }
+
+        function buildWsAndConnect(dId: string, token: string, approvedConsentId?: string) {
+            isCentralOfficeSessionRef.current = !!approvedConsentId; // Merkez: onay gerektiren bağlantı
+            const wsProtocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+            const apiHost = API_BASE_URL.replace(/^https?:\/\//, "");
+            let url = `${wsProtocol}//${apiHost}/ws/vnc?deviceId=${encodeURIComponent(dId)}&access_token=${encodeURIComponent(token)}`;
+            if (approvedConsentId) url += `&consentRequestId=${encodeURIComponent(approvedConsentId)}`;
+            setWsUrl(url);
+            setPhase("connecting");
+            setReady(true);
+        }
+
         check();
-        return () => { cancelled = true; };
+        return () => {
+            cancelled = true;
+            if (consentTimerRef.current) clearInterval(consentTimerRef.current);
+        };
     }, [deviceId, retryKey]);
 
     // ── Session timer ───────────────────────────────────────────────────────
@@ -210,6 +329,43 @@ export default function WebRdpPage() {
     useEffect(() => {
         return () => { if (reconnectTimerRef.current) clearInterval(reconnectTimerRef.current); };
     }, []);
+
+    // ── SignalR Hub — overlay yönetimi ─────────────────────────────────────
+    useEffect(() => {
+        if (phase !== "connected" || !deviceId) return;
+
+        const token = localStorage.getItem("token") ?? "";
+        const hub = new signalR.HubConnectionBuilder()
+            .withUrl(`${API_BASE_URL}/hubs/desktop`, {
+                accessTokenFactory: () => token
+            })
+            .withAutomaticReconnect()
+            .build();
+
+        hubRef.current = hub;
+
+        hub.start().then(() => {
+            const techName = (() => {
+                try {
+                    const payload = JSON.parse(atob(token.split(".")[1]));
+                    // .NET 8 JsonWebTokenHandler claim'leri tam URI ile yazar; kısa adlar boş olabilir.
+                    return payload.name
+                        || payload.unique_name
+                        || payload["http://schemas.xmlsoap.org/ws/2005/05/identity/claims/name"]
+                        || payload.sub
+                        || "Teknisyen";
+                } catch { return "Teknisyen"; }
+            })();
+            const techIp = window.location.hostname;
+            hub.invoke("ShowConnectionOverlay", deviceId, techName, techIp).catch(() => {});
+        }).catch(() => {});
+
+        return () => {
+            if (deviceId) hub.invoke("HideConnectionOverlay", deviceId).catch(() => {});
+            hub.stop().catch(() => {});
+            hubRef.current = null;
+        };
+    }, [phase, deviceId]);
 
     // ── Fullscreen listener ─────────────────────────────────────────────────
     useEffect(() => {
@@ -271,6 +427,42 @@ export default function WebRdpPage() {
         a.click();
     }, [deviceInfo.hostname, deviceId]);
 
+    const toggleInputLock = useCallback(() => {
+        if (!deviceId || !hubRef.current) return;
+        const next = !inputLocked;
+        setInputLocked(next);
+        hubRef.current.invoke("SetInputLock", deviceId, next).catch(() => {});
+    }, [deviceId, inputLocked]);
+
+    const startRecording = useCallback(() => {
+        const canvas = document.querySelector<HTMLCanvasElement>(".vnc-inner canvas");
+        if (!canvas) return;
+        try {
+            const stream = canvas.captureStream(15);
+            const mr = new MediaRecorder(stream, { mimeType: "video/webm;codecs=vp8" });
+            recordingChunksRef.current = [];
+            mr.ondataavailable = e => { if (e.data.size > 0) recordingChunksRef.current.push(e.data); };
+            mr.onstop = () => {
+                const blob = new Blob(recordingChunksRef.current, { type: "video/webm" });
+                const url  = URL.createObjectURL(blob);
+                const a    = document.createElement("a");
+                a.href     = url;
+                a.download = `kayit-${deviceInfo.hostname || deviceId}-${Date.now()}.webm`;
+                a.click();
+                URL.revokeObjectURL(url);
+            };
+            mr.start(1000);
+            mediaRecorderRef.current = mr;
+            setIsRecording(true);
+        } catch { /* tarayıcı desteklemiyorsa sessizce geç */ }
+    }, [deviceInfo.hostname, deviceId]);
+
+    const stopRecording = useCallback(() => {
+        mediaRecorderRef.current?.stop();
+        mediaRecorderRef.current = null;
+        setIsRecording(false);
+    }, []);
+
     // Poll until command result is written to DB (max 30s)
     const pollCommandResult = useCallback(async (commandId: string) => {
         const deadline = Date.now() + 30_000;
@@ -326,7 +518,7 @@ export default function WebRdpPage() {
 
     // ── Computed ────────────────────────────────────────────────────────────
 
-    const isConnecting = phase === "checking" || phase === "connecting" || phase === "reconnecting";
+    const isConnecting = phase === "checking" || phase === "waiting_consent" || phase === "connecting" || phase === "reconnecting";
     const showOverlay  = isConnecting || phase === "error" || phase === "disconnected";
 
     // Dual-monitor CSS
@@ -436,9 +628,31 @@ export default function WebRdpPage() {
                     </ToolbarButton>
 
                     {/* Screenshot */}
-                    <ToolbarButton onClick={takeScreenshot} title="Ekran goruntüsü al">
+                    <ToolbarButton onClick={takeScreenshot} title="Ekran görüntüsü al">
                         <Camera className="w-3.5 h-3.5" />
                     </ToolbarButton>
+
+                    {/* Input Lock */}
+                    <ToolbarButton
+                        onClick={toggleInputLock}
+                        title={inputLocked ? "Mouse/Klavye kilidi açık — tıkla kaldır" : "Mouse/Klavye kilitle"}
+                        active={inputLocked}>
+                        {inputLocked
+                            ? <><Lock className="w-3.5 h-3.5 text-red-400" /><span className="text-red-300">Kilitli</span></>
+                            : <><Unlock className="w-3.5 h-3.5" /><span>Kilitle</span></>
+                        }
+                    </ToolbarButton>
+
+                    {/* Screen Recording */}
+                    {!isRecording ? (
+                        <ToolbarButton onClick={startRecording} title="Ekran kaydı başlat">
+                            <Video className="w-3.5 h-3.5 text-red-400" /><span>Kayıt</span>
+                        </ToolbarButton>
+                    ) : (
+                        <ToolbarButton onClick={stopRecording} title="Kaydı durdur ve indir" active>
+                            <StopCircle className="w-3.5 h-3.5 text-red-400 animate-pulse" /><span className="text-red-300">Dur</span>
+                        </ToolbarButton>
+                    )}
 
                     {/* Clipboard */}
                     <ToolbarButton onClick={openClipboard} title="Pano" active={showClipboard}>
@@ -646,7 +860,16 @@ export default function WebRdpPage() {
                                 if (reconnectTimerRef.current) clearInterval(reconnectTimerRef.current);
                                 if (e?.detail?.clean) {
                                     reconnectCountRef.current = 0;
+                                    isCentralOfficeSessionRef.current = false;
                                     setPhase("disconnected");
+                                } else if (isCentralOfficeSessionRef.current) {
+                                    // Merkez cihaz: onay tek kullanımlık, VNC auth başarısız olduysa
+                                    // otomatik retry yeni consent akışını tetikler = sonsuz döngü.
+                                    // Direkt hata göster; kullanıcı "Tekrar Dene" ile fresh başlasın.
+                                    isCentralOfficeSessionRef.current = false;
+                                    reconnectCountRef.current = 0;
+                                    setPhase("error");
+                                    setErrorMsg("VNC kimlik doğrulaması başarısız — Tekrar Dene ile yeniden deneyin");
                                 } else if (reconnectCountRef.current < MAX_RECONNECT) {
                                     reconnectCountRef.current++;
                                     const delay = Math.min(3 * reconnectCountRef.current, 9); // 3s, 6s, 9s
@@ -694,19 +917,29 @@ export default function WebRdpPage() {
                              phase === "reconnecting" ? "Yeniden Baglaniliyor" : "Web RDP Baglantisi"}
                         </h2>
                         <div className="space-y-4 mb-6">
-                            <ProgressStep label="Cihaz Kontrolu" status={
+                            <ProgressStep label="Cihaz Kontrolü" status={
                                 phase === "checking" ? "active" :
-                                (phase === "error" && errorMsg.includes("cevrimdisi")) ? "error" : "done"
+                                (phase === "error" && (errorMsg.includes("çevrimdışı") || errorMsg.includes("VNC") || errorMsg.includes("bağlı"))) ? "error" : "done"
                             } />
+                            {/* Onay adımı — sadece waiting_consent veya onay hatasında göster */}
+                            {(phase === "waiting_consent" || (phase === "error" && (errorMsg.includes("reddetti") || errorMsg.includes("Onay") || errorMsg.includes("yanıt")))) && (
+                                <ProgressStep label={
+                                    phase === "waiting_consent"
+                                        ? `Kullanıcı Onayı Bekleniyor... (${consentCountdown}s)`
+                                        : "Kullanıcı Onayı"
+                                } status={
+                                    phase === "waiting_consent" ? "active" : "error"
+                                } />
+                            )}
                             <ProgressStep label={
                                 reconnectCountRef.current > 0
-                                    ? `VNC Baglantisi (Deneme ${reconnectCountRef.current}/${MAX_RECONNECT})`
-                                    : "VNC Baglantisi"
+                                    ? `VNC Bağlantısı (Deneme ${reconnectCountRef.current}/${MAX_RECONNECT})`
+                                    : "VNC Bağlantısı"
                             } status={
-                                phase === "checking" ? "pending" :
-                                (phase === "connecting") ? "active" :
+                                phase === "checking" || phase === "waiting_consent" ? "pending" :
+                                phase === "connecting" ? "active" :
                                 phase === "reconnecting" ? "active" :
-                                (phase === "error" && !errorMsg.includes("cevrimdisi")) ? "error" :
+                                (phase === "error" && !errorMsg.includes("çevrimdışı")) ? "error" :
                                 phase === "disconnected" ? "error" : "done"
                             } />
                         </div>
@@ -727,6 +960,7 @@ export default function WebRdpPage() {
                                 <button
                                     onClick={() => {
                                         if (reconnectTimerRef.current) clearInterval(reconnectTimerRef.current);
+                                        reconnectCountRef.current++; // manuel deneme de sayıya dahil
                                         setRetryKey(k => k + 1);
                                     }}
                                     className="mt-3 px-3 py-1 bg-amber-600/50 hover:bg-amber-500/60 text-amber-200 text-xs rounded-lg transition-colors"

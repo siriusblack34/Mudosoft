@@ -1,12 +1,13 @@
 import React from "react";
 import { NavLink } from "react-router-dom";
-import { LayoutGrid, Monitor, ShoppingCart, Wifi } from "lucide-react";
+import { LayoutGrid, Monitor, Printer, ShoppingCart, Wifi } from "lucide-react";
 
 const tabs = [
-    { to: "/devices",       label: "Tümü",   icon: <LayoutGrid className="h-3.5 w-3.5" /> },
-    { to: "/bilgisayarlar", label: "PC",     icon: <Monitor className="h-3.5 w-3.5" /> },
-    { to: "/kasa",          label: "Kasa",   icon: <ShoppingCart className="h-3.5 w-3.5" /> },
-    { to: "/routerlar",     label: "Router", icon: <Wifi className="h-3.5 w-3.5" /> },
+    { to: "/devices",       label: "Tümü",    icon: <LayoutGrid className="h-3.5 w-3.5" /> },
+    { to: "/bilgisayarlar", label: "PC",      icon: <Monitor className="h-3.5 w-3.5" /> },
+    { to: "/kasa",          label: "Kasa",    icon: <ShoppingCart className="h-3.5 w-3.5" /> },
+    { to: "/routerlar",     label: "Router",  icon: <Wifi className="h-3.5 w-3.5" /> },
+    { to: "/yazicilar",     label: "Yazıcı",  icon: <Printer className="h-3.5 w-3.5" /> },
 ];
 
 const DeviceTabs: React.FC = () => (

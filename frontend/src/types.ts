@@ -1,5 +1,5 @@
 // types.ts
-export type DeviceType = 'POS' | 'PC';
+export type DeviceType = 'POS' | 'PC' | 'CentralOffice' | 'Unknown' | 'Server';
 
 export enum ActionType {
     Reboot = 'Reboot',
@@ -143,6 +143,8 @@ export interface OutageMailRequest {
     days?: number;
     recipientOverride?: string;
     editedPlainText?: string;
+    toOverride?: string;
+    ccOverride?: string[];
 }
 
 export interface OutageMailStoreBlock {

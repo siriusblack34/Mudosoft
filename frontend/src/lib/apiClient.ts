@@ -63,6 +63,20 @@ export interface SqlDeviceWithStatus {
     lastSeen: string | null;
     isTemporarilyClosed: boolean;
     temporaryCloseReason: string | null;
+    /** Windows sürümü. Örn: "Win10 22H2", "Win11 23H2". null = henüz taranmadı. */
+    windowsVersion: string | null;
+}
+
+// ✅ GEÇİCİ PC DURUMU
+export interface GeciciPcStatus {
+    deviceId: string;
+    deviceName: string;
+    ipAddress: string;
+    pingReachable: boolean;
+    sqlReachable: boolean;
+    isActive: boolean;
+    installedStoreCode: number | null;
+    installedStoreName: string | null;
 }
 
 // ✅ NETWORK DIAGNOSTICS
@@ -365,10 +379,36 @@ export interface StoreServiceIncident {
 
 
 // ==========================
+// KASA MORNING CHECK TYPES
+// ==========================
+export interface KasaMorningCheckItem {
+    id: number;
+    storeDeviceId: string;
+    storeCode: number;
+    storeName: string;
+    deviceType: string;
+    ipAddress: string;
+    checkedAt: string;
+    isUncReachable: boolean;
+    isGeniusPosLogFound: boolean;
+    isHealthy: boolean;
+    errorMessage: string | null;
+}
+
+export interface KasaMorningCheckSummary {
+    checkDate: string;
+    totalChecked: number;
+    healthyCount: number;
+    unhealthyCount: number;
+    hasResults: boolean;
+    items: KasaMorningCheckItem[];
+}
+
+// ==========================
 // BASE CONFIG
 // ==========================
-export const API_BASE_URL = import.meta.env.VITE_API_BASE
-    || `http://${window.location.hostname}:5102`;
+export const API_BASE_URL = (import.meta.env.VITE_API_BASE || "").trim()
+    || window.location.origin;
 const API_BASE = API_BASE_URL;
 const DEFAULT_TIMEOUT_MS = 30_000;
 
@@ -401,7 +441,7 @@ async function fetchWithTimeout(
     timeoutMs: number = DEFAULT_TIMEOUT_MS
 ): Promise<Response> {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), timeoutMs);
+    const timeout = setTimeout(() => controller.abort(new Error("Zaman aşımı")), timeoutMs);
     try {
         const res = await fetch(url, { ...options, signal: controller.signal });
         // Handle 401 - redirect to login
@@ -471,6 +511,24 @@ export const apiClient = {
         return res.json();
     },
 
+    async patch<T>(url: string, data?: unknown): Promise<T> {
+        const res = await fetchWithTimeout(buildUrl(url), {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+            body: data ? JSON.stringify(data) : undefined,
+        });
+        if (!res.ok) {
+            let errorMessage = `PATCH ${url} failed: ${res.status}`;
+            try {
+                const errorBody = await res.json();
+                if (errorBody?.error) errorMessage = errorBody.error;
+            } catch { /* response body not JSON */ }
+            throw new Error(errorMessage);
+        }
+        if (res.status === 204) return null as T;
+        return res.json();
+    },
+
     async delete<T>(url: string): Promise<T> {
         const res = await fetchWithTimeout(buildUrl(url), {
             method: "DELETE",
@@ -514,6 +572,13 @@ export const apiClient = {
     // ==========================
     // SQL QUERY – ✅ TEK DOĞRU KAYNAK
     // ==========================
+    // ==========================
+    // GEÇİCİ PC DURUMU
+    // ==========================
+    getGeciciStatus(): Promise<GeciciPcStatus[]> {
+        return this.get('/api/sqlquery/gecici/status', 30_000);
+    },
+
     getSqlDevicesWithStatus(params?: {
         timeoutMs?: number;
         maxConcurrency?: number;
@@ -1031,6 +1096,17 @@ export const apiClient = {
             throw new Error(msg);
         }
         return res.json();
+    },
+
+    // ==========================
+    // KASA MORNING CHECK
+    // ==========================
+    getKasaMorningCheckToday(): Promise<KasaMorningCheckSummary> {
+        return this.get("/api/kasa-morning-check/today");
+    },
+
+    runKasaMorningCheck(): Promise<{ message: string; healthyCount: number; unhealthyCount: number; items: KasaMorningCheckItem[] }> {
+        return this.post("/api/kasa-morning-check/run", undefined, 300_000); // 5 dakika — 126 kasa UNC kontrolü
     },
 };
 

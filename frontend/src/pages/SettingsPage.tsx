@@ -4,16 +4,25 @@ import { useAuth } from '../contexts/AuthContext';
 import {
   Users, Store, Plus, Trash2, KeyRound, Edit3, Save, X,
   Shield, Wrench, Clock, CheckCircle, XCircle, Search, Lock, Menu, Eye, EyeOff,
-  Bell, Mail, Send, Wifi, RefreshCw
+  Bell, Mail, Send, Wifi, RefreshCw, Layers, SlidersHorizontal
 } from 'lucide-react';
-import { useMenuVisibility } from '../contexts/MenuVisibilityContext';
-import { navGroups } from '../layout/sidebar';
+import { getConfigurableCatalog, MenuCatalogItem } from '../lib/menuCatalog';
 
 // ─── Types ───
 interface UserItem {
   id: number; username: string; fullName: string; role: string;
   isActive: boolean; createdAt: string; lastLoginAt: string | null;
   email: string | null;
+  menuProfileId: number | null;
+  menuProfileName: string | null;
+  menuGrants: string[];
+  menuDenials: string[];
+}
+
+interface MenuProfileDto {
+  id: number; name: string; description: string | null; isSystem: boolean;
+  allowAllByDefault: boolean; allowedMenus: string[]; hiddenMenus: string[];
+  userCount: number; updatedAt: string;
 }
 interface LoginHistoryItem {
   id: number; username: string; loginAt: string; ipAddress: string | null; success: boolean;
@@ -76,36 +85,51 @@ const SettingsPage: React.FC = () => {
 // ════════════════════════════════════════
 const UserManagement: React.FC = () => {
   const [users, setUsers] = useState<UserItem[]>([]);
+  const [profiles, setProfiles] = useState<MenuProfileDto[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
   const [editId, setEditId] = useState<number | null>(null);
   const [resetId, setResetId] = useState<number | null>(null);
-  const [form, setForm] = useState({ username: '', password: '', fullName: '', role: 'Teknisyen', email: '' });
-  const [editForm, setEditForm] = useState({ fullName: '', role: '', isActive: true, email: '' });
+  const [overrideUser, setOverrideUser] = useState<UserItem | null>(null);
+  const [form, setForm] = useState({ username: '', password: '', fullName: '', role: 'Teknisyen', email: '', menuProfileId: '' });
+  const [editForm, setEditForm] = useState({ fullName: '', role: '', isActive: true, email: '', menuProfileId: -1 });
   const [newPass, setNewPass] = useState('');
   const [msg, setMsg] = useState('');
 
   const load = async () => {
     try {
-      const data = await apiClient.get<UserItem[]>('/api/users');
-      setUsers(data);
+      const [u, p] = await Promise.all([
+        apiClient.get<UserItem[]>('/api/users'),
+        apiClient.get<MenuProfileDto[]>('/api/menu-profiles').catch(() => [] as MenuProfileDto[]),
+      ]);
+      setUsers(u);
+      setProfiles(p);
     } catch { }
     setLoading(false);
   };
 
   useEffect(() => { load(); }, []);
 
+  // Bir kullanıcının etkin profilini bulur (atanmamışsa sistem Teknisyen profili).
+  const profileForUser = (u: UserItem): MenuProfileDto | null =>
+    profiles.find(p => p.id === u.menuProfileId)
+    ?? profiles.find(p => p.isSystem && p.name === 'Teknisyen')
+    ?? null;
+
   const handleCreate = async () => {
     try {
-      await apiClient.post('/api/users', form);
+      const payload: any = { username: form.username, password: form.password, fullName: form.fullName, role: form.role, email: form.email };
+      if (form.role === 'Teknisyen' && form.menuProfileId) payload.menuProfileId = Number(form.menuProfileId);
+      await apiClient.post('/api/users', payload);
       setShowCreate(false);
-      setForm({ username: '', password: '', fullName: '', role: 'Teknisyen', email: '' });
+      setForm({ username: '', password: '', fullName: '', role: 'Teknisyen', email: '', menuProfileId: '' });
       load();
     } catch (e: any) { setMsg(e.message); }
   };
 
   const handleEdit = async (id: number) => {
     try {
+      // menuProfileId: -1 = varsayılana dön (profili kaldır), >0 = ata
       await apiClient.put(`/api/users/${id}`, editForm);
       setEditId(null);
       load();
@@ -161,6 +185,13 @@ const UserManagement: React.FC = () => {
               <option value="Admin">Admin</option>
               <option value="Teknisyen">Teknisyen</option>
             </select>
+            {form.role === 'Teknisyen' && (
+              <select value={form.menuProfileId} onChange={e => setForm({ ...form, menuProfileId: e.target.value })}
+                className="text-sm col-span-2" title="Menü Profili">
+                <option value="">Varsayılan (Teknisyen)</option>
+                {profiles.map(p => <option key={p.id} value={p.id}>Menü Profili: {p.name}</option>)}
+              </select>
+            )}
             <input placeholder="E-posta (opsiyonel)" type="email" value={form.email}
               onChange={e => setForm({ ...form, email: e.target.value })} className="text-sm col-span-2" />
           </div>
@@ -180,6 +211,7 @@ const UserManagement: React.FC = () => {
               <th className="text-left px-4 py-3">Ad Soyad</th>
               <th className="text-left px-4 py-3">E-posta</th>
               <th className="text-left px-4 py-3">Rol</th>
+              <th className="text-left px-4 py-3">Menü Profili</th>
               <th className="text-left px-4 py-3">Durum</th>
               <th className="text-left px-4 py-3">Son Giriş</th>
               <th className="text-right px-4 py-3">İşlem</th>
@@ -187,7 +219,7 @@ const UserManagement: React.FC = () => {
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={7} className="text-center py-8 text-ms-text-muted">Yükleniyor...</td></tr>
+              <tr><td colSpan={8} className="text-center py-8 text-ms-text-muted">Yükleniyor...</td></tr>
             ) : users.map(u => (
               <tr key={u.id} className="border-b border-ms-border/50 hover:bg-ms-border/30 transition-colors">
                 <td className="px-4 py-3 font-mono text-ms-text">{u.username}</td>
@@ -219,6 +251,22 @@ const UserManagement: React.FC = () => {
                     </span>
                   )}
                 </td>
+                <td className="px-4 py-3 text-xs">
+                  {u.role === 'Admin' ? (
+                    <span className="text-ms-text-muted/60">tüm menüler</span>
+                  ) : editId === u.id && editForm.role === 'Teknisyen' ? (
+                    <select value={editForm.menuProfileId} onChange={e => setEditForm({ ...editForm, menuProfileId: Number(e.target.value) })}
+                      className="text-xs">
+                      <option value={-1}>Varsayılan (Teknisyen)</option>
+                      {profiles.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                    </select>
+                  ) : (
+                    <span className="inline-flex items-center gap-1 text-ms-text-muted">
+                      <Layers className="w-3 h-3 text-violet-400/70" />
+                      {u.menuProfileName ?? 'Teknisyen (varsayılan)'}
+                    </span>
+                  )}
+                </td>
                 <td className="px-4 py-3">
                   <span className={`w-2 h-2 rounded-full inline-block ${u.isActive ? 'bg-emerald-500' : 'bg-rose-500'}`} />
                   <span className="ml-2 text-xs text-ms-text-muted">{u.isActive ? 'Aktif' : 'Pasif'}</span>
@@ -243,8 +291,12 @@ const UserManagement: React.FC = () => {
                       </div>
                     ) : (
                       <>
-                        <button onClick={() => { setEditId(u.id); setEditForm({ fullName: u.fullName, role: u.role, isActive: u.isActive, email: u.email || '' }); }}
+                        <button onClick={() => { setEditId(u.id); setEditForm({ fullName: u.fullName, role: u.role, isActive: u.isActive, email: u.email || '', menuProfileId: u.menuProfileId ?? -1 }); }}
                           className="p-1.5 rounded-lg hover:bg-sky-500/10 text-sky-400" title="Düzenle"><Edit3 className="w-3.5 h-3.5" /></button>
+                        {u.role !== 'Admin' && (
+                          <button onClick={() => setOverrideUser(u)}
+                            className="p-1.5 rounded-lg hover:bg-violet-500/10 text-violet-400" title="Özel İzinler (kişiye özel menü aç/kapat)"><SlidersHorizontal className="w-3.5 h-3.5" /></button>
+                        )}
                         <button onClick={() => setResetId(u.id)}
                           className="p-1.5 rounded-lg hover:bg-amber-500/10 text-amber-400" title="Şifre Sıfırla"><KeyRound className="w-3.5 h-3.5" /></button>
                         <button onClick={() => handleDelete(u.id, u.username)}
@@ -258,6 +310,15 @@ const UserManagement: React.FC = () => {
           </tbody>
         </table>
       </div>
+
+      {overrideUser && (
+        <UserMenuOverrideModal
+          user={overrideUser}
+          profile={profileForUser(overrideUser)}
+          onClose={() => setOverrideUser(null)}
+          onSaved={load}
+        />
+      )}
     </div>
   );
 };
@@ -521,7 +582,7 @@ const StoreManagement: React.FC = () => {
                             </>
                           ) : (
                             <>
-                              <button onClick={() => { setEditId(d.deviceId); setEditForm({ storeName: d.storeName, deviceName: d.deviceName, deviceType: d.deviceType, calculatedIpAddress: d.calculatedIpAddress, dbConnectionString: d.dbConnectionString }); }}
+                              <button onClick={() => { setEditId(d.deviceId); setEditForm({ storeName: d.storeName, deviceName: d.deviceName, deviceType: d.deviceType, calculatedIpAddress: d.calculatedIpAddress, dbConnectionString: d.dbConnectionString ?? '' }); }}
                                 className="p-1.5 rounded-lg hover:bg-sky-500/10 text-sky-400" title="Düzenle"><Edit3 className="w-3.5 h-3.5" /></button>
                               <button onClick={() => handleDelete(d.deviceId)}
                                 className="p-1.5 rounded-lg hover:bg-rose-500/10 text-rose-400" title="Sil"><Trash2 className="w-3.5 h-3.5" /></button>
@@ -678,139 +739,300 @@ const LoginHistoryPanel: React.FC = () => {
 };
 
 // ════════════════════════════════════════
-// MENU MANAGEMENT
+// MENU MANAGEMENT — Profiller (Yetki Grupları) + ortak araçlar
 // ════════════════════════════════════════
+
+const CONFIGURABLE: MenuCatalogItem[] = getConfigurableCatalog();
+const ALL_PATHS: string[] = CONFIGURABLE.map(i => i.to);
+const CATALOG_BY_GROUP: { group: string; items: MenuCatalogItem[] }[] = (() => {
+  const map = new Map<string, MenuCatalogItem[]>();
+  for (const it of CONFIGURABLE) {
+    if (!map.has(it.group)) map.set(it.group, []);
+    map.get(it.group)!.push(it);
+  }
+  return Array.from(map, ([group, items]) => ({ group, items }));
+})();
+
+/** Profil → görünür menü seti. */
+function profileVisibleSet(p: MenuProfileDto): Set<string> {
+  if (p.allowAllByDefault) return new Set(ALL_PATHS.filter(to => !p.hiddenMenus.includes(to)));
+  return new Set(p.allowedMenus.filter(to => ALL_PATHS.includes(to)));
+}
+/** Görünür set → allowAllByDefault'a göre {allowedMenus, hiddenMenus}. */
+function serializeVisible(visible: Set<string>, allowAll: boolean) {
+  return allowAll
+    ? { allowedMenus: [] as string[], hiddenMenus: ALL_PATHS.filter(p => !visible.has(p)) }
+    : { allowedMenus: ALL_PATHS.filter(p => visible.has(p)), hiddenMenus: [] as string[] };
+}
+
+/** ON = görünür. Gruplu menü toggle ızgarası (profil editörü için). */
+const MenuToggleGrid: React.FC<{ visible: Set<string>; onToggle: (path: string) => void }> = ({ visible, onToggle }) => (
+  <div className="space-y-3">
+    {CATALOG_BY_GROUP.map(({ group, items }) => {
+      const visCount = items.filter(i => visible.has(i.to)).length;
+      return (
+        <div key={group} className="bg-ms-bg-soft border border-ms-border rounded-xl overflow-hidden">
+          <div className="flex items-center justify-between px-4 py-2.5 border-b border-ms-border/50" style={{ background: 'rgba(255,255,255,0.01)' }}>
+            <span className="text-sm font-semibold text-ms-text">{group}</span>
+            <span className="text-[10px] text-ms-text-muted">{visCount}/{items.length} görünür</span>
+          </div>
+          <div className="divide-y divide-ms-border/30">
+            {items.map(item => {
+              const isVisible = visible.has(item.to);
+              return (
+                <button key={item.to} onClick={() => onToggle(item.to)}
+                  className={`w-full flex items-center gap-3 px-4 py-2.5 text-left transition-all hover:bg-white/[0.02] ${isVisible ? '' : 'opacity-40'}`}>
+                  <div className={`w-8 h-5 rounded-full relative transition-colors ${isVisible ? 'bg-violet-600' : 'bg-slate-700'}`}>
+                    <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${isVisible ? 'left-3.5' : 'left-0.5'}`} />
+                  </div>
+                  <span className="text-sm text-ms-text font-medium flex-1">{item.label}</span>
+                  <span className="text-[10px] font-mono text-ms-text-muted">{item.to}</span>
+                  {isVisible ? <Eye className="w-3.5 h-3.5 text-violet-400" /> : <EyeOff className="w-3.5 h-3.5 text-slate-500" />}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      );
+    })}
+  </div>
+);
+
 const MenuManagementPanel: React.FC = () => {
-  const { hiddenMenus, setHiddenMenus } = useMenuVisibility();
-  const [localHidden, setLocalHidden] = useState<Set<string>>(new Set(hiddenMenus));
+  const [profiles, setProfiles] = useState<MenuProfileDto[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [isNew, setIsNew] = useState(false);
+  const [draft, setDraft] = useState<{ name: string; description: string; allowAllByDefault: boolean; visible: Set<string> } | null>(null);
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState('');
 
-  useEffect(() => {
-    setLocalHidden(new Set(hiddenMenus));
-  }, [hiddenMenus]);
-
-  const allPaths = navGroups.flatMap(g => g.items.map(i => i.to));
-  // Ayarlar sayfasi her zaman gorunur olmali
-  const configurablePaths = allPaths.filter(p => p !== '/settings' && p !== '/');
-
-  const toggle = (path: string) => {
-    setLocalHidden(prev => {
-      const next = new Set(prev);
-      if (next.has(path)) next.delete(path);
-      else next.add(path);
-      return next;
-    });
+  const load = async () => {
+    try { setProfiles(await apiClient.get<MenuProfileDto[]>('/api/menu-profiles')); }
+    catch (e: any) { setMsg(e.message); }
+    finally { setLoading(false); }
   };
+  useEffect(() => { load(); }, []);
 
-  const handleSave = async () => {
-    setSaving(true);
+  const editProfile = (p: MenuProfileDto) => {
+    setIsNew(false); setSelectedId(p.id); setMsg('');
+    setDraft({ name: p.name, description: p.description ?? '', allowAllByDefault: p.allowAllByDefault, visible: profileVisibleSet(p) });
+  };
+  const startNew = () => {
+    setIsNew(true); setSelectedId(null); setMsg('');
+    setDraft({ name: '', description: '', allowAllByDefault: false, visible: new Set() });
+  };
+  const cancel = () => { setDraft(null); setSelectedId(null); setIsNew(false); setMsg(''); };
+
+  const toggle = (path: string) => setDraft(d => {
+    if (!d) return d;
+    const v = new Set(d.visible);
+    v.has(path) ? v.delete(path) : v.add(path);
+    return { ...d, visible: v };
+  });
+
+  const save = async () => {
+    if (!draft) return;
+    if (!draft.name.trim()) { setMsg('Profil adı gerekli'); return; }
+    setSaving(true); setMsg('');
+    const { allowedMenus, hiddenMenus } = serializeVisible(draft.visible, draft.allowAllByDefault);
+    const body = { name: draft.name.trim(), description: draft.description.trim(), allowAllByDefault: draft.allowAllByDefault, allowedMenus, hiddenMenus };
     try {
-      await setHiddenMenus(Array.from(localHidden));
-      setMsg('Kaydedildi');
-      setTimeout(() => setMsg(''), 3000);
-    } catch (e: any) {
-      setMsg(e.message || 'Hata olustu');
-    } finally {
-      setSaving(false);
-    }
+      if (isNew) {
+        const created = await apiClient.post<MenuProfileDto>('/api/menu-profiles', body);
+        await load();
+        setIsNew(false); setSelectedId(created.id);
+        setDraft({ name: created.name, description: created.description ?? '', allowAllByDefault: created.allowAllByDefault, visible: profileVisibleSet(created) });
+      } else if (selectedId != null) {
+        await apiClient.put<MenuProfileDto>(`/api/menu-profiles/${selectedId}`, body);
+        await load();
+      }
+      setMsg('Kaydedildi'); setTimeout(() => setMsg(''), 2500);
+    } catch (e: any) { setMsg(e.message); }
+    finally { setSaving(false); }
   };
 
-  const hideAll = () => setLocalHidden(new Set(configurablePaths));
-  const showAll = () => setLocalHidden(new Set());
-
-  const hasChanges = (() => {
-    const current = new Set(hiddenMenus);
-    if (current.size !== localHidden.size) return true;
-    for (const p of localHidden) if (!current.has(p)) return true;
-    return false;
-  })();
+  const del = async (p: MenuProfileDto) => {
+    if (p.isSystem) return;
+    if (!confirm(`"${p.name}" profilini silmek istiyor musunuz?\nBu profile bağlı kullanıcılar varsayılan Teknisyen profiline döner.`)) return;
+    try { await apiClient.delete(`/api/menu-profiles/${p.id}`); cancel(); load(); }
+    catch (e: any) { setMsg(e.message); }
+  };
 
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-lg font-bold text-ms-text">Teknisyen Menü Yönetimi</h2>
+          <h2 className="text-lg font-bold text-ms-text">Menü Profilleri (Yetki Grupları)</h2>
           <p className="text-xs text-ms-text-muted mt-0.5">
-            Teknisyenlerin sidebar'da gorebilecegi sayfalari ayarlayin. Admin her zaman tum menuleri gorur.
+            Grup tanımlayın ve her gruba hangi menülerin görüneceğini seçin. Kullanıcıları Kullanıcı Yönetimi'nden bu gruplara atayın.
+            Admin her zaman tüm menüleri görür.
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          <button onClick={showAll} className="btn-secondary text-xs">
-            <Eye className="w-3.5 h-3.5" /> Tümünü Göster
-          </button>
-          <button onClick={hideAll} className="btn-secondary text-xs">
-            <EyeOff className="w-3.5 h-3.5" /> Tümünü Gizle
-          </button>
-          <button onClick={handleSave} disabled={saving || !hasChanges}
-            className="btn-primary text-xs disabled:opacity-40">
-            <Save className="w-3.5 h-3.5" />
-            {saving ? 'Kaydediliyor...' : 'Kaydet'}
-          </button>
-        </div>
+        <button onClick={startNew} className="btn-primary text-sm shrink-0"><Plus className="w-4 h-4" /> Yeni Profil</button>
       </div>
 
       {msg && (
-        <div className="text-xs text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 rounded-lg px-3 py-2">
-          {msg}
-        </div>
+        <div className="text-xs text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 rounded-lg px-3 py-2">{msg}</div>
       )}
 
-      <div className="space-y-3">
-        {navGroups.map(group => {
-          const items = group.items.filter(i => i.to !== '/settings' && i.to !== '/');
-          if (items.length === 0) return null;
-
-          const groupHiddenCount = items.filter(i => localHidden.has(i.to)).length;
-
-          return (
-            <div key={group.title} className="bg-ms-bg-soft border border-ms-border rounded-xl overflow-hidden">
-              <div className="flex items-center justify-between px-4 py-2.5 border-b border-ms-border/50"
-                style={{ background: 'rgba(255,255,255,0.01)' }}>
-                <span className="text-sm font-semibold text-ms-text">{group.title}</span>
-                <span className="text-[10px] text-ms-text-muted">
-                  {items.length - groupHiddenCount}/{items.length} gorunur
-                </span>
+      <div className="grid grid-cols-1 lg:grid-cols-[260px_1fr] gap-4">
+        {/* Profil listesi */}
+        <div className="space-y-2">
+          {loading ? (
+            <div className="text-xs text-ms-text-muted px-2 py-4">Yükleniyor...</div>
+          ) : profiles.map(p => (
+            <button key={p.id} onClick={() => editProfile(p)}
+              className={`w-full text-left rounded-xl border px-3 py-2.5 transition-colors ${
+                selectedId === p.id ? 'border-violet-500/60 bg-violet-500/10' : 'border-ms-border bg-ms-bg-soft hover:border-violet-500/30'
+              }`}>
+              <div className="flex items-center gap-2">
+                <Layers className="w-4 h-4 text-violet-400 shrink-0" />
+                <span className="text-sm font-semibold text-ms-text flex-1 truncate">{p.name}</span>
+                {p.isSystem && <span className="text-[9px] uppercase tracking-wide text-violet-400 bg-violet-500/10 px-1.5 py-0.5 rounded">sistem</span>}
               </div>
+              <div className="text-[10px] text-ms-text-muted mt-1 flex items-center gap-2">
+                <span>{p.userCount} kullanıcı</span>
+                {p.allowAllByDefault && <span className="text-amber-400">• yeni menüler açık</span>}
+              </div>
+            </button>
+          ))}
+        </div>
+
+        {/* Profil editörü */}
+        <div>
+          {!draft ? (
+            <div className="h-full flex items-center justify-center text-sm text-ms-text-muted border border-dashed border-ms-border rounded-xl py-16">
+              Düzenlemek için soldan bir profil seçin veya yeni profil oluşturun.
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <div className="bg-ms-bg-soft border border-ms-border rounded-xl p-4 space-y-3">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div>
+                    <label className="form-label">Profil Adı</label>
+                    <input value={draft.name} disabled={!isNew && profiles.find(p => p.id === selectedId)?.isSystem}
+                      onChange={e => setDraft(d => d ? { ...d, name: e.target.value } : d)}
+                      className="text-sm w-full disabled:opacity-50" placeholder="ör. Superuser, Depo" />
+                  </div>
+                  <div>
+                    <label className="form-label">Açıklama</label>
+                    <input value={draft.description}
+                      onChange={e => setDraft(d => d ? { ...d, description: e.target.value } : d)}
+                      className="text-sm w-full" placeholder="opsiyonel" />
+                  </div>
+                </div>
+                <label className="flex items-center gap-2 text-xs text-ms-text-muted cursor-pointer">
+                  <input type="checkbox" checked={draft.allowAllByDefault}
+                    onChange={e => setDraft(d => d ? { ...d, allowAllByDefault: e.target.checked } : d)} />
+                  Yeni eklenen menüler bu profilde otomatik <strong className="text-ms-text">açık</strong> olsun
+                  <span className="text-ms-text-muted/70">(kapalı: yalnızca seçtiklerin görünür — dar gruplar için güvenli)</span>
+                </label>
+                <div className="flex items-center gap-2">
+                  <button onClick={() => setDraft(d => d ? { ...d, visible: new Set(ALL_PATHS) } : d)} className="btn-secondary text-xs"><Eye className="w-3.5 h-3.5" /> Tümünü Aç</button>
+                  <button onClick={() => setDraft(d => d ? { ...d, visible: new Set() } : d)} className="btn-secondary text-xs"><EyeOff className="w-3.5 h-3.5" /> Tümünü Kapat</button>
+                  <div className="flex-1" />
+                  {!isNew && !profiles.find(p => p.id === selectedId)?.isSystem && (
+                    <button onClick={() => { const p = profiles.find(x => x.id === selectedId); if (p) del(p); }} className="btn-secondary text-xs text-rose-400"><Trash2 className="w-3.5 h-3.5" /> Sil</button>
+                  )}
+                  <button onClick={cancel} className="btn-secondary text-xs"><X className="w-3.5 h-3.5" /> Vazgeç</button>
+                  <button onClick={save} disabled={saving} className="btn-primary text-xs disabled:opacity-40"><Save className="w-3.5 h-3.5" /> {saving ? 'Kaydediliyor...' : 'Kaydet'}</button>
+                </div>
+              </div>
+
+              <MenuToggleGrid visible={draft.visible} onToggle={toggle} />
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ════════════════════════════════════════
+// KULLANICI MENÜ OVERRIDE (Özel İzinler) — modal
+// ════════════════════════════════════════
+const UserMenuOverrideModal: React.FC<{
+  user: UserItem;
+  profile: MenuProfileDto | null;
+  onClose: () => void;
+  onSaved: () => void;
+}> = ({ user, profile, onClose, onSaved }) => {
+  const [grants, setGrants] = useState<Set<string>>(new Set(user.menuGrants));
+  const [denials, setDenials] = useState<Set<string>>(new Set(user.menuDenials));
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState('');
+
+  const baseVisible = profile ? profileVisibleSet(profile) : new Set<string>();
+
+  const setState = (path: string, state: 'default' | 'on' | 'off') => {
+    setGrants(prev => { const n = new Set(prev); n.delete(path); if (state === 'on') n.add(path); return n; });
+    setDenials(prev => { const n = new Set(prev); n.delete(path); if (state === 'off') n.add(path); return n; });
+  };
+  const stateOf = (path: string): 'default' | 'on' | 'off' =>
+    grants.has(path) ? 'on' : denials.has(path) ? 'off' : 'default';
+
+  const save = async () => {
+    setSaving(true); setMsg('');
+    try {
+      await apiClient.put(`/api/users/${user.id}`, { menuGrants: Array.from(grants), menuDenials: Array.from(denials) });
+      onSaved(); onClose();
+    } catch (e: any) { setMsg(e.message); setSaving(false); }
+  };
+
+  const Pill: React.FC<{ active: boolean; tone: 'default' | 'on' | 'off'; onClick: () => void; children: React.ReactNode }> = ({ active, tone, onClick, children }) => {
+    const colors = tone === 'on'
+      ? (active ? 'bg-emerald-600 text-white' : 'text-emerald-400')
+      : tone === 'off'
+      ? (active ? 'bg-rose-600 text-white' : 'text-rose-400')
+      : (active ? 'bg-slate-600 text-white' : 'text-ms-text-muted');
+    return <button onClick={onClick} className={`px-2 py-1 rounded-md text-[10px] font-semibold transition-colors ${colors} ${active ? '' : 'hover:bg-white/5'}`}>{children}</button>;
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={onClose}>
+      <div className="bg-ms-panel border border-ms-border rounded-2xl w-full max-w-2xl max-h-[85vh] flex flex-col" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-5 py-3.5 border-b border-ms-border">
+          <div>
+            <h3 className="text-sm font-bold text-ms-text">Özel İzinler — {user.fullName || user.username}</h3>
+            <p className="text-[11px] text-ms-text-muted mt-0.5">
+              Profil: <strong className="text-ms-text">{profile?.name ?? 'Teknisyen (varsayılan)'}</strong>. Profilin üstüne kişiye özel aç/kapat.
+            </p>
+          </div>
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-ms-border text-ms-text-muted"><X className="w-4 h-4" /></button>
+        </div>
+
+        {msg && <div className="mx-5 mt-3 text-xs text-rose-400 bg-rose-500/10 border border-rose-500/20 rounded-lg px-3 py-2">{msg}</div>}
+
+        <div className="flex-1 overflow-y-auto px-5 py-3 space-y-3">
+          {CATALOG_BY_GROUP.map(({ group, items }) => (
+            <div key={group} className="bg-ms-bg-soft border border-ms-border rounded-xl overflow-hidden">
+              <div className="px-4 py-2 border-b border-ms-border/50 text-xs font-semibold text-ms-text">{group}</div>
               <div className="divide-y divide-ms-border/30">
                 {items.map(item => {
-                  const isHidden = localHidden.has(item.to);
+                  const st = stateOf(item.to);
+                  const baseShown = baseVisible.has(item.to);
                   return (
-                    <button
-                      key={item.to}
-                      onClick={() => toggle(item.to)}
-                      className={`w-full flex items-center gap-3 px-4 py-2.5 text-left transition-all hover:bg-white/[0.02] ${
-                        isHidden ? 'opacity-40' : ''
-                      }`}
-                    >
-                      <div className={`w-8 h-5 rounded-full relative transition-colors ${
-                        isHidden ? 'bg-slate-700' : 'bg-violet-600'
-                      }`}>
-                        <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${
-                          isHidden ? 'left-0.5' : 'left-3.5'
-                        }`} />
+                    <div key={item.to} className="flex items-center gap-3 px-4 py-2">
+                      <span className="text-sm text-ms-text flex-1 truncate">{item.label}</span>
+                      <span className="text-[9px] text-ms-text-muted/70">{baseShown ? 'varsayılan: açık' : 'varsayılan: gizli'}</span>
+                      <div className="flex items-center gap-1 bg-ms-panel rounded-lg p-0.5 border border-ms-border">
+                        <Pill active={st === 'default'} tone="default" onClick={() => setState(item.to, 'default')}>Varsayılan</Pill>
+                        <Pill active={st === 'on'} tone="on" onClick={() => setState(item.to, 'on')}>Aç</Pill>
+                        <Pill active={st === 'off'} tone="off" onClick={() => setState(item.to, 'off')}>Kapat</Pill>
                       </div>
-                      <span className="text-ms-text-muted">{item.icon}</span>
-                      <span className="text-sm text-ms-text font-medium flex-1">{item.label}</span>
-                      <span className="text-[10px] font-mono text-ms-text-muted">{item.to}</span>
-                      {isHidden ? (
-                        <EyeOff className="w-3.5 h-3.5 text-slate-500" />
-                      ) : (
-                        <Eye className="w-3.5 h-3.5 text-violet-400" />
-                      )}
-                    </button>
+                    </div>
                   );
                 })}
               </div>
             </div>
-          );
-        })}
-      </div>
+          ))}
+        </div>
 
-      <div className="rounded-lg px-4 py-3 text-[11px]"
-        style={{ background: 'rgba(139,92,246,0.05)', border: '1px solid rgba(139,92,246,0.15)', color: 'var(--ms-text-muted)' }}>
-        <strong className="text-violet-400">Not:</strong> Kontrol Paneli ve Ayarlar sayfalari her zaman gorunurdur.
-        Gizlenen sayfalar yalnizca teknisyen kullanicilarin sidebar'indan kaldirilir.
+        <div className="flex items-center justify-end gap-2 px-5 py-3 border-t border-ms-border">
+          <button onClick={onClose} className="btn-secondary text-sm"><X className="w-3.5 h-3.5" /> İptal</button>
+          <button onClick={save} disabled={saving} className="btn-primary text-sm disabled:opacity-40"><Save className="w-3.5 h-3.5" /> {saving ? 'Kaydediliyor...' : 'Kaydet'}</button>
+        </div>
       </div>
     </div>
   );
@@ -842,6 +1064,9 @@ const EmailAlarmPanel: React.FC = () => {
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
   const [sendingTestEmail, setSendingTestEmail] = useState(false);
+  const [sendingBirthdayEmail, setSendingBirthdayEmail] = useState(false);
+  const [birthdayMsg, setBirthdayMsg] = useState('');
+  const [birthdayMsgType, setBirthdayMsgType] = useState<'success' | 'error'>('error');
 
   useEffect(() => {
     apiClient.get<SmtpConfig>('/api/app-settings/smtp').then(data => {
@@ -882,6 +1107,16 @@ const EmailAlarmPanel: React.FC = () => {
       setDeliveryMsgType(res.success ? 'success' : 'error');
     } catch (e: any) { setDeliveryMsg(e.message); setDeliveryMsgType('error'); }
     finally { setSendingTestEmail(false); setTimeout(() => setDeliveryMsg(''), 8000); }
+  };
+
+  const sendBirthdayTestEmail = async () => {
+    setSendingBirthdayEmail(true); setBirthdayMsg('');
+    try {
+      const res = await apiClient.post<{ success: boolean; message: string }>('/api/app-settings/smtp/send-birthday-test', {}, 90_000);
+      setBirthdayMsg(res.message);
+      setBirthdayMsgType(res.success ? 'success' : 'error');
+    } catch (e: any) { setBirthdayMsg(e.message); setBirthdayMsgType('error'); }
+    finally { setSendingBirthdayEmail(false); setTimeout(() => setBirthdayMsg(''), 8000); }
   };
 
   const saveAlarm = async () => {
@@ -968,8 +1203,14 @@ const EmailAlarmPanel: React.FC = () => {
                 : 'text-red-400 bg-red-500/10 border-red-500/20'
             }`}>{deliveryMsg}</div>
           )}
+          {birthdayMsg && (
+            <div className={`text-xs rounded-lg px-3 py-2 border ${
+              birthdayMsgType === 'success' ? 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20'
+                : 'text-red-400 bg-red-500/10 border-red-500/20'
+            }`}>{birthdayMsg}</div>
+          )}
 
-          <div className="flex gap-2">
+          <div className="flex gap-2 flex-wrap">
             <button onClick={saveSmtp} disabled={saving} className="btn-primary text-sm">
               <Save className="w-3.5 h-3.5" /> {saving ? 'Kaydediliyor...' : 'Kaydet'}
             </button>
@@ -979,9 +1220,12 @@ const EmailAlarmPanel: React.FC = () => {
             <button onClick={sendTestEmail} disabled={sendingTestEmail || !smtp.host} className="btn-secondary text-sm">
               <Send className="w-3.5 h-3.5" /> {sendingTestEmail ? 'Gonderiliyor...' : 'Test Maili Gonder'}
             </button>
+            <button onClick={sendBirthdayTestEmail} disabled={sendingBirthdayEmail || !smtp.host} className="btn-secondary text-sm">
+              <span className="text-base leading-none">🎂</span> {sendingBirthdayEmail ? 'Gönderiliyor...' : 'Doğum Günü Test'}
+            </button>
           </div>
           <p className="text-[11px] text-ms-text-muted">
-            Test maili, oturum acmis admin kullanicisinin e-posta adresine gonderilir.
+            Test maili, oturum açmış admin kullanıcısının e-posta adresine gönderilir.
           </p>
         </div>
       </div>

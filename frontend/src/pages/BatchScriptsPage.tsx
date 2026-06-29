@@ -131,6 +131,28 @@ export default function BatchScriptsPage() {
 
     const isSelected = (ip: string) => targets.some(t => t.ip === normalizeIp(ip));
 
+    const allSelected = filteredDevices.length > 0 && filteredDevices.every(d => isSelected(normalizeIp(d.calculatedIpAddress)));
+    const someSelected = !allSelected && filteredDevices.some(d => isSelected(normalizeIp(d.calculatedIpAddress)));
+
+    const toggleAll = () => {
+        if (allSelected) {
+            const ips = new Set(filteredDevices.map(d => normalizeIp(d.calculatedIpAddress)));
+            setTargets(prev => prev.filter(t => !ips.has(t.ip)));
+        } else {
+            const newTargets = filteredDevices
+                .filter(d => !isSelected(normalizeIp(d.calculatedIpAddress)))
+                .map(d => ({
+                    ip: normalizeIp(d.calculatedIpAddress),
+                    storeCode: d.storeCode.toString(),
+                    hostname: d.deviceName,
+                    deviceType: d.deviceType,
+                    hasAgent: agentMap.has(normalizeIp(d.calculatedIpAddress)),
+                    deviceId: agentMap.get(normalizeIp(d.calculatedIpAddress)),
+                }));
+            setTargets(prev => [...prev, ...newTargets]);
+        }
+    };
+
     const toggleDevice = (d: SqlDeviceWithStatus) => {
         const ip = normalizeIp(d.calculatedIpAddress);
         if (isSelected(ip)) {
@@ -386,7 +408,9 @@ export default function BatchScriptsPage() {
                             <table className="w-full text-xs">
                                 <thead className="sticky top-0 bg-ms-bg-soft z-10">
                                     <tr className="border-b border-ms-border text-[10px] text-ms-text-muted uppercase">
-                                        <th className="text-left px-2 py-2 w-6"></th>
+                                        <th className="text-left px-2 py-2 w-6">
+                                            <input type="checkbox" checked={allSelected} ref={el => { if (el) el.indeterminate = someSelected; }} onChange={toggleAll} className="accent-amber-500 cursor-pointer" />
+                                        </th>
                                         <th className="text-left px-2 py-2">Magaza</th>
                                         <th className="text-left px-2 py-2">Cihaz</th>
                                         <th className="text-left px-2 py-2">IP</th>

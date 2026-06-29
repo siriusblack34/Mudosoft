@@ -6,7 +6,6 @@ import {
     Gift,
     Globe,
     Laptop,
-    Monitor,
     MonitorSmartphone,
     RefreshCw,
     ShieldCheck,
@@ -14,6 +13,7 @@ import {
     WifiOff,
 } from "lucide-react";
 import AgendaTopicsPanel from "../components/dashboard/AgendaTopicsPanel";
+import GeciciPcStatusPanel from "../components/dashboard/GeciciPcStatusPanel";
 import TurkeyStoreMap from "../components/dashboard/TurkeyStoreMap";
 import { useTheme } from "../contexts/ThemeContext";
 import { useAuth } from "../contexts/AuthContext";
@@ -341,8 +341,26 @@ const DashboardPage: React.FC = () => {
     const activeStoreCount = stores.filter((s) => s.activePos > 0).length;
     const storePct = pct(liveStoreCount, activeStoreCount);
     const issueCount = criticalStores.length + watchStores.length;
-    const serviceIssueCount = serviceIncidents.length;
-    const criticalServiceIssueCount = serviceIncidents.filter((i) => i.severity?.toLowerCase() === "critical").length;
+
+    /* Offline cihaz listesi — lastSeen'e gore en yeni kapanan uste */
+    const offlineDevices = useMemo(() => {
+        return sqlDevices
+            .filter((d) => !d.isOnline && !d.isTemporarilyClosed && d.deviceType?.toUpperCase() !== "GECICI" && !d.deviceType?.toLowerCase().startsWith("yazici"))
+            .sort((a, b) => {
+                const ta = a.lastSeen ? new Date(a.lastSeen).getTime() : 0;
+                const tb = b.lastSeen ? new Date(b.lastSeen).getTime() : 0;
+                return tb - ta; // en yeni kapanan uste
+            });
+    }, [sqlDevices]);
+
+    /* PC'si zaten offline olan mağazaların servis alarmlarını gizle */
+    const filteredServiceIncidents = useMemo(() => {
+        const offlineIps = new Set(offlineDevices.map((d) => d.calculatedIpAddress));
+        return serviceIncidents.filter((i) => !offlineIps.has(i.ipAddress));
+    }, [serviceIncidents, offlineDevices]);
+
+    const serviceIssueCount = filteredServiceIncidents.length;
+    const criticalServiceIssueCount = filteredServiceIncidents.filter((i) => i.severity?.toLowerCase() === "critical").length;
 
     // Gecici kapali magazalar bilinçli karar — alert seviyesini yükseltmez
     const level = criticalServiceIssueCount > 0 || criticalStores.length > 0 || agentPct < 70 || sqlPct < 70 ? "critical"
@@ -353,17 +371,6 @@ const DashboardPage: React.FC = () => {
     const realIssues = stores.filter((s) => s.status === "critical" || s.status === "watch");
     const attention = [...realIssues, ...closedStores].slice(0, 6);
     const oldestIncident = stores.filter((s) => s.status === "critical" || s.status === "watch").map((s) => s.since).filter((s): s is string => Boolean(s)).sort((a, b) => new Date(a).getTime() - new Date(b).getTime())[0] ?? null;
-
-    /* Offline cihaz listesi — lastSeen'e gore en yeni kapanan uste */
-    const offlineDevices = useMemo(() => {
-        return sqlDevices
-            .filter((d) => !d.isOnline && !d.isTemporarilyClosed && d.deviceType?.toUpperCase() !== "GECICI")
-            .sort((a, b) => {
-                const ta = a.lastSeen ? new Date(a.lastSeen).getTime() : 0;
-                const tb = b.lastSeen ? new Date(b.lastSeen).getTime() : 0;
-                return tb - ta; // en yeni kapanan uste
-            });
-    }, [sqlDevices]);
 
     const birthdayPanelMembers = useMemo(() => {
         const todayBirthdays: Array<ReturnType<typeof getBirthdayInfo> & { no: string; name: string; surname: string; role: string }> = [];
@@ -591,22 +598,9 @@ const DashboardPage: React.FC = () => {
                                 )) : <span className="text-xs" style={{ color: c.muted }}>POS verisi yok</span>}
                             </div>
                         </div>
-                        {/* Geçici PC row */}
+                        {/* Geçici PC row — detaylı panel */}
                         {geciciPcs.length > 0 && (
-                        <div>
-                            <div className="mb-2 flex items-center gap-2">
-                                <Monitor className="h-3.5 w-3.5" style={{ color: c.violet }} />
-                                <span className="text-xs font-semibold" style={{ color: c.text }}>Geçici PC</span>
-                                <span className="text-[10px]" style={{ color: c.muted }}>
-                                    ({geciciOnline}/{activeGecici.length} online{closedGecici > 0 ? `, ${closedGecici} kapalı` : ""})
-                                </span>
-                            </div>
-                            <div className="flex flex-wrap gap-1.5">
-                                {[...geciciPcs].sort((a, b) => (a.storeCode ?? 0) - (b.storeCode ?? 0)).map((d) => (
-                                    <ConnectionDot key={d.deviceId} c={c} device={d} />
-                                ))}
-                            </div>
-                        </div>
+                            <GeciciPcStatusPanel c={c} />
                         )}
                             </>
                         )}
@@ -629,75 +623,6 @@ const DashboardPage: React.FC = () => {
 
                 {/* ═══ RIGHT SIDEBAR ═══ */}
                 <div className="space-y-5">
-                    {false && (
-                    <GlassCard c={c}>
-                        <div className="mb-3 flex items-center justify-between">
-                            <div>
-                                <h3 className="text-sm font-semibold flex items-center gap-2" style={{ color: c.text }}>
-                                    <Gift className="h-4 w-4" style={{ color: c.amber }} />
-                                    BT Ekibi Doğum Günleri
-                                </h3>
-                                <p className="text-[10px]" style={{ color: c.muted }}>
-                                    Bugün olanlar ve 30 gün içindeki yaklaşan doğum günleri
-                                </p>
-                            </div>
-                            {birthdayPanelMembers.length > 0 && (
-                                <span
-                                    className="flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-[10px] font-bold text-white"
-                                    style={{ background: c.amber }}
-                                >
-                                    {birthdayPanelMembers.length}
-                                </span>
-                            )}
-                        </div>
-                        {birthdayPanelMembers.length === 0 ? (
-                            <div className="rounded-xl border border-dashed px-4 py-8 text-center" style={{ borderColor: c.borderStrong, background: c.cardSoft }}>
-                                <Gift className="mx-auto h-6 w-6" style={{ color: c.muted }} />
-                                <p className="mt-2 text-xs font-medium" style={{ color: c.text }}>Yaklaşan BT doğum günü görünmüyor</p>
-                                <p className="mt-1 text-[10px]" style={{ color: c.muted }}>Bir sonraki doğum günü 30 gün içinde olduğunda burada görünecek.</p>
-                            </div>
-                        ) : (
-                            <div className="space-y-2">
-                                {birthdayPanelMembers.map((member) => (
-                                    <div
-                                        key={member.no}
-                                        className="rounded-xl border px-3 py-2.5"
-                                        style={{
-                                            borderColor: member.isToday ? c.amberBorder : c.border,
-                                            background: member.isToday ? c.amberGlow : c.cardSoft,
-                                        }}
-                                    >
-                                        <div className="flex items-start justify-between gap-3">
-                                            <div className="min-w-0">
-                                                <div className="text-xs font-semibold" style={{ color: c.text }}>
-                                                    {formatName(member.name)} {formatName(member.surname)}
-                                                </div>
-                                                <div className="mt-0.5 text-[10px]" style={{ color: c.muted }}>
-                                                    {member.role}
-                                                </div>
-                                            </div>
-                                            <div
-                                                className="shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-semibold"
-                                                style={{
-                                                    color: member.isToday ? c.amber : c.sky,
-                                                    borderColor: member.isToday ? c.amberBorder : c.skyBorder,
-                                                    background: member.isToday ? c.amberSoft : c.skySoft,
-                                                }}
-                                            >
-                                                {member.shortLabel}
-                                            </div>
-                                        </div>
-                                        <div className="mt-2 flex items-center justify-between gap-3 text-[10px]" style={{ color: c.muted }}>
-                                            {isAdmin && <span>{member.nextBirthday.toLocaleDateString("tr-TR", { day: "2-digit", month: "long" })}</span>}
-                                            {isAdmin && <span>{member.isToday ? `${member.ageTurning} yaşında` : `${member.ageTurning} olacak`}</span>}
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
-                        )}
-                    </GlassCard>
-                    )}
-
                     {/* Mobil hatta gectigi tahmin edilen router'lar */}
                     {mobileRouters.length > 0 && (
                         <GlassCard c={c}>
@@ -812,7 +737,7 @@ const DashboardPage: React.FC = () => {
                                             <span className="text-[10px]" style={{ color: c.muted }}>{serviceIssueCount} aktif alarm</span>
                                         </div>
                                         <div className="space-y-2 max-h-[280px] overflow-auto scrollbar-thin scrollbar-thumb-slate-700 scrollbar-track-transparent">
-                                            {serviceIncidents.slice(0, 10).map((incident) => (
+                                            {filteredServiceIncidents.slice(0, 10).map((incident) => (
                                                 <ServiceIncidentRow key={incident.id} c={c} incident={incident} />
                                             ))}
                                         </div>
@@ -979,7 +904,7 @@ const ConnectionDot: React.FC<{ c: Palette; device: SqlDeviceWithStatus }> = ({ 
     const pingStr = device.pingReachable === true ? "OK" : device.pingReachable === false ? "FAIL" : "—";
     const sqlStr = device.sqlReachable === true ? "OK" : device.sqlReachable === false ? "FAIL" : "—";
     const geciciLabel = isGecici ? `${device.deviceName || device.deviceId}` : "";
-    const label = `${device.storeCode} / ${typeName}${geciciLabel ? ` (${geciciLabel})` : ""}${statusText}${device.lastSeen ? `\nSon: ${fmtDuration(device.lastSeen)}` : ""}\n${device.calculatedIpAddress}${!isRouter ? `\nPing: ${pingStr} | SQL: ${sqlStr}` : ""}`;
+    const label = `${device.storeName ? `${device.storeName}\n` : ""}${device.storeCode} / ${typeName}${geciciLabel ? ` (${geciciLabel})` : ""}${statusText}${device.lastSeen ? `\nSon: ${fmtDuration(device.lastSeen)}` : ""}\n${device.calculatedIpAddress}${!isRouter ? `\nPing: ${pingStr} | SQL: ${sqlStr}` : ""}`;
     // Router: circle, PC: rounded square, Gecici: rounded-md (hexagon-ish), POS: square
     const shapeClass = isRouter
         ? "rounded-full"

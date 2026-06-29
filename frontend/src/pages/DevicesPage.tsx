@@ -10,6 +10,7 @@ import {
   CheckCircle,
   ChevronDown,
   ChevronUp,
+  Download,
   LayoutGrid,
   List,
   Monitor,
@@ -25,7 +26,7 @@ import {
   Eye,
   EyeOff,
 } from 'lucide-react';
-import { apiClient } from '../lib/apiClient';
+import { apiClient, API_BASE_URL } from '../lib/apiClient';
 import type {
   DeviceOfflineExclusionResponse,
   DeviceTemporaryCloseResponse,
@@ -38,6 +39,7 @@ import DeviceTabs from '../components/DeviceTabs';
 type SortKey = 'hostname' | 'storeCode' | 'cpuUsage' | 'ramUsage' | 'diskUsage' | 'online' | 'lastSeen';
 type SortDir = 'asc' | 'desc';
 type FilterKey = 'all' | 'online' | 'offline' | 'closed';
+type TypeFilterKey = 'all' | 'pc' | 'kasa' | 'merkez';
 type ContextMenuState = { device: Device; x: number; y: number } | null;
 
 const DevicesPage: React.FC = () => {
@@ -46,7 +48,7 @@ const DevicesPage: React.FC = () => {
   const [devices, setDevices] = useState<Device[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<FilterKey>('all');
-  const [typeFilter, setTypeFilter] = useState<'all' | 'pc' | 'kasa'>('all');
+  const [typeFilter, setTypeFilter] = useState<TypeFilterKey>('all');
   const [searchTerm, setSearchTerm] = useState('');
   const [view, setView] = useState<'list' | 'grid'>(() =>
     (localStorage.getItem('devicesView') as 'list' | 'grid') || 'list'
@@ -127,7 +129,8 @@ const DevicesPage: React.FC = () => {
     setSortDir('asc');
   };
 
-  const isKasa = (device: Device) => device.hostname?.startsWith('KSTR');
+  const isKasa    = (device: Device) => device.hostname?.startsWith('KSTR');
+  const isMerkez  = (device: Device) => device.type === 'CentralOffice';
   const isTemporarilyClosed = (device: Device) => Boolean(device.isTemporarilyClosed);
   const isOfflineExcluded = (device: Device) => !device.online && Boolean(device.excludeFromOfflineList);
   const isCountedOffline = (device: Device) => !device.online && !device.excludeFromOfflineList && !device.isTemporarilyClosed;
@@ -136,8 +139,9 @@ const DevicesPage: React.FC = () => {
   const offlineCount = devices.filter(isCountedOffline).length;
   const excludedOfflineCount = devices.filter(isOfflineExcluded).length;
   const temporaryClosedCount = devices.filter(isTemporarilyClosed).length;
-  const pcCount = devices.filter((device) => !isKasa(device)).length;
-  const kasaCount = devices.filter((device) => isKasa(device)).length;
+  const pcCount     = devices.filter((device) => !isKasa(device) && !isMerkez(device)).length;
+  const kasaCount   = devices.filter((device) => isKasa(device)).length;
+  const merkezCount = devices.filter((device) => isMerkez(device)).length;
 
   const filtered = useMemo(() => {
     return [...devices]
@@ -154,11 +158,15 @@ const DevicesPage: React.FC = () => {
           return false;
         }
 
-        if (typeFilter === 'pc' && isKasa(device)) {
+        if (typeFilter === 'pc' && (isKasa(device) || isMerkez(device))) {
           return false;
         }
 
         if (typeFilter === 'kasa' && !isKasa(device)) {
+          return false;
+        }
+
+        if (typeFilter === 'merkez' && !isMerkez(device)) {
           return false;
         }
 
@@ -568,19 +576,37 @@ const DevicesPage: React.FC = () => {
 
           <div className="flex rounded-xl overflow-hidden border border-slate-700/50">
             {([
-              ['all', `Tumu (${devices.length})`],
-              ['pc', `PC (${pcCount})`],
-              ['kasa', `Kasa (${kasaCount})`],
-            ] as const).map(([value, label]) => (
+              ['all',    `Tümü (${devices.length})`],
+              ['pc',     `PC (${pcCount})`],
+              ['kasa',   `Kasa (${kasaCount})`],
+              ['merkez', `Merkez (${merkezCount})`],
+            ] as [TypeFilterKey, string][]).map(([value, label]) => (
               <button
                 key={value}
                 onClick={() => setTypeFilter(value)}
-                className={`px-3 py-2 text-xs font-medium transition-colors ${typeFilter === value ? 'bg-slate-700/50 text-white' : 'text-slate-500 hover:text-slate-300'}`}
+                className={`px-3 py-2 text-xs font-medium transition-colors ${
+                  typeFilter === value
+                    ? value === 'merkez'
+                      ? 'bg-violet-700/50 text-violet-200'
+                      : 'bg-slate-700/50 text-white'
+                    : 'text-slate-500 hover:text-slate-300'
+                }`}
               >
                 {label}
               </button>
             ))}
           </div>
+
+          {typeFilter === 'merkez' && (
+            <a
+              href={`${API_BASE_URL}/api/agent/central/download`}
+              download="OrchestraCentralAgent.exe"
+              className="inline-flex items-center gap-2 rounded-xl border border-violet-500/40 bg-violet-500/10 px-3 py-2 text-xs font-medium text-violet-300 transition-colors hover:bg-violet-500/20"
+            >
+              <Download className="w-3.5 h-3.5" />
+              Merkez Agent İndir
+            </a>
+          )}
 
           <div className="flex rounded-xl overflow-hidden border border-slate-700/50">
             <button
