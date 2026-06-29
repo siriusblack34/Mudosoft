@@ -93,8 +93,10 @@ public sealed class DiskHealthCollector : ICollector
         var result = new Dictionary<string, string>();
         try
         {
+            var options = new System.Management.EnumerationOptions { Timeout = TimeSpan.FromSeconds(10), ReturnImmediately = false };
+
             using var searcher = new ManagementObjectSearcher(
-                "SELECT DeviceID, Status FROM Win32_DiskDrive");
+                new ManagementScope(), new ObjectQuery("SELECT DeviceID, Status FROM Win32_DiskDrive"), options);
 
             foreach (var obj in searcher.Get())
             {
@@ -106,9 +108,8 @@ public sealed class DiskHealthCollector : ICollector
                 result[deviceId] = status;
             }
 
-            // Logical disk ile physical disk eşleme
             using var logicalSearcher = new ManagementObjectSearcher(
-                "SELECT DeviceID, Status FROM Win32_LogicalDisk WHERE DriveType=3");
+                new ManagementScope(), new ObjectQuery("SELECT DeviceID, Status FROM Win32_LogicalDisk WHERE DriveType=3"), options);
             foreach (var obj in logicalSearcher.Get())
             {
                 var letter = obj["DeviceID"]?.ToString() ?? "";

@@ -8,6 +8,9 @@ public sealed class AgentConfig
     // Backend base URL
     public string BackendUrl { get; set; } = "http://0.0.0.0:5102";
 
+    // 🔒 Faz 2: enrollment için tek-seferlik bootstrap anahtarı (deploy'da enjekte edilir, repo'da boş).
+    public string? BootstrapApiKey { get; set; }
+
     // 🏆 KRİTİK EKLEME: StoreCode eklendi
     public string? StoreCode { get; set; }
 

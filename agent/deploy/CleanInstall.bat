@@ -24,7 +24,7 @@ echo.
 set INSTALL_DIR=C:\Program Files\MudoSoft\Agent
 set UPDATE_DIR=C:\Users\Public\MudoSoftUpdate
 set SERVICE_NAME=MudosoftAgentService
-set BACKEND_URL=http://10.0.210.99:5102
+set BACKEND_URL=http://10.75.1.109
 
 :: ==========================================
 :: 1. KOMPLE TEMIZLIK
@@ -156,7 +156,7 @@ echo }
 ) > "%INSTALL_DIR%\appsettings.json"
 
 reg add "HKLM\SYSTEM\CurrentControlSet\Control" /v ServicesPipeTimeout /t REG_DWORD /d 120000 /f >nul 2>&1
-sc create %SERVICE_NAME% binPath= "\"%INSTALL_DIR%\MudoSoft.Agent.exe\" --service" start= delayed-auto DisplayName= "Orchestra Agent Service" >nul 2>&1
+sc create %SERVICE_NAME% binPath= "\"%INSTALL_DIR%\MudoSoft.Agent.exe\" --service" start= delayed-auto DisplayName= "Orchestra Agent" >nul 2>&1
 sc description %SERVICE_NAME% "MudoSoft RMM Agent" >nul 2>&1
 sc failure %SERVICE_NAME% reset= 60 actions= restart/5000/restart/10000/restart/30000 >nul 2>&1
 sc start %SERVICE_NAME% >nul 2>&1

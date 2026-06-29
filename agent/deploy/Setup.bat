@@ -22,7 +22,7 @@ echo.
 set INSTALL_DIR=C:\Program Files\MudoSoft\Agent
 set SERVICE_NAME=MudosoftAgentService
 set SCRIPT_DIR=%~dp0
-set BACKEND_URL=http://10.0.210.99:5102
+set BACKEND_URL=http://10.75.1.109
 
 :: ==========================================
 :: IP'den magaza kodu tespit et (3. oktet)

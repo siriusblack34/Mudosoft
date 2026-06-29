@@ -100,8 +100,10 @@ var hostBuilder = Host.CreateDefaultBuilder(args)
         // Tüm yönetim servisleri
         services.AddHostedService<AgentWorker>();
         services.AddSingleton<VncInstallerService>();
-        services.AddSingleton<ICommandExecutor, CommandExecutor>();
-        services.AddSingleton<ICommandPoller, CommandPoller>(); 
+        services.AddSingleton<Orchestra.Agent.Services.ICommandExecutor, CommandExecutor>();
+        // 🔒 Faz 2: komut imza doğrulama + enrollment servisi
+        services.AddSingleton<CommandSecurityService>();
+        services.AddSingleton<ICommandPoller, CommandPoller>();
         
         // HeartbeatService - hem IHeartbeatSender hem de concrete type olarak kaydet (tray için)
         services.AddSingleton<HeartbeatService>();

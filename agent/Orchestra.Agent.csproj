@@ -1,10 +1,11 @@
 <Project Sdk="Microsoft.NET.Sdk.Worker">
 
   <PropertyGroup>
-    <TargetFramework>net8.0</TargetFramework>
+    <TargetFramework>net8.0-windows</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <OutputType>WinExe</OutputType>
+    <UseWindowsForms>true</UseWindowsForms>
     <RootNamespace>Orchestra.Agent</RootNamespace>
     <AssemblyName>MudoSoft.Agent</AssemblyName>
     <PublishReadyToRun>true</PublishReadyToRun>
@@ -16,9 +17,9 @@
     <Description>Orchestra Retail POS Agent</Description>
     
     <!-- Agent Version - Önemli: Her güncellemede artır! -->
-    <Version>1.0.0.74</Version>
-    <AssemblyVersion>1.0.0.74</AssemblyVersion>
-    <FileVersion>1.0.0.74</FileVersion>
+    <Version>1.0.0.82</Version>
+    <AssemblyVersion>1.0.0.82</AssemblyVersion>
+    <FileVersion>1.0.0.82</FileVersion>
 
     <GenerateEmbeddedFilesManifest>false</GenerateEmbeddedFilesManifest>
   </PropertyGroup>
@@ -38,6 +39,7 @@
     <PackageReference Include="Microsoft.AspNetCore.SignalR.Client" Version="8.0.0" />
     <PackageReference Include="System.Drawing.Common" Version="8.0.0" />
     <PackageReference Include="Microsoft.Data.SqlClient" Version="5.2.1" />
+    <PackageReference Include="ClosedXML" Version="0.102.3" />
 
     <ProjectReference Include="..\shared\Orchestra.Shared.csproj" />
   </ItemGroup>

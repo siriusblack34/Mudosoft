@@ -1,10 +1,13 @@
 using System.Diagnostics;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Orchestra.Agent.Interfaces;
+using Orchestra.Agent.Models;
 using Orchestra.Shared.Dtos;
 using Orchestra.Shared.Enums;
 using System.Management;
 using System.Runtime.InteropServices;
+using System.Security.Cryptography;
 
 namespace Orchestra.Agent.Services;
 
@@ -12,14 +15,19 @@ public sealed class CommandExecutor : ICommandExecutor
 {
     private readonly ILogger<CommandExecutor> _logger;
     private readonly VncInstallerService _vncInstaller;
+    private readonly AgentConfig _config;
+    private readonly CommandSecurityService _security;
 
     // Birden fazla yerden self-update tetiklendiginde (backend command + checker) ikinci tetik atlanir.
     private static int _selfUpdateRunning = 0;
 
-    public CommandExecutor(ILogger<CommandExecutor> logger, VncInstallerService vncInstaller)
+    public CommandExecutor(ILogger<CommandExecutor> logger, VncInstallerService vncInstaller,
+        IOptions<AgentConfig> config, CommandSecurityService security)
     {
         _logger = logger;
         _vncInstaller = vncInstaller;
+        _config = config.Value;
+        _security = security;
     }
 
     public void TriggerSelfUpdate(string backendUrl)
@@ -60,7 +68,7 @@ public sealed class CommandExecutor : ICommandExecutor
     }
 
     // HATA ÇÖZÜMÜ: CancellationToken token parametresi eklendi
-   public Task<CommandResultDto> ExecuteAsync(CommandDto command, CancellationToken token)
+    public async Task<CommandResultDto> ExecuteAsync(CommandDto command, CancellationToken token)
     {
         var result = new CommandResultDto
         {
@@ -68,7 +76,7 @@ public sealed class CommandExecutor : ICommandExecutor
             DeviceId = command.DeviceId,
             Success = false,
             Output = "",
-            CommandType = command.Type // <-- Artık CommandResultDto'da CommandType var
+            CommandType = command.Type
         };
 
         try
@@ -136,7 +144,7 @@ public sealed class CommandExecutor : ICommandExecutor
 
                 case CommandType.InstallVnc:
                     _logger.LogInformation("InstallVnc komutu alındı.");
-                    var vncResult = _vncInstaller.InstallAndConfigureAsync(token).GetAwaiter().GetResult();
+                    var vncResult = await _vncInstaller.InstallAndConfigureAsync(token);
                     result.Success = vncResult.Success;
                     result.Output = vncResult.Output;
                     break;
@@ -144,6 +152,12 @@ public sealed class CommandExecutor : ICommandExecutor
                 case CommandType.UninstallAgent:
                     _logger.LogWarning("UninstallAgent komutu alındı — agent kendini kaldıracak.");
                     result = ExecuteAgentUninstall(result);
+                    break;
+
+                // MOBILE / EL TERMİNALİ
+                case CommandType.BarcodeExcelExport:
+                    _logger.LogInformation("BarcodeExcelExport komutu alındı.");
+                    result = ExecuteBarcodeExcelExport(command.Payload ?? "", result);
                     break;
 
                 default:
@@ -158,7 +172,7 @@ public sealed class CommandExecutor : ICommandExecutor
             _logger.LogError(ex, "Komut yürütme hatası: {CommandId}", command.Id);
         }
 
-        return Task.FromResult(result);
+        return result;
     }
 
     /// <summary>
@@ -194,7 +208,7 @@ public sealed class CommandExecutor : ICommandExecutor
 
             _logger.LogInformation("Running script: {Shell} {Args}", shell, args);
 
-            var process = new Process
+            using var process = new Process
             {
                 StartInfo = new ProcessStartInfo
                 {
@@ -208,16 +222,16 @@ public sealed class CommandExecutor : ICommandExecutor
             };
 
             process.Start();
-            
+
             // Read output with timeout to prevent hanging
             string output = process.StandardOutput.ReadToEnd();
             string error = process.StandardError.ReadToEnd();
-            
+
             process.WaitForExit(300000); // 5 minute timeout
 
             result.Output = (string.IsNullOrWhiteSpace(output) ? "" : output) +
                             (string.IsNullOrWhiteSpace(error) ? "" : $"Hata: {error}");
-            
+
             result.Success = process.ExitCode == 0;
         }
         catch (Exception ex)
@@ -302,7 +316,7 @@ public sealed class CommandExecutor : ICommandExecutor
 
             _logger.LogInformation("Running batch: cmd.exe /c \"{Path}\"", tempFile);
 
-            var process = new Process
+            using var process = new Process
             {
                 StartInfo = new ProcessStartInfo
                 {
@@ -635,8 +649,49 @@ public sealed class CommandExecutor : ICommandExecutor
                 return result;
             }
 
-            var backendUrl = updateInfo.BackendUrl.TrimEnd('/');
-            var downloadUrl = $"{backendUrl}/api/updates/download";
+            // 🔒 Faz 2 (K-3): payload.BackendUrl GÜVENİLMEZ (saldırgan kontrollü olabilir).
+            // İndirme PİNLİ config.BackendUrl'den + imzalı manifest + SHA-256 doğrulamasıyla yapılır.
+            var pinnedUrl = (_config.BackendUrl ?? "").TrimEnd('/');
+            if (string.IsNullOrWhiteSpace(pinnedUrl))
+            {
+                result.Output = "Update iptal: pinli BackendUrl yok.";
+                _logger.LogError("Update aborted: pinned BackendUrl empty");
+                return result;
+            }
+            var backendUrl = pinnedUrl; // (aşağıdaki loglar için)
+
+            // Backend public key pinli değilse pinle (manifest imzasını doğrulamak için şart)
+            _security.EnsureEnrolledAsync(CancellationToken.None).GetAwaiter().GetResult();
+
+            AgentUpdateManifest? manifest;
+            using (var mc = new HttpClient { Timeout = TimeSpan.FromSeconds(30) })
+            {
+                var mres = mc.GetAsync($"{pinnedUrl}/api/updates/manifest").GetAwaiter().GetResult();
+                if (!mres.IsSuccessStatusCode)
+                {
+                    result.Output = $"Update iptal: manifest alınamadı ({mres.StatusCode})";
+                    _logger.LogError("Update aborted: manifest fetch {Status}", mres.StatusCode);
+                    return result;
+                }
+                var mjson = mres.Content.ReadAsStringAsync().GetAwaiter().GetResult();
+                manifest = System.Text.Json.JsonSerializer.Deserialize<AgentUpdateManifest>(mjson, options);
+            }
+            if (manifest == null)
+            {
+                result.Output = "Update iptal: manifest boş.";
+                _logger.LogError("Update aborted: manifest null");
+                return result;
+            }
+            if (!_security.VerifyManifest(manifest.Version, manifest.Sha256, manifest.Url, manifest.Sig, out var mreason))
+            {
+                result.Output = $"Update iptal: manifest imza doğrulanamadı ({mreason})";
+                _logger.LogError("Update aborted: manifest verify failed - {Reason}", mreason);
+                return result;
+            }
+            _logger.LogInformation("Manifest doğrulandı: v{Version} sha={Sha}", manifest.Version, manifest.Sha256);
+
+            var expectedSha = manifest.Sha256!;
+            var downloadUrl = $"{pinnedUrl}/{manifest.Url!.TrimStart('/')}";
             
             // Get current agent directory
             var currentDir = AppContext.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar);
@@ -688,6 +743,19 @@ public sealed class CommandExecutor : ICommandExecutor
 
             _logger.LogInformation("Download complete: {Bytes} bytes", downloadedBytes);
 
+            // 🔒 Faz 2 (K-3): indirilen ZIP'in SHA-256'sı manifest ile eşleşmeli — yoksa UYGULAMA.
+            string actualSha;
+            using (var sha = SHA256.Create())
+            using (var fs2 = File.OpenRead(zipPath))
+                actualSha = Convert.ToHexString(sha.ComputeHash(fs2)).ToLowerInvariant();
+            if (!actualSha.Equals(expectedSha, StringComparison.OrdinalIgnoreCase))
+            {
+                result.Output = $"Update iptal: SHA-256 uyusmuyor (beklenen {expectedSha}, gelen {actualSha})";
+                _logger.LogError("Update aborted: SHA mismatch expected={Exp} actual={Act}", expectedSha, actualSha);
+                return result;
+            }
+            _logger.LogInformation("SHA-256 dogrulandi.");
+
             // Extract zip
             _logger.LogInformation("Extracting to {Path}", extractDir);
             System.IO.Compression.ZipFile.ExtractToDirectory(zipPath, extractDir, true);
@@ -696,58 +764,102 @@ public sealed class CommandExecutor : ICommandExecutor
             _logger.LogInformation("Extracted {Count} files", extractedFiles.Length);
 
             // Create a batch file for the update - simpler and more reliable
-            var serviceName = "MudosoftAgentService";
             var batchPath = Path.Combine(tempDir, "updater.cmd");
             var logPath = Path.Combine(tempDir, "update.log");
-            
-            // Escape backslashes for batch file
+
             var batchContent = $@"@echo off
 echo [%date% %time%] Update started > ""{logPath}""
+timeout /t 5 /nobreak > nul
 
-REM Wait for agent to fully process this command
-timeout /t 3 /nobreak > nul
+REM === Servis adini otomatik bul (saha cihazlari farkli isimle kurulu olabilir) ===
+sc query MudosoftAgentService >nul 2>&1
+if not errorlevel 1 goto svc_found_A
+sc query MudosoftAgent >nul 2>&1
+if not errorlevel 1 goto svc_found_B
+sc query MudoSoftAgent >nul 2>&1
+if not errorlevel 1 goto svc_found_C
+set ""serviceName=MudosoftAgentService""
+goto svc_done
+:svc_found_A
+set ""serviceName=MudosoftAgentService""
+goto svc_done
+:svc_found_B
+set ""serviceName=MudosoftAgent""
+goto svc_done
+:svc_found_C
+set ""serviceName=MudoSoftAgent""
+:svc_done
+echo [%date% %time%] Service: %serviceName% >> ""{logPath}""
 
-REM Stop Tray
-echo [%date% %time%] Stopping Tray... >> ""{logPath}""
-taskkill /F /IM MudoSoft.Tray.exe 2>nul
-
-REM Stop Agent Service
+REM === DURDUR ===
 echo [%date% %time%] Stopping service... >> ""{logPath}""
-net stop ""{serviceName}"" 2>> ""{logPath}""
+taskkill /F /IM MudoSoft.Tray.exe 2>nul
+sc stop ""%serviceName%"" >> ""{logPath}"" 2>&1
 net stop ""MudosoftAgent"" 2>> ""{logPath}""
 net stop ""MudoSoft.Agent"" 2>> ""{logPath}""
-timeout /t 3 /nobreak > nul
 
-REM Force kill if services didn't stop it (prevents xcopy Access Denied)
-echo [%date% %time%] Force killing agent... >> ""{logPath}""
-taskkill /F /IM MudoSoft.Agent.exe 2>> ""{logPath}""
+REM Servis STOPPED olana kadar bekle (maks 30s — sc stop donusu beklemez)
+set _tries=0
+:wait_stop
+sc query ""%serviceName%"" 2>nul | find ""STOPPED"" >nul
+if not errorlevel 1 goto stopped
+set /a _tries=_tries+1
+if %_tries% geq 15 goto force_kill
+timeout /t 2 /nobreak > nul
+goto wait_stop
+
+:force_kill
+echo [%date% %time%] Force killing after %_tries% polls >> ""{logPath}""
+taskkill /F /IM MudoSoft.Agent.exe >> ""{logPath}"" 2>&1
+timeout /t 4 /nobreak > nul
+goto copy_files
+
+:stopped
+echo [%date% %time%] Service stopped (polls=%_tries%) >> ""{logPath}""
 timeout /t 2 /nobreak > nul
 
-REM Remove appsettings from extracted to preserve machine-specific config
+REM === KOPYALA ===
+:copy_files
 if exist ""{extractDir}\appsettings.json"" del /F /Q ""{extractDir}\appsettings.json""
 if exist ""{extractDir}\appsettings.Development.json"" del /F /Q ""{extractDir}\appsettings.Development.json""
 
-REM Copy files
 echo [%date% %time%] Copying files... >> ""{logPath}""
-xcopy /E /Y /Q ""{extractDir}\*"" ""{currentDir}\"" >> ""{logPath}"" 2>&1
+robocopy ""{extractDir}"" ""{currentDir}"" /E /IS /IT /R:5 /W:3 >> ""{logPath}"" 2>&1
+set _copyCode=%errorlevel%
+if %_copyCode% geq 8 (
+    echo [%date% %time%] WARNING: robocopy failed code=%_copyCode% - retrying in 10s... >> ""{logPath}""
+    timeout /t 10 /nobreak > nul
+    robocopy ""{extractDir}"" ""{currentDir}"" /E /IS /IT /R:3 /W:5 >> ""{logPath}"" 2>&1
+    set _copyCode=%errorlevel%
+    echo [%date% %time%] Retry copy code=%_copyCode% >> ""{logPath}""
+)
+echo [%date% %time%] Copy done (code=%_copyCode%) >> ""{logPath}""
 
-REM Start Agent Service
+REM === BASLAT ===
 echo [%date% %time%] Starting service... >> ""{logPath}""
-net start ""{serviceName}"" 2>> ""{logPath}""
-net start ""MudosoftAgent"" 2>> ""{logPath}""
-net start ""MudoSoft.Agent"" 2>> ""{logPath}""
+sc start ""%serviceName%"" >> ""{logPath}"" 2>&1
+timeout /t 60 /nobreak > nul
+sc query ""%serviceName%"" >> ""{logPath}"" 2>&1
+sc query ""%serviceName%"" 2>nul | find ""RUNNING"" >nul
+if errorlevel 1 (
+    echo [%date% %time%] Not running after 60s - retry start >> ""{logPath}""
+    sc start ""%serviceName%"" >> ""{logPath}"" 2>&1
+    timeout /t 60 /nobreak > nul
+    sc query ""%serviceName%"" >> ""{logPath}"" 2>&1
+)
 
 echo [%date% %time%] Update complete! >> ""{logPath}""
+schtasks /delete /tn ""MudoSoftUpdater"" /f >nul 2>&1
 ";
             File.WriteAllText(batchPath, batchContent);
             _logger.LogInformation("Batch file created at: {Path}", batchPath);
 
-            // Start the batch file DETACHED from service Job Object
-            // On W11, services kill all child processes when stopped.
-            // CREATE_BREAKAWAY_FROM_JOB (0x01000000) breaks out of the Job Object.
-            _logger.LogInformation("Starting updater with CREATE_BREAKAWAY_FROM_JOB...");
-            var pid = StartDetachedProcess("cmd.exe", $"/C \"{batchPath}\"");
-            _logger.LogInformation("Update process started with PID: {PID}", pid);
+            // Task Scheduler uzerinden baslat — NSSM job object'inin tamamen disinda calisir.
+            // CREATE_BREAKAWAY_FROM_JOB, NSSM'in varsayilan ayarlarinda (BREAKAWAY_OK yok) error 5 doner.
+            // Servis durduğunda NSSM job'i kapatir (KILL_ON_JOB_CLOSE), tum child process'ler dahil
+            // cmd.exe (updater.cmd) olur — dosyalar hic kopyalanmaz. Task Scheduler bunu cozer.
+            _logger.LogInformation("Launching updater via Task Scheduler...");
+            LaunchViaTaskScheduler(batchPath);
 
             result.Success = true;
             result.Output = $"Update initiated. Downloaded {downloadedBytes / 1024}KB. Agent will restart in ~10 seconds.";
@@ -880,6 +992,58 @@ REM Batch kendini silsin (temp klasoruyle birlikte, log haric)
     }
 
     /// <summary>
+    /// Task Scheduler uzerinden batch'i baslatir — NSSM job object'inin disinda calisir.
+    /// Fallback: CreateProcess (Windows 7 veya NSSM olmayan makineler icin).
+    /// </summary>
+    private void LaunchViaTaskScheduler(string batchPath)
+    {
+        const string taskName = "MudoSoftUpdater";
+        try
+        {
+            RunProcess("schtasks.exe", $"/delete /tn \"{taskName}\" /f", 5000);
+
+            int createExit = RunProcess("schtasks.exe",
+                $"/create /tn \"{taskName}\" /sc once /st 00:00 /tr \"cmd.exe /c {batchPath}\" /ru SYSTEM /rl HIGHEST /f",
+                10000);
+            _logger.LogInformation("schtasks /create exit: {Code}", createExit);
+
+            int runExit = RunProcess("schtasks.exe", $"/run /tn \"{taskName}\"", 5000);
+            _logger.LogInformation("schtasks /run exit: {Code}", runExit);
+
+            if (runExit != 0)
+            {
+                _logger.LogWarning("schtasks /run basarisiz ({Code}), CreateProcess fallback'e geciliyor.", runExit);
+                StartDetachedProcess("cmd.exe", $"/C \"{batchPath}\"");
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Task Scheduler baslatma hatasi, CreateProcess fallback.");
+            StartDetachedProcess("cmd.exe", $"/C \"{batchPath}\"");
+        }
+    }
+
+    private int RunProcess(string fileName, string args, int timeoutMs)
+    {
+        var psi = new ProcessStartInfo
+        {
+            FileName = fileName,
+            Arguments = args,
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true
+        };
+        using var p = Process.Start(psi)!;
+        string stdout = p.StandardOutput.ReadToEnd();
+        string stderr = p.StandardError.ReadToEnd();
+        p.WaitForExit(timeoutMs);
+        if (!string.IsNullOrWhiteSpace(stdout)) _logger.LogInformation("  [{Exe}] stdout: {Out}", fileName, stdout.Trim());
+        if (!string.IsNullOrWhiteSpace(stderr)) _logger.LogWarning("  [{Exe}] stderr: {Err}", fileName, stderr.Trim());
+        return p.ExitCode;
+    }
+
+    /// <summary>
     /// Starts a process detached from the service Job Object using CREATE_BREAKAWAY_FROM_JOB.
     /// This ensures the child process survives when the service is stopped (critical for W11).
     /// </summary>
@@ -982,6 +1146,90 @@ REM Batch kendini silsin (temp klasoruyle birlikte, log haric)
     {
         public string? BackendUrl { get; set; }
         public string? Version { get; set; }
+    }
+
+    // 🔒 Faz 2 (K-3): backend'in imzaladığı update manifest
+    private class AgentUpdateManifest
+    {
+        public string? Version { get; set; }
+        public string? Sha256 { get; set; }
+        public string? Url { get; set; }
+        public string? Sig { get; set; }
+    }
+
+    #endregion
+
+    #region Barcode Excel Export
+
+    /// <summary>
+    /// TC21 el terminalinden gelen barkod+adet listesini Excel dosyasına yazar.
+    /// Payload: { items: [{barcode, quantity}], exportPath: "C:\\", fileName: "BarkodSayim_xxx.xlsx" }
+    /// </summary>
+    private CommandResultDto ExecuteBarcodeExcelExport(string payload, CommandResultDto result)
+    {
+        try
+        {
+            var options = new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+            var data = System.Text.Json.JsonSerializer.Deserialize<BarcodeExportPayload>(payload, options);
+
+            if (data == null || data.Items.Count == 0)
+            {
+                result.Output = "Payload boş veya geçersiz — hiç barkod yok.";
+                return result;
+            }
+
+            var exportPath = string.IsNullOrWhiteSpace(data.ExportPath) ? @"C:\Users\Public\Desktop" : data.ExportPath;
+            if (!Directory.Exists(exportPath))
+                Directory.CreateDirectory(exportPath);
+
+            var fileName = string.IsNullOrWhiteSpace(data.FileName)
+                ? $"DataTransfer_{DateTime.Now:yyyyMMdd_HHmmss}.xlsx"
+                : data.FileName;
+            var fullPath = System.IO.Path.Combine(exportPath, fileName);
+
+            using var workbook = new ClosedXML.Excel.XLWorkbook();
+            var ws = workbook.Worksheets.Add("Barkod Sayım");
+
+            ws.Cell(1, 1).Value = "Barkod";
+            ws.Cell(1, 2).Value = "Adet";
+            var headerRow = ws.Row(1);
+            headerRow.Style.Font.Bold = true;
+            headerRow.Style.Fill.BackgroundColor = ClosedXML.Excel.XLColor.FromHtml("#4472C4");
+            headerRow.Style.Font.FontColor = ClosedXML.Excel.XLColor.White;
+
+            for (int i = 0; i < data.Items.Count; i++)
+            {
+                ws.Cell(i + 2, 1).Value = data.Items[i].Barcode;
+                ws.Cell(i + 2, 2).Value = data.Items[i].Quantity;
+            }
+
+            ws.Columns().AdjustToContents();
+            workbook.SaveAs(fullPath);
+
+            result.Success = true;
+            result.Output = $"Excel oluşturuldu: {fullPath} ({data.Items.Count} ürün)";
+            _logger.LogInformation("BarcodeExcelExport tamamlandı: {Path}", fullPath);
+        }
+        catch (Exception ex)
+        {
+            result.Output = $"Excel oluşturma hatası: {ex.Message}";
+            _logger.LogError(ex, "BarcodeExcelExport hatası");
+        }
+
+        return result;
+    }
+
+    private class BarcodeExportPayload
+    {
+        public List<BarcodePayloadItem> Items { get; set; } = new();
+        public string ExportPath { get; set; } = @"C:\";
+        public string FileName { get; set; } = string.Empty;
+    }
+
+    private class BarcodePayloadItem
+    {
+        public string Barcode { get; set; } = string.Empty;
+        public int Quantity { get; set; }
     }
 
     #endregion

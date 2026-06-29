@@ -5,12 +5,14 @@ using Microsoft.Extensions.Options;
 using Orchestra.Agent.Interfaces;
 using Orchestra.Agent.Models;
 using Orchestra.Agent.Helpers;
+using Orchestra.Agent.Forms;
 using Orchestra.Shared.Dtos;
 using System.Drawing;
 using System.Drawing.Imaging;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using System.Diagnostics;
+using System.Windows.Forms;
 
 namespace Orchestra.Agent.Services;
 
@@ -31,6 +33,15 @@ public class RemoteDesktopService : BackgroundService
     // Streaming quality — controllable from frontend via hub message
     private int _jpegQuality = 75;
     private int _targetWidth = 1600;
+
+    // Overlay ve input lock durumu
+    private ConnectionOverlayForm? _overlayForm;
+    private Thread? _overlayThread;
+    private volatile bool _inputLocked = false;
+    private IntPtr _keyboardHook = IntPtr.Zero;
+    private IntPtr _mouseHook    = IntPtr.Zero;
+    private LowLevelProc? _keyboardProc;
+    private LowLevelProc? _mouseProc;
 
     // ── Manager-mode state ─────────────────────────────────────────────
     // Exponential backoff for helper launch retries
@@ -136,6 +147,28 @@ public class RemoteDesktopService : BackgroundService
                 _jpegQuality = Math.Clamp(quality, 20, 95);
                 _targetWidth = Math.Clamp(width, 640, 1920);
                 LogDebug($"Quality set: JPEG={_jpegQuality} Width={_targetWidth}");
+            });
+
+            // Bağlantı overlay'i — teknisyen adı ve IP'si sağ alt köşede gösterilir
+            _hubConnection.On<string, string>("ShowOverlay", (technicianName, technicianIp) =>
+            {
+                LogDebug($"ShowOverlay: {technicianName} / {technicianIp}");
+                ShowConnectionOverlay(technicianName, technicianIp);
+            });
+
+            _hubConnection.On("HideOverlay", () =>
+            {
+                LogDebug("HideOverlay");
+                HideConnectionOverlay();
+                DisableInputLock();
+            });
+
+            // Mouse/klavye kilidi
+            _hubConnection.On<bool>("SetInputLock", (locked) =>
+            {
+                LogDebug($"SetInputLock: {locked}");
+                if (locked) EnableInputLock();
+                else        DisableInputLock();
             });
 
             while (!stoppingToken.IsCancellationRequested)
@@ -484,5 +517,111 @@ public class RemoteDesktopService : BackgroundService
         var encoderParams = new EncoderParameters(1);
         encoderParams.Param[0] = new EncoderParameter(System.Drawing.Imaging.Encoder.Quality, quality);
         image.Save(stream, encoder, encoderParams);
+    }
+
+    // ── Bağlantı Overlay ─────────────────────────────────────────────────
+
+    private void ShowConnectionOverlay(string technicianName, string technicianIp)
+    {
+        HideConnectionOverlay(); // öncekini kapat
+
+        _overlayThread = new Thread(() =>
+        {
+            Application.EnableVisualStyles();
+            _overlayForm = new ConnectionOverlayForm(technicianName, technicianIp);
+            _overlayForm.ShowDialog();
+        });
+        _overlayThread.SetApartmentState(ApartmentState.STA);
+        _overlayThread.IsBackground = true;
+        _overlayThread.Start();
+    }
+
+    private void HideConnectionOverlay()
+    {
+        if (_overlayForm == null) return;
+        try
+        {
+            _overlayForm.Invoke(() =>
+            {
+                _overlayForm.Close();
+                _overlayForm.Dispose();
+            });
+        }
+        catch { }
+        _overlayForm = null;
+    }
+
+    // ── Input Lock (Mouse/Klavye kilidi) ─────────────────────────────────
+
+    private delegate IntPtr LowLevelProc(int nCode, IntPtr wParam, IntPtr lParam);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern IntPtr SetWindowsHookEx(int idHook, LowLevelProc lpfn, IntPtr hMod, uint dwThreadId);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern bool UnhookWindowsHookEx(IntPtr hhk);
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr CallNextHookEx(IntPtr hhk, int nCode, IntPtr wParam, IntPtr lParam);
+
+    [DllImport("kernel32.dll")]
+    private static extern IntPtr GetModuleHandle(string lpModuleName);
+
+    private const int WH_KEYBOARD_LL = 13;
+    private const int WH_MOUSE_LL    = 14;
+
+    private void EnableInputLock()
+    {
+        if (_inputLocked) return;
+        _inputLocked = true;
+        var hMod = GetModuleHandle(Process.GetCurrentProcess().MainModule?.ModuleName ?? "");
+
+        _keyboardProc = BlockAllHook;
+        _mouseProc    = BlockAllHook;
+
+        _keyboardHook = SetWindowsHookEx(WH_KEYBOARD_LL, _keyboardProc, hMod, 0);
+        _mouseHook    = SetWindowsHookEx(WH_MOUSE_LL,    _mouseProc,    hMod, 0);
+        LogDebug("Input lock ENABLED");
+    }
+
+    private void DisableInputLock()
+    {
+        if (!_inputLocked) return;
+        _inputLocked = false;
+        if (_keyboardHook != IntPtr.Zero) { UnhookWindowsHookEx(_keyboardHook); _keyboardHook = IntPtr.Zero; }
+        if (_mouseHook    != IntPtr.Zero) { UnhookWindowsHookEx(_mouseHook);    _mouseHook    = IntPtr.Zero; }
+        LogDebug("Input lock DISABLED");
+    }
+
+    private IntPtr BlockAllHook(int nCode, IntPtr wParam, IntPtr lParam)
+    {
+        if (_inputLocked && nCode >= 0)
+            return new IntPtr(1); // tüm girişi yut
+        return CallNextHookEx(IntPtr.Zero, nCode, wParam, lParam);
+    }
+
+    // ── Lock Screen Detection ─────────────────────────────────────────────
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr OpenDesktop(string lpszDesktop, uint dwFlags, bool fInherit, uint dwDesiredAccess);
+
+    [DllImport("user32.dll")]
+    private static extern bool CloseDesktop(IntPtr hDesktop);
+
+    [DllImport("user32.dll")]
+    private static extern bool SwitchDesktop(IntPtr hDesktop);
+
+    private const uint DESKTOP_SWITCHDESKTOP = 0x0100;
+
+    /// <summary>
+    /// Ekran kilitliyse (Windows lock screen / screensaver masaüstü aktifse) true döner.
+    /// </summary>
+    public static bool IsScreenLocked()
+    {
+        var hDesk = OpenDesktop("Default", 0, false, DESKTOP_SWITCHDESKTOP);
+        if (hDesk == IntPtr.Zero) return true; // açılamadıysa kilitli kabul et
+        bool canSwitch = SwitchDesktop(hDesk);
+        CloseDesktop(hDesk);
+        return !canSwitch;
     }
 }
