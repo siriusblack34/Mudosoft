@@ -74,6 +74,8 @@ dashboard-preview.html
 
 # Claude Code runtime lock dosyalari
 .claude/scheduled_tasks.lock
+# 🔒 SECURITY: Bu dosya izin allowlist'inde düz-metin parolalar (PGPASSWORD, admin) barındırıyor — repoya GİRMEMELİ
+.claude/settings.local.json
 
 # Agent deploy runtime artifacts (DLLs, EXE, PDB, runtime files)
 agent/deploy/*.dll

@@ -95,7 +95,7 @@
       "Bash(ipconfig | findstr /i \"IPv4\")",
       "Bash(hostname -I 2>/dev/null || python -c \"import socket; print\\(socket.gethostbyname\\(socket.gethostname\\(\\)\\)\\)\" 2>/dev/null || echo \"manual check needed\")",
       "Bash(curl -L -o /e/Mudosoft/agent/tools/tightvnc.msi \"https://www.tightvnc.com/download/2.8.85/tightvnc-2.8.85-gpl-setup-64bit.msi\")",
-      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://10.0.210.99:5102/api/devices)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://10.75.1.109/api/devices)",
       "Bash(dotnet add:*)",
       "Bash(echo \"EXIT=$?\")",
       "Bash(where msedge *)",

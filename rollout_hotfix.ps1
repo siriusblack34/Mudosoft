@@ -124,7 +124,7 @@ foreach ($target in $Targets) {
 {
   "Agent": {
     "DeviceId": "$hostName",
-    "BackendUrl": "http://10.0.210.99:5102",
+    "BackendUrl": "http://10.75.1.109",
     "StoreCode": "$storeCode",
     "HeartbeatIntervalSeconds": 15,
     "CommandPollIntervalSeconds": 5,

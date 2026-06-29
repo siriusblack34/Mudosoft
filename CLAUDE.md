@@ -3,10 +3,9 @@
 ## Project Overview
 Orchestra (eski adı: MudoSoft RMM) — kurumsal RMM platformu (mağaza, merkez, sunucu, network cihazları). Detaylar memory'de.
 
-## Production Sunucu (109) — Migration Tamamlandı 2026-05-25
-- **Eski:** 10.0.210.99 — hâlâ aktif, agent'lar buraya heartbeat atıyor (rollout bekliyor)
-- **Yeni:** 10.75.1.109 (Windows Server 2019 Standard) — DB taşındı, backend+frontend çalışır durumda
-- Migration kullanıcı tarafından manuel yapıldı; `bootstrap-109.ps1` repo köke konuldu (sadece referans, bir kez kullanıldı)
+## Production Sunucu — 10.75.1.109 (Windows Server 2019 Standard)
+- Tek aktif prod sunucu: **10.75.1.109**. Tüm agent'lar buraya heartbeat atıyor. DB + backend + frontend burada.
+- (Eski sunucu emekli edildi.)
 
 ### 109'da kurulu yapı
 ```
@@ -29,9 +28,10 @@ C:\nssm\nssm.exe         ← Windows service manager
 - Apache (XAMPP): sadece `127.0.0.1:8080`, SSL kapalı, dış dünyaya kapalı (güvenlik için)
 
 ### IIS web.config (Orchestra, C:\inetpub\orchestra\web.config)
-- `/api`, `/hubs`, `/swagger` → `http://localhost:5000/{R:0}` proxy
+- `/api`, `/hubs`, `/swagger`, `/ws` → `http://localhost:5000/{R:0}` proxy
 - SPA fallback → `/index.html`
-- WebSocket enabled (SignalR için)
+- WebSocket enabled (IIS-WebSockets feature + global appcmd enable)
+- **Önemli:** VNC proxy `/ws/vnc` path'i kullanır — rewrite rule'a `ws` eklenmeli (yoksa SPA fallback'e düşer, VNC çalışmaz)
 
 ### Frontend `.env` (C:\projects\orchestra\repo\frontend\.env)
 - `VITE_API_BASE=http://10.75.1.109` (DNS gelene kadar IP, sonra orchestra.mudo.com.tr olacak)
@@ -46,7 +46,7 @@ C:\nssm\nssm.exe         ← Windows service manager
 `Host=localhost;Port=5432;Database=orchestra;Username=postgres;Password=${DB_PASSWORD};Pooling=true;`
 
 ### Bilinen sorunlar / yapılacaklar
-- Agent rollout: 60 sahanın config'i hâlâ 99'a heartbeat atıyor — `deploy_agent.ps1` veya UpdateController üzerinden 109 URL'iyle push gerekli
+- Agent rollout: tüm filo 109'a heartbeat atıyor. Faz 2 Aşama 1 (imzalı komut doğrulayan agent v1.0.0.81) fleet'e dağıtılıyor.
 - DNS: `orchestra.mudo.com.tr` KoçSistem'den istenecek (`icmimarlar.mudo.com.tr` zaten 109'a yönlendiriliyor)
 - SSL: HTTPS yok, agent'lar HTTP üzerinden konuşacak (kurumsal CA veya win-acme sonra)
 - Docker/Guacamole: Server 2019 Docker Desktop desteklemiyor, WSL2 yolu denenmedi — Guacamole feature şu an çalışmıyor (VNC üzerinden RDP çalışmaya devam ediyor)
