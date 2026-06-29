@@ -23,5 +23,8 @@ public enum CommandType
     // Agent Management
     UpdateAgent = 20,
     InstallVnc = 21,
-    UninstallAgent = 22
+    UninstallAgent = 22,
+
+    // Mobile / El Terminali
+    BarcodeExcelExport = 30
 }

@@ -35,7 +35,11 @@ public sealed class DeviceHeartbeatDto
     public bool Online { get; set; }
 
     // Agent Info
-    public string? AgentVersion { get; set; } 
+    public string? AgentVersion { get; set; }
+
+    // Cihaz tipi bildirimi: "CentralOffice" gönderilirse DeviceType.CentralOffice set edilir.
+    // Store/POS agent'ları bu alanı göndermez; mevcut davranış korunur.
+    public string? DeviceTypeName { get; set; }
 
     public AgentCapabilities Capabilities { get; set; } = new();
 }

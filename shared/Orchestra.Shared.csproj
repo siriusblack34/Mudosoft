@@ -5,7 +5,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <RootNamespace>Orchestra.Shared</RootNamespace>
-    <AssemblyName>Mudosoft.Shared</AssemblyName>
+    <AssemblyName>Orchestra.Shared</AssemblyName>
   </PropertyGroup>
 
 </Project>

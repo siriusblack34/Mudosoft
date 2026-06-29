@@ -11,8 +11,11 @@ internal static class Program
     private static readonly string ConfigPath = @"C:\Program Files\MudoSoft\Agent\appsettings.json";
 
     private static string _deviceId = "";
-    private static string _backendUrl = "http://10.0.213.89:5102";
+    private static string _backendUrl = "http://10.75.1.109";
     private static Rectangle _screenBounds = new(0, 0, 1920, 1080);
+    private static string? _turnUrl;
+    private static string? _turnUsername;
+    private static string? _turnCredential;
 
     [STAThread]
     static void Main(string[] args)
@@ -56,7 +59,8 @@ internal static class Program
 
         try
         {
-            var webRtcService = new WebRTCService(_deviceId, _backendUrl, _screenBounds);
+            var webRtcService = new WebRTCService(_deviceId, _backendUrl, _screenBounds,
+                _turnUrl, _turnUsername, _turnCredential);
             webRtcService.OnLog += Log;
 
             await webRtcService.StartAsync();
@@ -80,10 +84,17 @@ internal static class Program
                 var json = File.ReadAllText(ConfigPath);
                 var config = JsonSerializer.Deserialize<JsonElement>(json);
 
-                if (config.TryGetProperty("Agent", out var agent) &&
-                    agent.TryGetProperty("BackendUrl", out var url))
+                if (config.TryGetProperty("Agent", out var agent))
                 {
-                    _backendUrl = url.GetString() ?? _backendUrl;
+                    if (agent.TryGetProperty("BackendUrl", out var url))
+                        _backendUrl = url.GetString() ?? _backendUrl;
+
+                    if (agent.TryGetProperty("TurnServer", out var turn))
+                    {
+                        if (turn.TryGetProperty("Url", out var tUrl)) _turnUrl = tUrl.GetString();
+                        if (turn.TryGetProperty("Username", out var tUser)) _turnUsername = tUser.GetString();
+                        if (turn.TryGetProperty("Credential", out var tCred)) _turnCredential = tCred.GetString();
+                    }
                 }
             }
         }

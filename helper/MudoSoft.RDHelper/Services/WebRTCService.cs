@@ -33,36 +33,32 @@ public class WebRTCService : IDisposable
     private VpxVideoEncoder? _videoEncoder;
     private MediaStreamTrack? _videoTrack;
     
-    // ICE servers (STUN + TURN on backend server)
-    private readonly List<RTCIceServer> _iceServers = new()
-    {
-        new RTCIceServer { urls = "stun:stun.l.google.com:19302" },
-        // TURN server on backend
-        new RTCIceServer 
-        { 
-            urls = "turn:10.0.213.89:3478",
-            username = "mudosoft",
-            credential = "Mudo2024Turn!"
-        },
-        new RTCIceServer 
-        { 
-            urls = "turn:10.0.213.89:3478?transport=tcp",
-            username = "mudosoft",
-            credential = "Mudo2024Turn!"
-        }
-    };
-    
+    // ICE servers (STUN + optional TURN from config)
+    private readonly List<RTCIceServer> _iceServers;
+
     // Log path
     private static readonly string LogPath = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
         "MudoSoft", "rdhelper_webrtc.log");
-    
+
     public event Action<string>? OnLog;
-    
-    public WebRTCService(string deviceId, string backendUrl, Rectangle screenBounds)
+
+    public WebRTCService(string deviceId, string backendUrl, Rectangle screenBounds,
+        string? turnUrl = null, string? turnUsername = null, string? turnCredential = null)
     {
         _deviceId = deviceId;
         _backendUrl = backendUrl;
+
+        _iceServers = new List<RTCIceServer>
+        {
+            new RTCIceServer { urls = "stun:stun.l.google.com:19302" }
+        };
+
+        if (!string.IsNullOrWhiteSpace(turnUrl) && !string.IsNullOrWhiteSpace(turnUsername) && !string.IsNullOrWhiteSpace(turnCredential))
+        {
+            _iceServers.Add(new RTCIceServer { urls = turnUrl, username = turnUsername, credential = turnCredential });
+            _iceServers.Add(new RTCIceServer { urls = turnUrl + "?transport=tcp", username = turnUsername, credential = turnCredential });
+        }
         _screenBounds = screenBounds;
     }
     
