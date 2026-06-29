@@ -22,6 +22,18 @@ public class VncSessionManager
     public int ActiveSessionCount => _sessions.Count;
     public int MaxConnections => _config.GetValue("Guacamole:MaxConnections", 10);
 
+    /// <summary>
+    /// Bir cihaza aktif oturum sayısını döner (tüm sistemde değil, sadece bu deviceId için).
+    /// </summary>
+    public int GetSessionCountForDevice(string deviceId) =>
+        _sessions.Values.Count(s => s.DeviceId == deviceId);
+
+    /// <summary>
+    /// Bir cihaza başka bağlanan var mı? (Tek oturum kuralı için)
+    /// </summary>
+    public bool HasActiveSessionForDevice(string deviceId) =>
+        _sessions.Values.Any(s => s.DeviceId == deviceId);
+
     public IEnumerable<VncSession> GetActiveSessions() => _sessions.Values;
 
     /// <summary>

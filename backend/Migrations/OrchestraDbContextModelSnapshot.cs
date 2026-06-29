@@ -411,6 +411,31 @@ namespace Orchestra.Backend.Migrations
                     b.ToTable("Devices");
                 });
 
+            modelBuilder.Entity("Orchestra.Backend.Models.DeviceCredential", b =>
+                {
+                    b.Property<string>("DeviceId")
+                        .HasColumnType("text");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("EnrolledAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<long>("LastCommandSeq")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateTime?>("LastSeenAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("PublicKey")
+                        .HasColumnType("text");
+
+                    b.HasKey("DeviceId");
+
+                    b.ToTable("DeviceCredentials");
+                });
+
             modelBuilder.Entity("Orchestra.Backend.Models.DeviceMetric", b =>
                 {
                     b.Property<long>("Id")
@@ -674,6 +699,66 @@ namespace Orchestra.Backend.Migrations
                     b.ToTable("InventoryImportBatches");
                 });
 
+            modelBuilder.Entity("Orchestra.Backend.Models.KasaMorningCheck", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime>("CheckedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("DeviceType")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<string>("ErrorMessage")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<string>("IpAddress")
+                        .IsRequired()
+                        .HasMaxLength(15)
+                        .HasColumnType("character varying(15)");
+
+                    b.Property<bool>("IsGeniusPosLogFound")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("IsHealthy")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("IsUncReachable")
+                        .HasColumnType("boolean");
+
+                    b.Property<int>("StoreCode")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("StoreDeviceId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("StoreName")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CheckedAt");
+
+                    b.HasIndex("IsHealthy");
+
+                    b.HasIndex("StoreCode");
+
+                    b.HasIndex("StoreDeviceId", "CheckedAt");
+
+                    b.ToTable("KasaMorningChecks");
+                });
+
             modelBuilder.Entity("Orchestra.Backend.Models.LoginHistory", b =>
                 {
                     b.Property<int>("Id")
@@ -707,6 +792,51 @@ namespace Orchestra.Backend.Migrations
                     b.HasIndex("UserId");
 
                     b.ToTable("LoginHistories");
+                });
+
+            modelBuilder.Entity("Orchestra.Backend.Models.MenuProfile", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<bool>("AllowAllByDefault")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("AllowedMenusJson")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(250)
+                        .HasColumnType("character varying(250)");
+
+                    b.Property<string>("HiddenMenusJson")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<bool>("IsSystem")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(60)
+                        .HasColumnType("character varying(60)");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Name")
+                        .IsUnique();
+
+                    b.ToTable("MenuProfiles");
                 });
 
             modelBuilder.Entity("Orchestra.Backend.Models.Note", b =>
@@ -745,6 +875,56 @@ namespace Orchestra.Backend.Migrations
                     b.HasIndex("OwnerUsername");
 
                     b.ToTable("Notes");
+                });
+
+            modelBuilder.Entity("Orchestra.Backend.Models.OnCallWorkday", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("DayType")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)");
+
+                    b.Property<string>("FullName")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("Notes")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<int>("UserId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Username")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.Property<DateTime>("WorkDate")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId");
+
+                    b.HasIndex("Username");
+
+                    b.HasIndex("WorkDate");
+
+                    b.HasIndex("UserId", "WorkDate")
+                        .IsUnique();
+
+                    b.ToTable("OnCallWorkdays");
                 });
 
             modelBuilder.Entity("Orchestra.Backend.Models.PendingUserInstall", b =>
@@ -810,6 +990,150 @@ namespace Orchestra.Backend.Migrations
                     b.HasIndex("Status", "SamAccountName");
 
                     b.ToTable("PendingUserInstalls");
+                });
+
+            modelBuilder.Entity("Orchestra.Backend.Models.PlaybookExecution", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime?>("CompletedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("DeviceId")
+                        .HasMaxLength(450)
+                        .HasColumnType("character varying(450)");
+
+                    b.Property<string>("Hostname")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<int>("PlaybookId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("ResultSummary")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
+
+                    b.Property<DateTime>("StartedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<string>("StoreCode")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.Property<string>("TriggerReason")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("DeviceId");
+
+                    b.HasIndex("PlaybookId");
+
+                    b.HasIndex("StartedAt");
+
+                    b.HasIndex("Status");
+
+                    b.ToTable("PlaybookExecutions");
+                });
+
+            modelBuilder.Entity("Orchestra.Backend.Models.PlaybookStep", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("ActionPayloadJson")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
+
+                    b.Property<string>("ActionType")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.Property<int>("DelaySeconds")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<int>("PlaybookId")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("StepOrder")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PlaybookId");
+
+                    b.HasIndex("PlaybookId", "StepOrder");
+
+                    b.ToTable("PlaybookSteps");
+                });
+
+            modelBuilder.Entity("Orchestra.Backend.Models.RemediationPlaybook", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<bool>("IsEnabled")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("TriggerConditionJson")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<string>("TriggerType")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("IsEnabled");
+
+                    b.HasIndex("TriggerType");
+
+                    b.ToTable("RemediationPlaybooks");
                 });
 
             modelBuilder.Entity("Orchestra.Backend.Models.RouterLatencySample", b =>
@@ -958,6 +1282,10 @@ namespace Orchestra.Backend.Migrations
                     b.Property<string>("TemporaryCloseReason")
                         .HasMaxLength(200)
                         .HasColumnType("character varying(200)");
+
+                    b.Property<string>("WindowsVersion")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
 
                     b.HasKey("DeviceId");
 
@@ -1502,6 +1830,15 @@ namespace Orchestra.Backend.Migrations
                     b.Property<DateTime?>("LastLoginAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<string>("MenuDenialsJson")
+                        .HasColumnType("text");
+
+                    b.Property<string>("MenuGrantsJson")
+                        .HasColumnType("text");
+
+                    b.Property<int?>("MenuProfileId")
+                        .HasColumnType("integer");
+
                     b.Property<string>("PasswordHash")
                         .IsRequired()
                         .HasColumnType("text");
@@ -1517,6 +1854,8 @@ namespace Orchestra.Backend.Migrations
                         .HasColumnType("character varying(50)");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("MenuProfileId");
 
                     b.HasIndex("Username")
                         .IsUnique();
@@ -1607,6 +1946,28 @@ namespace Orchestra.Backend.Migrations
                     b.Navigation("ImportBatch");
                 });
 
+            modelBuilder.Entity("Orchestra.Backend.Models.PlaybookExecution", b =>
+                {
+                    b.HasOne("Orchestra.Backend.Models.RemediationPlaybook", "Playbook")
+                        .WithMany("Executions")
+                        .HasForeignKey("PlaybookId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Playbook");
+                });
+
+            modelBuilder.Entity("Orchestra.Backend.Models.PlaybookStep", b =>
+                {
+                    b.HasOne("Orchestra.Backend.Models.RemediationPlaybook", "Playbook")
+                        .WithMany("Steps")
+                        .HasForeignKey("PlaybookId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Playbook");
+                });
+
             modelBuilder.Entity("Orchestra.Backend.Models.StoreOpeningItem", b =>
                 {
                     b.HasOne("Orchestra.Backend.Models.StoreOpening", "StoreOpening")
@@ -1629,9 +1990,26 @@ namespace Orchestra.Backend.Migrations
                     b.Navigation("Template");
                 });
 
+            modelBuilder.Entity("Orchestra.Backend.Models.User", b =>
+                {
+                    b.HasOne("Orchestra.Backend.Models.MenuProfile", "MenuProfile")
+                        .WithMany()
+                        .HasForeignKey("MenuProfileId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("MenuProfile");
+                });
+
             modelBuilder.Entity("Orchestra.Backend.Models.Device", b =>
                 {
                     b.Navigation("Metrics");
+                });
+
+            modelBuilder.Entity("Orchestra.Backend.Models.RemediationPlaybook", b =>
+                {
+                    b.Navigation("Executions");
+
+                    b.Navigation("Steps");
                 });
 
             modelBuilder.Entity("Orchestra.Backend.Models.StoreOpening", b =>

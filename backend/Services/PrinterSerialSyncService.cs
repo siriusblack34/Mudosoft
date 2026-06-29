@@ -141,7 +141,7 @@ public class PrinterSerialSyncService : BackgroundService
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
         cts.CancelAfter(TimeSpan.FromSeconds(PerQueryTimeoutSeconds));
 
-        var dt = await sql.ExecuteQueryAsync(connStr, query);
+        using var dt = await sql.ExecuteQueryAsync(connStr, query);
         if (dt == null || dt.Rows.Count == 0) return null;
         var raw = dt.Rows[0]["sicil"]?.ToString()?.Trim();
         if (string.IsNullOrWhiteSpace(raw)) return null;

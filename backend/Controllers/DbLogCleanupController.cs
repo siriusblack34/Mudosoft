@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
 using Orchestra.Backend.Data;
+using Orchestra.Backend.Middleware;
 using Orchestra.Backend.Services;
 using System.Data;
 using System.Text.Json;
@@ -10,6 +11,7 @@ namespace Orchestra.Backend.Controllers
 {
     [ApiController]
     [Authorize]
+    [RequireMenu("/cleanup")] // Temizlik Merkezi menüsüne bağlı
     [Route("api/db-log-cleanup")]
     public class DbLogCleanupController : ControllerBase
     {

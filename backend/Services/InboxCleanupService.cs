@@ -25,10 +25,10 @@ namespace Orchestra.Backend.Services
         private readonly IServiceScopeFactory _scopeFactory;
         private readonly ILogger<InboxCleanupService> _logger;
 
-        private const string READY_FOLDER = @"GeniusOpen\Inbox\000\Ready";
-        private const string KASA_FOLDER = @"GeniusOpen\Kasa";
+        private const string READY_FOLDER     = @"GeniusOpen\Inbox\000\Ready";
+        private const string KASA_FOLDER      = @"GeniusOpen\Kasa";
         private const string PROCESSED_FOLDER = @"GeniusOpen\Inbox\000\Ready\processed";
-        private const string SEQ_FOLDER = @"GeniusOpen\Inbox\000\Seq";
+        private const string SEQ_FOLDER       = @"GeniusOpen\Inbox\000\Seq";
 
         public InboxCleanupService(IServiceScopeFactory scopeFactory, ILogger<InboxCleanupService> logger)
         {
@@ -36,10 +36,10 @@ namespace Orchestra.Backend.Services
             _logger = logger;
         }
 
-        private string GetUncPath(string ip) => $@"\\{ip}\C$\{READY_FOLDER}";
-        private string GetKasaPath(string ip) => $@"\\{ip}\C$\{KASA_FOLDER}";
-        private string GetProcessedPath(string ip) => $@"\\{ip}\C$\{PROCESSED_FOLDER}";
-        private string GetSeqPath(string ip) => $@"\\{ip}\C$\{SEQ_FOLDER}";
+        private static string GetUncPath(string ip)       => $@"\\{ip}\C$\{READY_FOLDER}";
+        private static string GetKasaPath(string ip)      => $@"\\{ip}\C$\{KASA_FOLDER}";
+        private static string GetProcessedPath(string ip) => $@"\\{ip}\C$\{PROCESSED_FOLDER}";
+        private static string GetSeqPath(string ip)       => $@"\\{ip}\C$\{SEQ_FOLDER}";
 
         public async Task<(int successCount, int totalCount, List<CleanResultItem> results)> CleanAllAsync(
             IProgress<CleanResultItem>? progress = null,
@@ -62,87 +62,89 @@ namespace Orchestra.Backend.Services
                 try
                 {
                     CleanResultItem item;
-                    var isOnline = await IsDeviceOnlineAsync(device.CalculatedIpAddress, 2000, ct);
+                    var (isOnline, smbOpen) = await IsDeviceOnlineAsync(device.CalculatedIpAddress, 2000, ct);
+
                     if (!isOnline)
                     {
                         item = new CleanResultItem { DeviceId = device.DeviceId, StoreName = device.StoreName, Success = false, Reason = "offline" };
+                    }
+                    else if (!smbOpen)
+                    {
+                        item = new CleanResultItem { DeviceId = device.DeviceId, StoreName = device.StoreName, Success = false, Reason = "SMB (port 445) kapalı" };
                     }
                     else
                     {
                         var ip = device.CalculatedIpAddress;
 
-                        var t1 = DeleteFilesAsync(GetUncPath(ip), new[] { "*.rdy", "*.txt", "*.tmp", "*.dis" }, 30, ct);
-                        var t2 = DeleteFilesAsync(GetKasaPath(ip), new[] { "*.tmp" }, 30, ct);
-                        var t3 = DeleteFilesAsync(GetProcessedPath(ip), new[] { "*.rdy", "*.txt" }, 60, ct);
-                        var t4 = DeleteFilesAsync(GetSeqPath(ip), new[] { "*.rdy", "*.txt", "*.tmp" }, 60, ct);
+                        // Ready: direct delete (has processed/ subdir — renaming Ready would break Genius)
+                        var (del1, err1) = await DeleteFilesAsync(GetUncPath(ip), new[] { "*.rdy", "*.txt", "*.tmp", "*.dis" }, 120, ct);
+                        // processed: rename trick (leaf dir, can accumulate 5000+ files)
+                        var (del2, err2) = await RenameDirectoryAsync(GetProcessedPath(ip));
+                        // Kasa + Seq: rename trick (leaf dirs, safe to rename)
+                        var (del3, err3) = await RenameDirectoryAsync(GetKasaPath(ip));
+                        var (del4, err4) = await RenameDirectoryAsync(GetSeqPath(ip));
 
-                        await Task.WhenAll(t1, t2, t3, t4);
-
-                        var (del1, err1) = await t1;
-                        var (del2, err2) = await t2;
-                        var (del3, err3) = await t3;
-                        var (del4, err4) = await t4;
-
-                        var totalDeleted = del1 + del2 + del3 + del4;
+                        var directDeleted = del1;
+                        var renamedCount = (del2 > 0 ? 1 : 0) + (del3 > 0 ? 1 : 0) + (del4 > 0 ? 1 : 0);
                         var anyError = err1 ?? err2 ?? err3 ?? err4;
 
-                        item = (totalDeleted == 0 && anyError != null)
-                            ? new CleanResultItem { DeviceId = device.DeviceId, StoreName = device.StoreName, Success = false, Reason = anyError }
-                            : new CleanResultItem { DeviceId = device.DeviceId, StoreName = device.StoreName, Success = true, Reason = $"{totalDeleted} dosya silindi" };
+                        if (directDeleted == 0 && renamedCount == 0 && anyError != null)
+                        {
+                            item = new CleanResultItem { DeviceId = device.DeviceId, StoreName = device.StoreName, Success = false, Reason = anyError };
+                        }
+                        else
+                        {
+                            var parts = new List<string>();
+                            if (directDeleted > 0) parts.Add($"{directDeleted} dosya");
+                            if (renamedCount > 0) parts.Add($"{renamedCount} klasör yenilendi");
+                            var reason = parts.Count > 0 ? string.Join(", ", parts) : "zaten temiz";
+                            item = new CleanResultItem { DeviceId = device.DeviceId, StoreName = device.StoreName, Success = true, Reason = reason };
+                        }
+
+                        _logger.LogInformation("CleanAll: {Store} ({Ip}) — {Count} direkt, {Renamed} klasör yenilendi",
+                            device.StoreName, ip, directDeleted, renamedCount);
                     }
 
                     results.Add(item);
                     progress?.Report(item);
                 }
-                finally
-                {
-                    sem.Release();
-                }
+                finally { sem.Release(); }
             });
 
             await Task.WhenAll(tasks);
 
             var resultList = results.ToList();
             var successCount = resultList.Count(r => r.Success);
-
             return (successCount, resultList.Count, resultList);
         }
 
-        private static async Task<bool> IsDeviceOnlineAsync(string ip, int timeoutMs, CancellationToken ct)
+        private static async Task<(int deleted, string? error)> RenameDirectoryAsync(string uncPath)
         {
-            using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-            cts.CancelAfter(timeoutMs);
-            var token = cts.Token;
-
-            // 1. SQL Port (1433)
-            if (await TryTcpConnectAsync(ip, 1433, token))
-                return true;
-
-            // 2. SMB Port (445)
-            if (await TryTcpConnectAsync(ip, 445, token))
-                return true;
-
-            // 3. Ping
-            try
+            return await Task.Factory.StartNew(() =>
             {
-                using var ping = new System.Net.NetworkInformation.Ping();
-                var reply = await ping.SendPingAsync(ip, Math.Max(500, timeoutMs / 3));
-                return reply.Status == System.Net.NetworkInformation.IPStatus.Success;
-            }
-            catch { }
+                try
+                {
+                    if (!Directory.Exists(uncPath)) return (0, (string?)null);
 
-            return false;
-        }
+                    bool hasContent = Directory.EnumerateFileSystemEntries(uncPath).Any();
+                    if (!hasContent) return (0, null);
 
-        private static async Task<bool> TryTcpConnectAsync(string ip, int port, CancellationToken ct)
-        {
-            try
-            {
-                using var client = new TcpClient();
-                await client.ConnectAsync(ip, port, ct);
-                return client.Connected;
-            }
-            catch { return false; }
+                    int deleted = 0;
+                    foreach (var file in Directory.GetFiles(uncPath, "*", SearchOption.TopDirectoryOnly))
+                    {
+                        try { File.Delete(file); deleted++; } catch { }
+                    }
+                    foreach (var dir in Directory.GetDirectories(uncPath))
+                    {
+                        try { Directory.Delete(dir, true); deleted++; } catch { }
+                    }
+                    return (deleted, null);
+                }
+                catch (Exception ex)
+                {
+                    return (0, ex.Message.Length > 150 ? ex.Message[..150] : ex.Message);
+                }
+            }, CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default);
         }
 
         private static async Task<(int deleted, string? error)> DeleteFilesAsync(
@@ -150,27 +152,25 @@ namespace Orchestra.Backend.Services
         {
             using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
             cts.CancelAfter(TimeSpan.FromSeconds(timeoutSec));
-
             try
             {
-                return await Task.Run(() =>
+                var count = await Task.Factory.StartNew(() =>
                 {
                     cts.Token.ThrowIfCancellationRequested();
-                    if (!Directory.Exists(uncPath))
-                        return (0, (string?)"Klasör bulunamadı");
-
-                    int count = 0;
+                    if (!Directory.Exists(uncPath)) return 0;
+                    int deleted = 0;
                     foreach (var pattern in patterns)
                     {
-                        cts.Token.ThrowIfCancellationRequested();
-                        foreach (var f in Directory.GetFiles(uncPath, pattern))
+                        if (cts.Token.IsCancellationRequested) break;
+                        foreach (var f in Directory.EnumerateFiles(uncPath, pattern))
                         {
-                            cts.Token.ThrowIfCancellationRequested();
-                            try { System.IO.File.Delete(f); count++; } catch { }
+                            if (cts.Token.IsCancellationRequested) break;
+                            try { File.Delete(f); deleted++; } catch { }
                         }
                     }
-                    return (count, (string?)null);
-                }, cts.Token);
+                    return deleted;
+                }, CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default);
+                return (count, null);
             }
             catch (OperationCanceledException)
             {
@@ -182,5 +182,44 @@ namespace Orchestra.Backend.Services
                 return (0, ex.Message.Length > 150 ? ex.Message[..150] : ex.Message);
             }
         }
+
+        private static async Task<(bool online, bool smbOpen)> IsDeviceOnlineAsync(
+            string ip, int timeoutMs, CancellationToken ct)
+        {
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            cts.CancelAfter(timeoutMs);
+            var token = cts.Token;
+
+            var sqlTask  = TryTcpConnectAsync(ip, 1433, token);
+            var smbTask  = TryTcpConnectAsync(ip, 445,  token);
+            var pingTask = PingAsync(ip, Math.Max(500, timeoutMs / 3));
+
+            try { await Task.WhenAll(sqlTask, smbTask, pingTask); } catch { }
+
+            var smbOpen = smbTask.IsCompletedSuccessfully && smbTask.Result;
+            var online  = smbOpen
+                || (sqlTask.IsCompletedSuccessfully && sqlTask.Result)
+                || (pingTask.IsCompletedSuccessfully && pingTask.Result);
+
+            return (online, smbOpen);
+        }
+
+        private static async Task<bool> TryTcpConnectAsync(string ip, int port, CancellationToken ct)
+        {
+            try { using var c = new TcpClient(); await c.ConnectAsync(ip, port, ct); return c.Connected; }
+            catch { return false; }
+        }
+
+        private static async Task<bool> PingAsync(string ip, int timeoutMs)
+        {
+            try
+            {
+                using var ping = new System.Net.NetworkInformation.Ping();
+                var reply = await ping.SendPingAsync(ip, timeoutMs);
+                return reply.Status == System.Net.NetworkInformation.IPStatus.Success;
+            }
+            catch { return false; }
+        }
+
     }
 }

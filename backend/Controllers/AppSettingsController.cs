@@ -14,11 +14,13 @@ public class AppSettingsController : ControllerBase
 {
     private readonly OrchestraDbContext _db;
     private readonly IEmailService _emailService;
+    private readonly ILdapDirectoryService _ldap;
 
-    public AppSettingsController(OrchestraDbContext db, IEmailService emailService)
+    public AppSettingsController(OrchestraDbContext db, IEmailService emailService, ILdapDirectoryService ldap)
     {
         _db = db;
         _emailService = emailService;
+        _ldap = ldap;
     }
 
     /// <summary>
@@ -170,6 +172,86 @@ public class AppSettingsController : ControllerBase
         return Ok(new { success, message });
     }
 
+    [HttpPost("smtp/send-birthday-manual")]
+    [Authorize(Roles = "Admin")]
+    public async Task<IActionResult> SendManualBirthdayEmail([FromBody] ManualBirthdayRequest req)
+    {
+        if (string.IsNullOrWhiteSpace(req.FullName))
+            return BadRequest(new { success = false, message = "İsim boş olamaz" });
+
+        var age = req.BirthYear > 1900 ? DateTime.Now.Year - req.BirthYear : 0;
+
+        // 1) Orchestra Users tablosu
+        var dbUser = await _db.Users
+            .AsNoTracking()
+            .FirstOrDefaultAsync(u => u.IsActive && !string.IsNullOrEmpty(u.Email) &&
+                EF.Functions.ILike(u.FullName, req.FullName.Trim()));
+
+        string? email = dbUser?.Email;
+
+        // 2) LDAP fallback
+        if (email == null && _ldap.IsAvailable)
+        {
+            try
+            {
+                var ldapResults = await _ldap.SearchUsersAsync(req.FullName.Trim(), 10);
+                var match = ldapResults.FirstOrDefault(u =>
+                    u.Enabled && !string.IsNullOrEmpty(u.Email) &&
+                    string.Equals(
+                        (u.DisplayName ?? "").Trim().ToUpper(new System.Globalization.CultureInfo("tr-TR")),
+                        req.FullName.Trim().ToUpper(new System.Globalization.CultureInfo("tr-TR")),
+                        StringComparison.OrdinalIgnoreCase));
+                email = match?.Email;
+            }
+            catch { /* LDAP erişilemez, devam et */ }
+        }
+
+        if (email == null)
+            return NotFound(new { success = false, message = $"'{req.FullName}' için e-posta adresi bulunamadı (Orchestra + LDAP)" });
+
+        var html    = BirthdayNotificationService.BuildBirthdayHtml(req.FullName.Trim(), age);
+        var subject = $"🎂 Mutlu Yıllar, {req.FullName.Trim()}!";
+        var result  = await _emailService.SendAlarmEmailAsync([email], subject, html);
+
+        return Ok(new
+        {
+            success = result.AllSucceeded,
+            message = result.AllSucceeded
+                ? $"Doğum günü maili gönderildi → {email}"
+                : result.FailedRecipients.FirstOrDefault().Error ?? "Gönderilemedi"
+        });
+    }
+
+    [HttpPost("smtp/send-birthday-test")]
+    [Authorize(Roles = "Admin")]
+    public async Task<IActionResult> SendBirthdayTestEmail()
+    {
+        var username = User.Identity?.Name;
+        if (string.IsNullOrWhiteSpace(username))
+            return Unauthorized(new { success = false, message = "Kullanıcı bilgisi bulunamadı" });
+
+        var user = await _db.Users
+            .AsNoTracking()
+            .FirstOrDefaultAsync(u => u.Username == username && u.IsActive);
+
+        if (user == null)
+            return NotFound(new { success = false, message = "Kullanıcı kaydı bulunamadı" });
+
+        if (string.IsNullOrWhiteSpace(user.Email))
+            return BadRequest(new { success = false, message = "Test için önce kullanıcınıza e-posta adresi tanımlayın" });
+
+        var subject = $"🎂 [TEST] Mutlu Yıllar, {user.FullName}!";
+        var html = Orchestra.Backend.Services.BirthdayNotificationService.BuildBirthdayHtml(user.FullName, 31);
+
+        var result = await _emailService.SendAlarmEmailAsync([user.Email], subject, html);
+        var success2 = result.AllSucceeded;
+        var message2 = success2
+            ? $"Test doğum günü maili gönderildi: {user.Email}"
+            : result.FailedRecipients.FirstOrDefault().Error ?? "Gönderilemedi";
+
+        return Ok(new { success = success2, message = message2 });
+    }
+
     [HttpGet("alarm")]
     [Authorize(Roles = "Admin")]
     public async Task<IActionResult> GetAlarmConfig()
@@ -220,4 +302,10 @@ public class AlarmConfigDto
     public bool EmailAlertsEnabled { get; set; }
     public string[] AlertRecipientRoles { get; set; } = new[] { "Admin" };
     public int CooldownMinutes { get; set; } = 30;
+}
+
+public class ManualBirthdayRequest
+{
+    public string FullName { get; set; } = "";
+    public int BirthYear { get; set; }
 }

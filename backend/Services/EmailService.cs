@@ -84,7 +84,7 @@ public class EmailService : IEmailService
         try
         {
             using var client = new SmtpClient();
-            client.Timeout = 10000;
+            client.Timeout = 180000;
             await client.ConnectAsync(config.Host, config.Port, config.UseSsl
                 ? MailKit.Security.SecureSocketOptions.SslOnConnect
                 : MailKit.Security.SecureSocketOptions.StartTls);
@@ -144,7 +144,7 @@ public class EmailService : IEmailService
             message.Body = bodyBuilder.ToMessageBody();
 
             using var client = new SmtpClient();
-            client.Timeout = 30000;
+            client.Timeout = 180000;
             await client.ConnectAsync(config.Host, config.Port, config.UseSsl
                 ? MailKit.Security.SecureSocketOptions.SslOnConnect
                 : MailKit.Security.SecureSocketOptions.StartTls);
@@ -188,7 +188,7 @@ public class EmailService : IEmailService
             message.Body = bodyBuilder.ToMessageBody();
 
             using var client = new SmtpClient();
-            client.Timeout = 15000;
+            client.Timeout = 180000;
             await client.ConnectAsync(config.Host, config.Port, config.UseSsl
                 ? MailKit.Security.SecureSocketOptions.SslOnConnect
                 : MailKit.Security.SecureSocketOptions.StartTls);
@@ -218,7 +218,7 @@ public class EmailService : IEmailService
         message.Body = bodyBuilder.ToMessageBody();
 
         using var client = new SmtpClient();
-        client.Timeout = 10000;
+        client.Timeout = 180000;
         await client.ConnectAsync(config.Host, config.Port, config.UseSsl
             ? MailKit.Security.SecureSocketOptions.SslOnConnect
             : MailKit.Security.SecureSocketOptions.StartTls);

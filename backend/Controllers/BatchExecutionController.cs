@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Orchestra.Backend.Middleware;
 using Orchestra.Backend.Services;
 using System.Security.Claims;
 
@@ -7,6 +8,7 @@ namespace Orchestra.Backend.Controllers;
 
 [ApiController]
 [Authorize]
+[RequireMenu("/batch-scripts")] // tüm uçlar Acil Bat menüsüne bağlı
 [Route("api/batch")]
 public class BatchExecutionController : ControllerBase
 {

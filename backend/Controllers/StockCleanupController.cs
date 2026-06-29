@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
 using Orchestra.Backend.Data;
+using Orchestra.Backend.Middleware;
 using Orchestra.Backend.Services;
 using System.Collections.Concurrent;
 using System.Data;
@@ -11,6 +12,7 @@ namespace Orchestra.Backend.Controllers
 {
     [ApiController]
     [Authorize]
+    [RequireMenu("/cleanup")] // Temizlik Merkezi menüsüne bağlı
     [Route("api/stock-cleanup")]
     public class StockCleanupController : ControllerBase
     {

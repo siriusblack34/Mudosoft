@@ -74,11 +74,13 @@ public static class VncAuthenticator
                 // Read 16-byte challenge
                 var challenge = new byte[16];
                 await ReadExactAsync(stream, challenge, 16, ct);
-                logger.LogDebug("[VNC-Auth] Challenge received: {Hex}", BitConverter.ToString(challenge));
+                // 🔒 SECURITY (Y-6): challenge / DES anahtarı / response ARTIK LOGLANMIYOR.
+                // Bunlar loglandığında, bit-ters DES anahtarından düz-metin VNC parolası ve
+                // challenge/response'tan offline 56-bit DES brute-force ile parola kurtarılabiliyordu.
+                logger.LogDebug("[VNC-Auth] Challenge received ({Len} bytes)", challenge.Length);
 
                 // Compute DES response
                 var response = ComputeVncAuthResponse(password, challenge);
-                logger.LogDebug("[VNC-Auth] Response computed: {Hex}", BitConverter.ToString(response));
 
                 // Send response
                 await stream.WriteAsync(response, ct);
@@ -203,25 +205,11 @@ public static class VncAuthenticator
     /// </summary>
     private static byte[] ComputeVncAuthResponse(string password, byte[] challenge)
     {
-        // Build 8-byte key from password (padded with nulls, truncated to 8)
-        var passBytes = Encoding.ASCII.GetBytes(password);
-        var key = new byte[8];
-        Array.Copy(passBytes, key, Math.Min(passBytes.Length, 8));
+        // Standard RFB VNC auth: each byte of password is bit-reversed to form DES key.
+        // TightVNC 2.x stores plaintext password bytes in registry, then applies this
+        // same bit-reversal during auth → backend must do the same.
+        var key = GetDESKey(password);
 
-        // VNC quirk: reverse bits in each byte of the key
-        for (int i = 0; i < 8; i++)
-        {
-            byte b = key[i];
-            byte reversed = 0;
-            for (int j = 0; j < 8; j++)
-            {
-                if ((b & (1 << j)) != 0)
-                    reversed |= (byte)(1 << (7 - j));
-            }
-            key[i] = reversed;
-        }
-
-        // DES-ECB encrypt each 8-byte half of the challenge
         using var des = System.Security.Cryptography.DES.Create();
         des.Mode = CipherMode.ECB;
         des.Padding = PaddingMode.None;
@@ -233,6 +221,21 @@ public static class VncAuthenticator
         encryptor.TransformBlock(challenge, 8, 8, response, 8);
 
         return response;
+    }
+
+    internal static byte[] GetDESKey(string password)
+    {
+        var passBytes = Encoding.ASCII.GetBytes(password);
+        var key = new byte[8];
+        Array.Copy(passBytes, key, Math.Min(passBytes.Length, 8));
+        // RFB spec: each bit of each password byte is reversed
+        for (int i = 0; i < 8; i++)
+        {
+            byte b = key[i], r = 0;
+            for (int bit = 0; bit < 8; bit++) { r = (byte)((r << 1) | (b & 1)); b >>= 1; }
+            key[i] = r;
+        }
+        return key;
     }
 
     private static async Task ReadExactAsync(NetworkStream stream, byte[] buffer, int count, CancellationToken ct)

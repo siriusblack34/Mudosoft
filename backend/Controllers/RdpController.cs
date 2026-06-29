@@ -1,8 +1,11 @@
 using System.Net.Sockets;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using Orchestra.Backend.Data;
+using Orchestra.Backend.Hubs;
+using Orchestra.Backend.Models;
 using Orchestra.Backend.Services;
 
 namespace Orchestra.Backend.Controllers;
@@ -14,13 +17,22 @@ public class RdpController : ControllerBase
 {
     private readonly VncSessionManager _sessionManager;
     private readonly OrchestraDbContext _db;
+    private readonly ConsentRequestManager _consentManager;
+    private readonly IHubContext<RemoteDesktopHub> _hubContext;
+    private readonly ILogger<RdpController> _logger;
 
     public RdpController(
         VncSessionManager sessionManager,
-        OrchestraDbContext db)
+        OrchestraDbContext db,
+        ConsentRequestManager consentManager,
+        IHubContext<RemoteDesktopHub> hubContext,
+        ILogger<RdpController> logger)
     {
         _sessionManager = sessionManager;
         _db = db;
+        _consentManager = consentManager;
+        _hubContext = hubContext;
+        _logger = logger;
     }
 
     /// <summary>
@@ -32,7 +44,7 @@ public class RdpController : ControllerBase
     {
         var device = await _db.Devices.AsNoTracking()
             .Where(d => d.Id == deviceId)
-            .Select(d => new { d.IpAddress, d.RemoteSourceIp, d.Hostname, d.Online, d.VncInstalled, d.VncPassword, d.VncPort })
+            .Select(d => new { d.IpAddress, d.RemoteSourceIp, d.Hostname, d.Online, d.VncInstalled, d.VncPassword, d.VncPort, d.Type })
             .FirstOrDefaultAsync();
 
         if (device == null)
@@ -100,6 +112,9 @@ public class RdpController : ControllerBase
             }
         }
 
+        bool requiresConsent = device.Type == DeviceType.CentralOffice;
+        bool deviceBusy = _sessionManager.HasActiveSessionForDevice(deviceId);
+
         return Ok(new
         {
             online = device.Online,
@@ -107,9 +122,13 @@ public class RdpController : ControllerBase
             vncInstalled = true,
             ipAddress = reachableIp,
             hostname = device.Hostname ?? "",
-            vncPassword = device.VncPassword,
+            // 🔒 SECURITY (Y-6): VNC parolası artık client'a DÖNMÜYOR. /ws/vnc proxy'si parolayı
+            // sunucu tarafında DB'den okur; frontend bu değeri hiç kullanmıyordu.
             activeSessionCount = _sessionManager.ActiveSessionCount,
-            maxConnections = _sessionManager.MaxConnections
+            maxConnections = _sessionManager.MaxConnections,
+            activeSessionCountForDevice = _sessionManager.GetSessionCountForDevice(deviceId),
+            requiresConsent,
+            deviceBusy
         });
     }
 
@@ -182,5 +201,72 @@ public class RdpController : ControllerBase
 
         _sessionManager.RemoveSession(sessionId);
         return Ok(new { message = "Session terminated" });
+    }
+
+    /// <summary>
+    /// Merkez cihazı için kullanıcıya onay isteği gönderir.
+    /// Agent'a hub üzerinden RequestConsent mesajı iletilir; sonuç polling ile alınır.
+    /// </summary>
+    [HttpPost("consent-request/{deviceId}")]
+    public async Task<IActionResult> CreateConsentRequest(string deviceId)
+    {
+        var device = await _db.Devices.AsNoTracking()
+            .Where(d => d.Id == deviceId)
+            .Select(d => new { d.Type, d.Online })
+            .FirstOrDefaultAsync();
+
+        if (device == null)
+            return NotFound(new { error = "Cihaz bulunamadı" });
+
+        if (device.Type != DeviceType.CentralOffice)
+            return BadRequest(new { error = "Bu cihaz onay gerektirmiyor" });
+
+        if (!device.Online)
+            return BadRequest(new { error = "Cihaz çevrimdışı" });
+
+        var requesterUsername = User.Identity?.Name ?? "Bilinmeyen";
+        var requesterName     = User.FindFirst("name")?.Value
+                             ?? User.FindFirst(System.Security.Claims.ClaimTypes.GivenName)?.Value
+                             ?? requesterUsername;
+
+        // Önceki bekleyen istekleri iptal et — böylece eski diyaloglar kapanır
+        _consentManager.CancelPending(deviceId);
+        await _hubContext.Clients.Group($"Device_{deviceId}")
+            .SendAsync("CancelConsent");
+
+        var requestId = _consentManager.CreateRequest(deviceId, requesterName, requesterUsername);
+
+        _logger.LogInformation("[Consent] Sending RequestConsent to Device_{DeviceId} — requestId={RequestId} requester={Requester}", deviceId, requestId, requesterName);
+
+        // Agent'a hub üzerinden gönder
+        await _hubContext.Clients.Group($"Device_{deviceId}")
+            .SendAsync("RequestConsent", requestId, requesterName, requesterUsername);
+
+        _logger.LogInformation("[Consent] RequestConsent sent — requestId={RequestId}", requestId);
+
+        return Ok(new { requestId });
+    }
+
+    /// <summary>
+    /// Frontend'in onay durumunu sorgulayacağı polling endpoint'i.
+    /// </summary>
+    [HttpGet("consent-status/{requestId}")]
+    public IActionResult GetConsentStatus(string requestId)
+    {
+        var status = _consentManager.GetStatus(requestId);
+        return Ok(status);
+    }
+
+    /// <summary>
+    /// HTTP üzerinden doğrudan onay cevabı — SignalR bağlantısı geçici olarak koptuğunda bile çalışır.
+    /// requestId tahmin edilemez 32-karakter hex olduğundan ayrı auth gerekmez.
+    /// </summary>
+    [HttpPost("consent-response/{requestId}")]
+    [Microsoft.AspNetCore.Authorization.AllowAnonymous]
+    public IActionResult SubmitConsentResponseHttp(string requestId, [FromQuery] bool approved, [FromQuery] string? denyReason = null)
+    {
+        _logger.LogInformation("🔐 HTTP ConsentResponse: requestId={RequestId} approved={Approved}", requestId, approved);
+        _consentManager.Resolve(requestId, approved, denyReason);
+        return Ok(new { ok = true });
     }
 }

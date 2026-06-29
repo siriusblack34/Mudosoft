@@ -33,6 +33,7 @@ public class AuthController : ControllerBase
     }
 
     [HttpPost("login")]
+    [Microsoft.AspNetCore.Authorization.AllowAnonymous]
     public async Task<IActionResult> Login([FromBody] LoginRequest request)
     {
         if (request == null || string.IsNullOrWhiteSpace(request.Username) || string.IsNullOrWhiteSpace(request.Password))
@@ -189,6 +190,7 @@ public class AuthController : ControllerBase
     }
 
     [HttpPost("agent-auth")]
+    [Microsoft.AspNetCore.Authorization.AllowAnonymous]
     public IActionResult AgentAuth([FromBody] AgentAuthRequest request)
     {
         if (request == null || string.IsNullOrWhiteSpace(request.DeviceId) || string.IsNullOrWhiteSpace(request.ApiKey))
@@ -200,7 +202,10 @@ public class AuthController : ControllerBase
         if (validApiKey.StartsWith("${")) validApiKey = Environment.GetEnvironmentVariable("AGENT_API_KEY")
             ?? throw new InvalidOperationException("AGENT_API_KEY env var is not set");
 
-        if (request.ApiKey != validApiKey)
+        // 🔒 SECURITY: Sabit-zamanlı karşılaştırma (timing attack koruması)
+        var apiKeyMatch = System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(
+            Encoding.UTF8.GetBytes(request.ApiKey), Encoding.UTF8.GetBytes(validApiKey));
+        if (!apiKeyMatch)
         {
             _logger.LogWarning("Failed agent auth: {DeviceId}", request.DeviceId);
             return Unauthorized(new { error = "Invalid API key" });
@@ -249,9 +254,10 @@ public class AuthController : ControllerBase
     {
         var identity = HttpContext.User.Identity as ClaimsIdentity;
         var username = identity?.FindFirst(ClaimTypes.Name)?.Value;
-        var role = identity?.FindFirst(ClaimTypes.Role)?.Value ?? "Admin";
+        // 🔒 SECURITY: Rol claim'i yoksa "Admin"e YÜKSELTME. Rolü olmayan token reddedilir.
+        var role = identity?.FindFirst(ClaimTypes.Role)?.Value;
 
-        if (string.IsNullOrEmpty(username))
+        if (string.IsNullOrEmpty(username) || string.IsNullOrEmpty(role))
             return Unauthorized(new { error = "Invalid token" });
 
         var newToken = GenerateJwtToken(username, role, null);
@@ -279,6 +285,8 @@ public class AuthController : ControllerBase
         var claims = new List<Claim>
         {
             new(ClaimTypes.Name, username),
+            // Kısa "name" claim'i — frontend (overlay vb.) bağlanan kullanıcı adını doğrudan okusun
+            new("name", username),
             new(ClaimTypes.Role, role),
             new(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
             new(JwtRegisteredClaimNames.Iat, DateTimeOffset.UtcNow.ToUnixTimeSeconds().ToString())

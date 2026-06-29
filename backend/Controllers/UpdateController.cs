@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Orchestra.Backend.Middleware;
 using Orchestra.Backend.Services;
 using System.IO.Compression;
 
@@ -15,6 +16,7 @@ public class UpdateController : ControllerBase
     private readonly string _updatesPath;
     private readonly string _latestVersionFile;
     private readonly string _historyFile;
+    private readonly string _repoRoot;
 
     // Background build state
     private static bool _isBuilding = false;
@@ -27,6 +29,9 @@ public class UpdateController : ControllerBase
         _updatesPath = Path.Combine(env.ContentRootPath, "updates");
         _latestVersionFile = Path.Combine(_updatesPath, "latest.json");
         _historyFile = Path.Combine(_updatesPath, "history.json");
+        // Yayınlanan backend: C:\projects\orchestra\backend
+        // Repo:               C:\projects\orchestra\repo
+        _repoRoot = Path.GetFullPath(Path.Combine(env.ContentRootPath, "..", "repo"));
         
         // Ensure updates directory exists
         if (!Directory.Exists(_updatesPath))
@@ -41,6 +46,7 @@ public class UpdateController : ControllerBase
     /// </summary>
     [HttpPost("upload")]
     [RequestSizeLimit(100_000_000)] // 100MB limit
+    [RequireMenu("/agent-update")]
     public async Task<IActionResult> UploadAgent([FromForm] IFormFile file, [FromForm] string version)
     {
         if (file == null || file.Length == 0)
@@ -122,6 +128,50 @@ public class UpdateController : ControllerBase
     }
 
     /// <summary>
+    /// 🔒 Faz 2 (K-3): İmzalı update manifest. Agent bunu pinli backend public key ile doğrular,
+    /// indirdiği ZIP'in SHA-256'sını sha256 ile karşılaştırır ve indirmeyi PİNLİ url'den yapar.
+    /// İmza = RSA-SHA256(PKCS1) over "{version}|{sha256}|{url}".
+    /// </summary>
+    [AllowAnonymous]
+    [HttpGet("manifest")]
+    public async Task<IActionResult> GetManifest([FromServices] Orchestra.Backend.Crypto.RsaKeyProvider rsa)
+    {
+        if (!System.IO.File.Exists(_latestVersionFile))
+            return Ok(new { version = "none" });
+
+        var json = await System.IO.File.ReadAllTextAsync(_latestVersionFile);
+        var options = new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+        var info = System.Text.Json.JsonSerializer.Deserialize<LatestVersionInfo>(json, options);
+        if (info == null || string.IsNullOrEmpty(info.FileName) || string.IsNullOrEmpty(info.Version))
+            return NotFound("Invalid version info");
+
+        var filePath = Path.Combine(_updatesPath, info.FileName);
+        if (!System.IO.File.Exists(filePath))
+            return NotFound("Agent package not found");
+
+        var sha = ComputeSha256Hex(filePath);
+        // url RELATİF — agent kendi PİNLİ BackendUrl'ini başa ekler (saldırgan URL veremez).
+        var url = $"api/updates/download/{info.Version}";
+        var canonical = $"{info.Version}|{sha}|{url}";
+        var sig = Convert.ToBase64String(rsa.Sign(System.Text.Encoding.UTF8.GetBytes(canonical)));
+
+        return Ok(new { version = info.Version, sha256 = sha, url, sig });
+    }
+
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, (long len, DateTime mtime, string sha)> _shaCache = new();
+    private static string ComputeSha256Hex(string filePath)
+    {
+        var fi = new FileInfo(filePath);
+        if (_shaCache.TryGetValue(filePath, out var c) && c.len == fi.Length && c.mtime == fi.LastWriteTimeUtc)
+            return c.sha;
+        using var sha = System.Security.Cryptography.SHA256.Create();
+        using var fs = System.IO.File.OpenRead(filePath);
+        var hex = Convert.ToHexString(sha.ComputeHash(fs)).ToLowerInvariant();
+        _shaCache[filePath] = (fi.Length, fi.LastWriteTimeUtc, hex);
+        return hex;
+    }
+
+    /// <summary>
     /// Download latest agent package
     /// GET /api/updates/download
     /// </summary>
@@ -178,6 +228,7 @@ public class UpdateController : ControllerBase
     /// POST /api/updates/trigger
     /// </summary>
     [HttpPost("trigger")]
+    [RequireMenu("/agent-update")]
     public IActionResult TriggerUpdate(
         [FromQuery] string deviceId,
         [FromQuery] string? backendUrl,
@@ -297,6 +348,7 @@ echo [%date% %time%] === UPDATE COMPLETE === >> %LOG%
     /// POST /api/updates/force-update
     /// </summary>
     [HttpPost("force-update")]
+    [RequireMenu("/agent-update")]
     public IActionResult ForceUpdate(
         [FromQuery] string deviceId,
         [FromQuery] string? backendUrl,
@@ -330,6 +382,7 @@ echo [%date% %time%] === UPDATE COMPLETE === >> %LOG%
     /// POST /api/updates/trigger-all
     /// </summary>
     [HttpPost("trigger-all")]
+    [RequireMenu("/agent-update")]
     public async Task<IActionResult> TriggerUpdateAll(
         [FromQuery] string? backendUrl,
         [FromServices] Orchestra.Backend.Data.CommandQueue queue, 
@@ -409,15 +462,16 @@ echo [%date% %time%] === UPDATE COMPLETE === >> %LOG%
     /// POST /api/updates/build
     /// </summary>
     [HttpPost("build")]
+    [RequireMenu("/agent-update")]
     public IActionResult StartBuild()
     {
         if (_isBuilding) return BadRequest("Build already in progress");
 
-        var projectRoot = @"E:\Mudosoft";
+        var projectRoot = _repoRoot;
         var csprojPath = Path.Combine(projectRoot, "agent", "Orchestra.Agent.csproj");
 
         if (!System.IO.File.Exists(csprojPath))
-            return BadRequest($"Agent projesi bulunamadı: {csprojPath}");
+            return BadRequest($"Agent projesi bulunamadı: {csprojPath}  (repo: {_repoRoot})");
 
         _isBuilding = true;
         _buildStatus = "Hazırlanıyor...";
@@ -425,7 +479,7 @@ echo [%date% %time%] === UPDATE COMPLETE === >> %LOG%
 
         Task.Run(async () =>
         {
-            var outputDir = @"E:\AgentDeploy";
+            var outputDir = Path.Combine(Path.GetTempPath(), "OrchestraAgentBuild");
             try
             {
                 // 1. Read and increment version

@@ -16,6 +16,9 @@ namespace Orchestra.Backend.Data
         public DbSet<CommandResultRecord> CommandResultRecords { get; set; }
         public DbSet<ActionRecord> ActionRecords { get; set; }
 
+        // 🔒 Faz 2: cihaz kimliği + komut sıra sayacı (DeviceCredential)
+        public DbSet<DeviceCredential> DeviceCredentials => Set<DeviceCredential>();
+
         public DbSet<StoreDevice> StoreDevices { get; set; }
         public DbSet<Note> Notes { get; set; }
         public DbSet<ScheduledTask> ScheduledTasks { get; set; }
@@ -23,6 +26,7 @@ namespace Orchestra.Backend.Data
         public DbSet<StoreOfflineLog> StoreOfflineLogs { get; set; }
         public DbSet<CollectorReport> CollectorReports { get; set; }
         public DbSet<User> Users { get; set; }
+        public DbSet<MenuProfile> MenuProfiles => Set<MenuProfile>();
         public DbSet<LoginHistory> LoginHistories { get; set; }
         public DbSet<VncSessionLog> VncSessionLogs { get; set; }
         public DbSet<AppSetting> AppSettings { get; set; }
@@ -44,6 +48,12 @@ namespace Orchestra.Backend.Data
         public DbSet<StoreOpeningTemplate> StoreOpeningTemplates => Set<StoreOpeningTemplate>();
         public DbSet<StoreOpeningTemplateItem> StoreOpeningTemplateItems => Set<StoreOpeningTemplateItem>();
         public DbSet<StoreOpeningActivity> StoreOpeningActivities => Set<StoreOpeningActivity>();
+
+        public DbSet<OnCallWorkday> OnCallWorkdays => Set<OnCallWorkday>();
+        public DbSet<RemediationPlaybook> RemediationPlaybooks => Set<RemediationPlaybook>();
+        public DbSet<PlaybookStep> PlaybookSteps => Set<PlaybookStep>();
+        public DbSet<PlaybookExecution> PlaybookExecutions => Set<PlaybookExecution>();
+        public DbSet<KasaMorningCheck> KasaMorningChecks => Set<KasaMorningCheck>();
 
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -141,6 +151,17 @@ namespace Orchestra.Backend.Data
             modelBuilder.Entity<User>(e =>
             {
                 e.HasIndex(u => u.Username).IsUnique();
+
+                // Profil silinirse kullanıcıların ataması null'a düşer → sistem Teknisyen profiline geri döner.
+                e.HasOne(u => u.MenuProfile)
+                    .WithMany()
+                    .HasForeignKey(u => u.MenuProfileId)
+                    .OnDelete(DeleteBehavior.SetNull);
+            });
+
+            modelBuilder.Entity<MenuProfile>(e =>
+            {
+                e.HasIndex(p => p.Name).IsUnique();
             });
 
             modelBuilder.Entity<LoginHistory>(e =>
@@ -342,6 +363,59 @@ namespace Orchestra.Backend.Data
                 e.HasIndex(a => a.Username);
                 e.HasIndex(a => a.Category);
                 e.HasIndex(a => new { a.Category, a.CreatedAt });
+            });
+
+            //
+            // ON-CALL WORKDAY (nöbetçi çalışma günleri)
+            //
+            modelBuilder.Entity<OnCallWorkday>(e =>
+            {
+                e.HasIndex(w => w.UserId);
+                e.HasIndex(w => w.Username);
+                e.HasIndex(w => w.WorkDate);
+                e.HasIndex(w => new { w.UserId, w.WorkDate }).IsUnique();
+            });
+
+            //
+            // REMEDIATION PLAYBOOKS
+            //
+            modelBuilder.Entity<RemediationPlaybook>(e =>
+            {
+                e.HasIndex(p => p.IsEnabled);
+                e.HasIndex(p => p.TriggerType);
+                e.HasMany(p => p.Steps)
+                    .WithOne(s => s.Playbook)
+                    .HasForeignKey(s => s.PlaybookId)
+                    .OnDelete(DeleteBehavior.Cascade);
+                e.HasMany(p => p.Executions)
+                    .WithOne(ex => ex.Playbook)
+                    .HasForeignKey(ex => ex.PlaybookId)
+                    .OnDelete(DeleteBehavior.Cascade);
+            });
+
+            modelBuilder.Entity<PlaybookStep>(e =>
+            {
+                e.HasIndex(s => s.PlaybookId);
+                e.HasIndex(s => new { s.PlaybookId, s.StepOrder });
+            });
+
+            modelBuilder.Entity<PlaybookExecution>(e =>
+            {
+                e.HasIndex(ex => ex.PlaybookId);
+                e.HasIndex(ex => ex.Status);
+                e.HasIndex(ex => ex.StartedAt);
+                e.HasIndex(ex => ex.DeviceId);
+            });
+
+            //
+            // KASA MORNING CHECK (sabah 08:00 GeniusPOS sağlık kontrolü)
+            //
+            modelBuilder.Entity<KasaMorningCheck>(e =>
+            {
+                e.HasIndex(k => k.StoreCode);
+                e.HasIndex(k => k.CheckedAt);
+                e.HasIndex(k => k.IsHealthy);
+                e.HasIndex(k => new { k.StoreDeviceId, k.CheckedAt });
             });
         }
     }

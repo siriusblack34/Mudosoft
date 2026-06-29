@@ -68,7 +68,7 @@ namespace Orchestra.Backend.Services
             // Ancak asıl sorun: Hata olduğunda null dönüyor ve [] gidiyordu.
             // Artık hata fırlatılacak.
             
-            var table = await ExecuteQueryAsync(connectionString, sqlQuery);
+            using var table = await ExecuteQueryAsync(connectionString, sqlQuery);
             if (table == null) return "[]";
 
             // DataTable → List<Dictionary<string,object>>

@@ -16,12 +16,14 @@ namespace Orchestra.Backend.Controllers
         private readonly OrchestraDbContext _db;
         private readonly IEmailService _emailService;
         private readonly ILogger<KasaLogController> _logger;
+        private readonly IServiceScopeFactory _scopeFactory;
 
-        public KasaLogController(OrchestraDbContext db, IEmailService emailService, ILogger<KasaLogController> logger)
+        public KasaLogController(OrchestraDbContext db, IEmailService emailService, ILogger<KasaLogController> logger, IServiceScopeFactory scopeFactory)
         {
             _db = db;
             _emailService = emailService;
             _logger = logger;
+            _scopeFactory = scopeFactory;
         }
 
         [HttpPost("send/{deviceId}")]
@@ -104,16 +106,31 @@ namespace Orchestra.Backend.Controllers
   </div>
 </div>";
 
-                var sent = await _emailService.SendEmailWithAttachmentAsync(user.Email, subject, htmlBody, zipBytes, zipFileName);
-                if (!sent)
-                    return StatusCode(500, new { error = "E-posta gönderilemedi. SMTP ayarlarını kontrol edin." });
+                // Office 365 banner ~105s sürdüğünden (IP reputation lookup) fire-and-forget gönder.
+                // Kullanıcı hemen yanıt alır; email arka planda iletilir.
+                var capturedEmail     = user.Email;
+                var capturedSubject   = subject;
+                var capturedBody      = htmlBody;
+                var capturedBytes     = zipBytes;
+                var capturedFileName  = zipFileName;
+                var capturedDeviceId  = deviceId;
+                var capturedFileCount = fileNames.Count;
 
-                _logger.LogInformation("Kasa logları gönderildi: {DeviceId} -> {Email} ({Count} dosya)", deviceId, user.Email, fileNames.Count);
+                _ = Task.Run(async () =>
+                {
+                    using var scope = _scopeFactory.CreateScope();
+                    var emailSvc = scope.ServiceProvider.GetRequiredService<IEmailService>();
+                    var sent = await emailSvc.SendEmailWithAttachmentAsync(capturedEmail, capturedSubject, capturedBody, capturedBytes, capturedFileName);
+                    if (sent)
+                        _logger.LogInformation("Kasa logları gönderildi (bg): {DeviceId} -> {Email} ({Count} dosya)", capturedDeviceId, capturedEmail, capturedFileCount);
+                    else
+                        _logger.LogError("Kasa logları gönderilemedi (bg): {DeviceId} -> {Email}", capturedDeviceId, capturedEmail);
+                });
 
                 return Ok(new
                 {
                     success = true,
-                    message = $"{fileNames.Count} log dosyası {user.Email} adresine gönderildi",
+                    message = $"{fileNames.Count} log dosyası {user.Email} adresine gönderiliyor.",
                     fileCount = fileNames.Count
                 });
             }

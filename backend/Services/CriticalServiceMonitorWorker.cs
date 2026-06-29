@@ -30,6 +30,13 @@ public sealed class CriticalServiceMonitorWorker : BackgroundService
     private readonly ILogger<CriticalServiceMonitorWorker> _log;
     private readonly ConcurrentDictionary<string, int> _failureStreaks = new(StringComparer.OrdinalIgnoreCase);
 
+    // Dashboard'dan anlık tarama tetiklemek için
+    private static volatile bool _triggerScan = false;
+    public static void TriggerNow() => _triggerScan = true;
+
+    // Son tarama zamanı (dashboard için)
+    public static DateTime? LastScanAt { get; private set; }
+
     public CriticalServiceMonitorWorker(
         IServiceScopeFactory scopeFactory,
         IConfiguration configuration,
@@ -42,33 +49,32 @@ public sealed class CriticalServiceMonitorWorker : BackgroundService
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        var options = LoadOptions();
-        if (!options.Enabled)
-        {
-            _log.LogInformation("CriticalServiceMonitorWorker disabled by configuration");
-            return;
-        }
-
         if (!OperatingSystem.IsWindows())
         {
             _log.LogWarning("CriticalServiceMonitorWorker requires Windows WMI/CIM and will not run on this OS");
             return;
         }
 
-        _log.LogInformation(
-            "CriticalServiceMonitorWorker starting (interval: {Interval}, confirmation: {Confirmation}, concurrency: {Concurrency})",
-            options.Interval,
-            options.ConfirmationThreshold,
-            options.MaxConcurrency);
-
-        await Task.Delay(options.StartupDelay, stoppingToken);
+        await Task.Delay(LoadOptions().StartupDelay, stoppingToken);
 
         while (!stoppingToken.IsCancellationRequested)
         {
+            // Her döngüde ayarları yeniden oku (dashboard değişiklikleri anında devreye girer)
+            var options = LoadOptions();
+
+            if (!options.Enabled)
+            {
+                // Disable edilmişse kısa bekle ve tekrar dene
+                await Task.Delay(TimeSpan.FromSeconds(30), stoppingToken);
+                continue;
+            }
+
+            _triggerScan = false;
             var cycleStartedAt = DateTime.UtcNow;
             try
             {
                 await RunCycleAsync(options, stoppingToken);
+                LastScanAt = DateTime.UtcNow;
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
@@ -79,9 +85,16 @@ public sealed class CriticalServiceMonitorWorker : BackgroundService
                 _log.LogError(ex, "Critical service monitor cycle failed");
             }
 
-            var delay = options.Interval - (DateTime.UtcNow - cycleStartedAt);
-            if (delay > TimeSpan.Zero)
-                await Task.Delay(delay, stoppingToken);
+            // İnterval dolana veya trigger gelene kadar bekle (5sn'de bir kontrol)
+            var elapsed = DateTime.UtcNow - cycleStartedAt;
+            var remaining = options.Interval - elapsed;
+            while (remaining > TimeSpan.Zero && !_triggerScan && !stoppingToken.IsCancellationRequested)
+            {
+                var wait = remaining < TimeSpan.FromSeconds(5) ? remaining : TimeSpan.FromSeconds(5);
+                await Task.Delay(wait, stoppingToken);
+                elapsed = DateTime.UtcNow - cycleStartedAt;
+                remaining = options.Interval - elapsed;
+            }
         }
 
         _log.LogInformation("CriticalServiceMonitorWorker stopped");
@@ -321,7 +334,17 @@ public sealed class CriticalServiceMonitorWorker : BackgroundService
         }
         catch (Exception ex)
         {
-            return RemoteServiceQueryResult.Fail(ex.Message);
+            // WMI/DCOM erisilemiyor (cogunlukla dinamik RPC portu 49152-65535 firewall'da
+            // kapali; port 135 acik olsa bile sorgu timeout olur). SMB/445 uzerinden sc.exe
+            // ile fallback dene — bu yol saha PC'lerinde genelde acik kalir.
+            try
+            {
+                return QueryViaSc(device, serviceDefinitions, options);
+            }
+            catch (Exception scEx)
+            {
+                return RemoteServiceQueryResult.Fail($"WMI: {ex.Message} | sc.exe: {scEx.Message}");
+            }
         }
     }
 
@@ -393,6 +416,183 @@ public sealed class CriticalServiceMonitorWorker : BackgroundService
 
         return null;
     }
+
+    // ─── SMB / sc.exe fallback (WMI/DCOM erisilemediginde) ──────────────────────
+    // Port 135 acik olsa bile dinamik RPC portu kapali sahalarda WMI timeout olur.
+    // sc.exe \\ip ... SMB/445 + named-pipe uzerinden calistigindan bu yol genelde acik.
+    // Backend servis hesabi (MUDODMN\mudoadmtd) kimligiyle kimlik dogrular.
+
+    private static RemoteServiceQueryResult QueryViaSc(
+        StoreDevice device,
+        IReadOnlyList<MonitoredWindowsService> serviceDefinitions,
+        MonitorOptions options)
+    {
+        var ip = device.CalculatedIpAddress;
+
+        // Tek toplu cagri ile tum servis durumlarini al. Bazi sahalarda her sc/RPC cagrisi
+        // sabit ~20sn surdugu icin (muhtemelen reverse-DNS/RPC binding gecikmesi) servisleri
+        // tek tek sormak 8x ceza demek; tek "state= all" cagrisi cok daha ucuz. RunSc timeout'u
+        // bu gecikmeyi karsilayacak kadar genis (asagi bkz).
+        var (exit, output) = RunSc($@"\\{ip} query state= all", options.WmiTimeout);
+        if (exit != 0)
+            throw new InvalidOperationException($"sc.exe query basarisiz (exit {exit}): {output.Trim()}");
+
+        var states = ParseScQueryAll(output);
+
+        var services = new Dictionary<string, RemoteServiceSnapshot>(StringComparer.OrdinalIgnoreCase);
+        foreach (var definition in serviceDefinitions)
+        {
+            if (!states.TryGetValue(definition.Name, out var state))
+                continue;                           // kurulu degil -> caller "missing" isler
+            services[definition.Name] = new RemoteServiceSnapshot(definition.Name, definition.DisplayName, state, "");
+        }
+
+        if (options.AutoStartStoppedServices)
+        {
+            foreach (var definition in serviceDefinitions)
+            {
+                if (!services.TryGetValue(definition.Name, out var service))
+                    continue;
+                if (service.State.Equals("Running", StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                // Durmus servis: Disabled mi diye start tipini oku (yalnizca durmuslar icin).
+                var (qcExit, qcOut) = RunSc($@"\\{ip} qc ""{definition.Name}""", options.WmiTimeout);
+                var startMode = qcExit == 0
+                    ? MapScStartType(MatchGroup(qcOut, @"START_TYPE\s*:\s*\d+\s+(\w+)"))
+                    : "";
+                service = service with { StartMode = startMode };
+
+                if (IsDisabled(startMode))
+                {
+                    services[definition.Name] = service;   // Disabled -> caller saglikli sayar
+                    continue;
+                }
+
+                services[definition.Name] = ScTryStartService(ip, definition.Name, options, service);
+            }
+        }
+
+        return RemoteServiceQueryResult.Ok(services);
+    }
+
+    // "sc query state= all" ciktisini servis-adi -> normalize state sozlugune cevirir.
+    private static Dictionary<string, string> ParseScQueryAll(string output)
+    {
+        var dict = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var blocks = output.Split(new[] { "SERVICE_NAME:" }, StringSplitOptions.RemoveEmptyEntries);
+        foreach (var block in blocks)
+        {
+            var name = block.Split('\n', 2)[0].Trim();
+            if (string.IsNullOrEmpty(name))
+                continue;
+            var state = NormalizeScState(MatchGroup(block, @"STATE\s*:\s*\d+\s+(\w+)"));
+            if (!string.IsNullOrEmpty(state))
+                dict[name] = state;
+        }
+        return dict;
+    }
+
+    private static RemoteServiceSnapshot ScTryStartService(
+        string ip, string serviceName, MonitorOptions options, RemoteServiceSnapshot current)
+    {
+        var (exit, output) = RunSc($@"\\{ip} start ""{serviceName}""", options.WmiTimeout);
+        var message = $"sc start exit {exit}. {output.Trim()}";
+
+        var deadline = DateTime.UtcNow.Add(options.ServiceStartTimeout);
+        while (DateTime.UtcNow < deadline)
+        {
+            var (qExit, qOut) = RunSc($@"\\{ip} query ""{serviceName}""", options.WmiTimeout);
+            if (qExit == 0
+                && NormalizeScState(MatchGroup(qOut, @"STATE\s*:\s*\d+\s+(\w+)"))
+                    .Equals("Running", StringComparison.OrdinalIgnoreCase))
+            {
+                return current with
+                {
+                    State = "Running",
+                    StartAttempted = true,
+                    StartMessage = message,
+                    PreviousState = current.State
+                };
+            }
+
+            Thread.Sleep(options.ServiceStartPollInterval);
+        }
+
+        return current with
+        {
+            StartAttempted = true,
+            StartMessage = message,
+            PreviousState = current.State
+        };
+    }
+
+    private static (int exitCode, string output) RunSc(string arguments, TimeSpan perCallTimeout)
+    {
+        try
+        {
+            using var proc = new System.Diagnostics.Process
+            {
+                StartInfo = new System.Diagnostics.ProcessStartInfo
+                {
+                    FileName = "sc.exe",
+                    Arguments = arguments,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    UseShellExecute = false,
+                    CreateNoWindow = true
+                }
+            };
+
+            proc.Start();
+            var stdoutTask = proc.StandardOutput.ReadToEndAsync();
+            var stderrTask = proc.StandardError.ReadToEndAsync();
+
+            // Bazi sahalarda her sc/RPC cagrisi sabit ~20sn suruyor; timeout'u bunu
+            // karsilayacak kadar genis tut (WmiTimeout 8s -> 32s). Olu host'ta tek cagri
+            // bu sureyle sinirli kalir.
+            var waitMs = (int)Math.Clamp(perCallTimeout.TotalMilliseconds * 4, 15000, 40000);
+            if (!proc.WaitForExit(waitMs))
+            {
+                try { proc.Kill(true); } catch { /* yok say */ }
+                return (-1, "sc.exe zaman asimina ugradi.");
+            }
+
+            return (proc.ExitCode, stdoutTask.Result + stderrTask.Result);
+        }
+        catch (Exception ex)
+        {
+            return (-1, ex.Message);
+        }
+    }
+
+    private static string MatchGroup(string input, string pattern)
+    {
+        var m = System.Text.RegularExpressions.Regex.Match(
+            input, pattern, System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        return m.Success ? m.Groups[1].Value : "";
+    }
+
+    private static string NormalizeScState(string raw) => raw.ToUpperInvariant() switch
+    {
+        "RUNNING" => "Running",
+        "STOPPED" => "Stopped",
+        "START_PENDING" => "StartPending",
+        "STOP_PENDING" => "StopPending",
+        "PAUSED" => "Paused",
+        _ => raw
+    };
+
+    private static string MapScStartType(string raw) => raw.ToUpperInvariant() switch
+    {
+        "DISABLED" => "Disabled",
+        "AUTO_START" => "Auto",
+        "DELAYED" => "Auto",
+        "DEMAND_START" => "Manual",
+        "BOOT_START" => "Boot",
+        "SYSTEM_START" => "System",
+        _ => raw
+    };
 
     [SupportedOSPlatform("windows")]
     private static RemoteServiceSnapshot ToSnapshot(

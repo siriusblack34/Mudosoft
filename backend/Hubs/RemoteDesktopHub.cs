@@ -1,19 +1,40 @@
 using Microsoft.AspNetCore.SignalR;
+using Microsoft.AspNetCore.Authorization;
 using System.Collections.Concurrent;
 
-using Orchestra.Shared.Dtos; // EKLENDİ
+using Orchestra.Shared.Dtos;
+using Orchestra.Backend.Services;
 
 namespace Orchestra.Backend.Hubs;
 
+// 🔒 SECURITY: Hub bağlantısı anonim kalır ki token'sız AGENT'lar (yayını üreten taraf) RegisterDevice
+// yapabilsin. VIEWER (operatör) tarafından çağrılan tehlikeli metotlar metot-içi EnsureViewerAuthenticated()
+// ile korunur. Bu attribute olmadan global FallbackPolicy hub bağlantısını kilitler ve filoyu bricklerdi.
+[AllowAnonymous]
 public class RemoteDesktopHub : Hub
 {
     private readonly ILogger<RemoteDesktopHub> _logger;
-    
-    public RemoteDesktopHub(ILogger<RemoteDesktopHub> logger)
+    private readonly ConsentRequestManager _consentManager;
+
+    public RemoteDesktopHub(ILogger<RemoteDesktopHub> logger, ConsentRequestManager consentManager)
     {
         _logger = logger;
+        _consentManager = consentManager;
     }
-    
+
+    // 🔒 SECURITY (K-1): Viewer (frontend operator) tarafından çağrılan metotlar kimlik doğrulaması ister.
+    // Frontend token'ı accessTokenFactory ile gönderir → Context.User dolu olur. Agent tarafı (RegisterDevice,
+    // StreamFrame, SendAnswer, SendIceCandidate) token'sız bağlandığı için bu kapıdan geçmez; onlar yayını
+    // ÜRETEN taraf. Kimlik doğrulamasız bir saldırgan artık ekran izleyemez / input enjekte edemez.
+    private void EnsureViewerAuthenticated([System.Runtime.CompilerServices.CallerMemberName] string method = "")
+    {
+        if (Context.User?.Identity?.IsAuthenticated != true)
+        {
+            _logger.LogWarning("🚫 Unauthorized hub call '{Method}' from {ConnectionId}", method, Context.ConnectionId);
+            throw new HubException("Unauthorized");
+        }
+    }
+
     // ... (State management)
 
     // Key: DeviceId, Value: Agent ConnectionId
@@ -21,6 +42,7 @@ public class RemoteDesktopHub : Hub
 
     public async Task SendInput(string deviceId, InputEventDto input)
     {
+        EnsureViewerAuthenticated();
         _logger.LogInformation("📥 SendInput called for device {DeviceId}, Type: {Type}", deviceId, input.Type);
         // 1. Cihazın ConnectionId'sini bul
         if (_deviceAgentConnections.TryGetValue(deviceId, out var connectionId))
@@ -76,6 +98,7 @@ public class RemoteDesktopHub : Hub
     // 1. Viewer çağırır: "Ben şu cihazı izlemek istiyorum"
     public async Task JoinSession(string deviceId)
     {
+        EnsureViewerAuthenticated();
         var connectionId = Context.ConnectionId;
         _logger.LogInformation("👁️ JoinSession: Viewer {ConnectionId} wants to watch device {DeviceId}", connectionId, deviceId);
         
@@ -100,6 +123,7 @@ public class RemoteDesktopHub : Hub
     // 2. Viewer çağırır: "İzlemeyi bıraktım"
     public async Task LeaveSession(string deviceId)
     {
+        EnsureViewerAuthenticated();
         var connectionId = Context.ConnectionId;
         await Groups.RemoveFromGroupAsync(connectionId, $"AvailableViewers_{deviceId}");
         
@@ -141,6 +165,7 @@ public class RemoteDesktopHub : Hub
     // 5. Viewer çağırır: "Şu monitörü seç" (-1 = tümü, 0+ = tek monitör)
     public async Task SelectMonitor(string deviceId, int monitorIndex)
     {
+        EnsureViewerAuthenticated();
         _logger.LogInformation("🖥️ SelectMonitor: Device {DeviceId} switching to monitor {Monitor}", deviceId, monitorIndex);
         
         if (_deviceAgentConnections.TryGetValue(deviceId, out var agentConnectionId))
@@ -153,11 +178,67 @@ public class RemoteDesktopHub : Hub
         }
     }
     
+    #region Consent (Merkez Cihaz Onay Akışı)
+
+    /// <summary>
+    /// Agent çağırır: kullanıcının verdiği onay yanıtını iletir.
+    /// </summary>
+    public Task SubmitConsentResponse(string requestId, bool approved, string? denyReason = null)
+    {
+        _logger.LogInformation("🔐 SubmitConsentResponse: requestId={RequestId} approved={Approved} reason={Reason}", requestId, approved, denyReason);
+        _consentManager.Resolve(requestId, approved, denyReason);
+        return Task.CompletedTask;
+    }
+
+    #endregion
+
+    #region Session Overlay (Tüm Cihazlar)
+
+    /// <summary>
+    /// Frontend çağırır: bağlantı kurulduğunda agent overlay'i göstersin.
+    /// </summary>
+    public async Task ShowConnectionOverlay(string deviceId, string technicianName, string technicianIp)
+    {
+        EnsureViewerAuthenticated();
+        _logger.LogInformation("📺 ShowConnectionOverlay: device={DeviceId} tech={Tech}", deviceId, technicianName);
+        if (_deviceAgentConnections.TryGetValue(deviceId, out var agentConnId))
+            await Clients.Client(agentConnId).SendAsync("ShowOverlay", technicianName, technicianIp);
+    }
+
+    /// <summary>
+    /// Frontend çağırır: bağlantı kesildiğinde agent overlay'i gizlesin.
+    /// </summary>
+    public async Task HideConnectionOverlay(string deviceId)
+    {
+        EnsureViewerAuthenticated();
+        _logger.LogInformation("📺 HideConnectionOverlay: device={DeviceId}", deviceId);
+        if (_deviceAgentConnections.TryGetValue(deviceId, out var agentConnId))
+            await Clients.Client(agentConnId).SendAsync("HideOverlay");
+    }
+
+    #endregion
+
+    #region Input Lock (Mouse/Klavye Kilidi)
+
+    /// <summary>
+    /// Frontend çağırır: hedef cihazda kullanıcı girişini kilitler / açar.
+    /// </summary>
+    public async Task SetInputLock(string deviceId, bool locked)
+    {
+        EnsureViewerAuthenticated();
+        _logger.LogInformation("🔒 SetInputLock: device={DeviceId} locked={Locked}", deviceId, locked);
+        if (_deviceAgentConnections.TryGetValue(deviceId, out var agentConnId))
+            await Clients.Client(agentConnId).SendAsync("SetInputLock", locked);
+    }
+
+    #endregion
+
     #region WebRTC Signaling
     
     // Viewer -> Agent: WebRTC Offer gönder
     public async Task SendOffer(string deviceId, string sdp)
     {
+        EnsureViewerAuthenticated();
         _logger.LogInformation("📤 SendOffer: Viewer sending offer to device {DeviceId}", deviceId);
         
         if (_deviceAgentConnections.TryGetValue(deviceId, out var agentConnectionId))

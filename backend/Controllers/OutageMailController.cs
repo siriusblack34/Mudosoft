@@ -32,6 +32,12 @@ public class OutageMailRequest
 
     /// <summary>Kullanıcı önizlemeyi manuel düzenlediyse bu alan dolu gelir. Doluysa şablon yerine bu metin gönderilir.</summary>
     public string? EditedPlainText { get; set; }
+
+    /// <summary>Kullanıcı Kime alanını düzenlediyse bu alan dolu gelir.</summary>
+    public string? ToOverride { get; set; }
+
+    /// <summary>Kullanıcı CC listesini düzenlediyse bu alan dolu gelir.</summary>
+    public List<string>? CcOverride { get; set; }
 }
 
 public class OutageMailTemplate
@@ -93,45 +99,37 @@ public static class OutageMailTemplates
             Key = "internet-kesinti", Category = "İnternet", Label = "İnternet Kesintisi",
             SubjectSuffix = "İnternet Kesintisi Hk.",
             BodyTemplate =
-                "{salutation}\n\n" +
+                "{salutation},\n\n" +
                 "{storesSentence} mağaza{mizOrLariMiz}da internet erişimi tamamen kesilmiştir.{notesBlock}\n\n" +
-                "Bu kesinti süresince mağaza{mizOrLariMiz}da kasa işlemleri, stok güncellemeleri ve merkez ile veri akışı durmuş durumdadır; satış kaybı yaşanmaması adına en kısa sürede müdahale edilmesi önem arz etmektedir.\n\n" +
-                "Mağaza bilgileri aşağıda yer almaktadır:\n\n" +
                 "{storesBlock}" +
-                "Hattın durumu hakkında bilgi verebilir misiniz?\n\nİyi çalışmalar.",
+                "Acil olarak kontrol eder misiniz?\n\nİyi çalışmalar.",
         },
         new() {
             Key = "internet-yavaslik", Category = "İnternet", Label = "Yavaşlık",
             SubjectSuffix = "İnternet Yavaşlığı Hk.",
             BodyTemplate =
-                "{salutation}\n\n" +
-                "{storesSentence} mağaza{mizOrLariMiz}da internet hızında ciddi bir düşüş yaşanmaktadır.{notesBlock}\n\n" +
-                "Kasa uygulamaları yavaş açılmakta, ödeme onayları gecikmektedir; bu durum mağaza{mizOrLariMiz}n müşteri akışını olumsuz etkilemektedir.\n\n" +
-                "Mağaza bilgileri aşağıda yer almaktadır:\n\n" +
+                "{salutation},\n\n" +
+                "{storesSentence} mağaza{mizOrLariMiz}da internet hızında ciddi düşüş / saturasyon yaşanıyor.{notesBlock}\n\n" +
                 "{storesBlock}" +
-                "Hat üzerinde bir test yapıp dönüş sağlayabilir misiniz?\n\nİyi çalışmalar.",
+                "Mağazanın acil hattını kontrol edip, 30 dk'lık ip accounting çıktısı iletebilir misiniz?\n\nİyi çalışmalar.",
         },
         new() {
             Key = "internet-kopma", Category = "İnternet", Label = "Sürekli Kopma",
-            SubjectSuffix = "Sürekli İnternet Kopması Hk.",
+            SubjectSuffix = "Sürekli Hat Kopması Hk.",
             BodyTemplate =
-                "{salutation}\n\n" +
-                "{storesSentence} mağaza{mizOrLariMiz}da internet bağlantısı gün içinde defalarca kesilip yeniden gelmektedir.{notesBlock}\n\n" +
-                "Her kopma sırasında kasalar offline'a düşmekte, online ödemeler reddedilmekte ve merkezle veri eşitlemesi yarım kalmaktadır. Durumun kalıcı bir şekilde çözülmesi için hattın detaylı incelenmesi gerekmektedir.\n\n" +
-                "Mağaza bilgileri aşağıda yer almaktadır:\n\n" +
+                "{salutation},\n\n" +
+                "{storesSentence} mağaza{mizOrLariMiz}da internet bağlantısı gün içinde defalarca kesiliyor.{notesBlock}\n\n" +
                 "{storesBlock}" +
-                "Hat istikrarı için gerekli kontrollerin yapılmasını rica ederim.\n\nİyi çalışmalar.",
+                "Hattı inceleyebilir misiniz?\n\nİyi çalışmalar.",
         },
         new() {
             Key = "internet-problem", Category = "İnternet", Label = "Bağlantı Problemi",
-            SubjectSuffix = "Bağlantı Problemi Hk.",
+            SubjectSuffix = "Hat Sorunu Hk.",
             BodyTemplate =
-                "{salutation}\n\n" +
-                "{storesSentence} mağaza{mizOrLariMiz}da internet bağlantısında belirgin bir problem mevcuttur; bağlantı kurulsa da uygulamalar düzgün çalışmamaktadır.{notesBlock}\n\n" +
-                "Kasa, banka entegrasyonu ve merkez bağlantısı kesintili ilerlemekte; bu durum operasyonu doğrudan etkilemektedir.\n\n" +
-                "Mağaza bilgileri aşağıda yer almaktadır:\n\n" +
+                "{salutation},\n\n" +
+                "{storesSentence} mağaza{mizOrLariMiz}da internet bağlantısında sorun var; bağlantı kurulsa da uygulamalar düzgün çalışmıyor.{notesBlock}\n\n" +
                 "{storesBlock}" +
-                "Hat üzerinden uçtan uca bir kontrol yapabilir misiniz?\n\nİyi çalışmalar.",
+                "Mağazanın acil hattını kontrol edip, 30 dk'lık ip accounting çıktısı iletebilir misiniz?\n\nİyi çalışmalar.",
         },
 
         // ── POS / Kasa ───────────────────────────────────────────────────
@@ -139,23 +137,19 @@ public static class OutageMailTemplates
             Key = "pos-ariza", Category = "POS", Label = "Kasa Arızası",
             SubjectSuffix = "POS Arızası Hk.",
             BodyTemplate =
-                "{salutation}\n\n" +
-                "{storesSentence} mağaza{mizOrLariMiz}da POS / kasa tarafında arıza yaşanmaktadır.{notesBlock}\n\n" +
-                "Mağaza{mizOrLariMiz}da satış işlemleri etkilenmekte, müşteri kuyruğu oluşmaktadır. Kasa donanımı veya banka tarafıyla ilgili kontrolün öncelikli yapılması gerekmektedir.\n\n" +
-                "Mağaza bilgileri aşağıda yer almaktadır:\n\n" +
+                "{salutation},\n\n" +
+                "{storesSentence} mağaza{mizOrLariMiz}da POS / kasa tarafında arıza yaşanıyor.{notesBlock} Satış işlemleri aksıyor.\n\n" +
                 "{storesBlock}" +
-                "Cihaz tarafına en kısa sürede destek verebilir misiniz?\n\nİyi çalışmalar.",
+                "En kısa sürede destek verebilir misiniz?\n\nİyi çalışmalar.",
         },
         new() {
             Key = "pos-odeme", Category = "POS", Label = "Ödeme Alınamıyor",
             SubjectSuffix = "ACİL · Ödeme Alınamıyor Hk.",
             BodyTemplate =
-                "{salutation}\n\n" +
-                "{storesSentence} mağaza{mizOrLariMiz}da kasalarda ödeme alınamamaktadır; kart işlemleri red dönmekte, satış kapatılamamaktadır.{notesBlock}\n\n" +
-                "Mağaza{mizOrLariMiz}da müşteriler ödeme yapamadan ayrılmakta ve doğrudan satış kaybı yaşanmaktadır. Acil müdahale gerekmektedir.\n\n" +
-                "Mağaza bilgileri aşağıda yer almaktadır:\n\n" +
+                "{salutation},\n\n" +
+                "{storesSentence} mağaza{mizOrLariMiz}da kasalarda ödeme alınamıyor; kart işlemleri red dönmekte, satış kapatılamıyor.{notesBlock}\n\n" +
                 "{storesBlock}" +
-                "Banka / POS hattı tarafından acil olarak kontrol rica ederim.\n\nTeşekkürler.",
+                "ACİL müdahale rica ederiz.\n\nİyi çalışmalar.",
         },
     };
 
@@ -217,9 +211,15 @@ public class OutageMailController : ControllerBase
         var escaped = System.Net.WebUtility.HtmlEncode(plainText).Replace("\n", "<br/>");
         var htmlBody = $@"<div style=""font-family: Calibri, Arial, sans-serif; font-size: 14px; color: #1f2937; line-height: 1.55;"">{escaped}</div>";
 
+        // Kullanıcı Kime/CC alanını düzenlediyse override kullan
+        var toAddress = !string.IsNullOrWhiteSpace(req.ToOverride) ? req.ToOverride!.Trim() : preview.To;
+        var ccList = req.CcOverride != null
+            ? req.CcOverride.Select(e => e.Trim()).Where(e => e.Length > 0).ToList()
+            : preview.Cc;
+
         var (ok, err) = await _email.SendWithCcAsync(
-            preview.To,
-            preview.Cc,
+            toAddress,
+            ccList,
             preview.Subject,
             htmlBody,
             plainText);
@@ -228,8 +228,8 @@ public class OutageMailController : ControllerBase
         {
             Success = ok,
             Error = ok ? null : err,
-            To = preview.To,
-            Cc = preview.Cc,
+            To = toAddress,
+            Cc = ccList,
         });
     }
 
@@ -355,17 +355,15 @@ public class OutageMailController : ControllerBase
             mizOrLariMiz = "larımız"; // "mağazalarımızda"
         }
 
-        // Mağaza bilgileri bloğu — her mağaza için ad, adres, IP, iletişim
+        // Mağaza bilgileri bloğu — her mağaza için ad, IP, iletişim (kompakt format)
         var storesSb = new StringBuilder();
         for (var i = 0; i < blocks.Count; i++)
         {
             var b = blocks[i];
             var code = b.InternalStoreCode ?? b.StoreCode;
             storesSb.Append("• ").Append(code).Append(' ').Append(b.StoreName).AppendLine();
-            if (!string.IsNullOrWhiteSpace(b.Address))
-                storesSb.Append("  Adres: ").Append(b.Address).AppendLine();
             if (!string.IsNullOrWhiteSpace(b.RouterIp))
-                storesSb.Append("  Mağaza IP Adresi: ").Append(b.RouterIp).AppendLine();
+                storesSb.Append("  IP: ").Append(b.RouterIp).AppendLine();
             if (!string.IsNullOrWhiteSpace(b.ManagerName) || !string.IsNullOrWhiteSpace(b.ManagerPhone))
             {
                 storesSb.Append("  İletişim: ");

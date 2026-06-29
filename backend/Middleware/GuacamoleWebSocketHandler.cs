@@ -6,6 +6,7 @@ using Microsoft.IdentityModel.Tokens;
 using Orchestra.Backend.Data;
 using Orchestra.Backend.Models;
 using Orchestra.Backend.Services;
+using static Orchestra.Backend.Services.ConsentStatus;
 
 namespace Orchestra.Backend.Middleware;
 
@@ -76,7 +77,7 @@ internal static class VncWebSocketHandler
         var db = context.RequestServices.GetRequiredService<OrchestraDbContext>();
         var device = await db.Devices.AsNoTracking()
             .Where(d => d.Id == deviceId)
-            .Select(d => new { d.IpAddress, d.RemoteSourceIp, d.Hostname, d.Online, d.VncInstalled, d.VncPassword, d.VncPort })
+            .Select(d => new { d.IpAddress, d.RemoteSourceIp, d.Hostname, d.Online, d.VncInstalled, d.VncPassword, d.VncPort, d.Type })
             .FirstOrDefaultAsync();
 
         string? targetIp = device?.IpAddress;
@@ -103,6 +104,44 @@ internal static class VncWebSocketHandler
             return;
         }
 
+        // 3a. Tek oturum kuralı: her cihaza aynı anda sadece 1 bağlantı
+        var sessionManager = context.RequestServices.GetRequiredService<VncSessionManager>();
+        if (sessionManager.HasActiveSessionForDevice(deviceId))
+        {
+            context.Response.StatusCode = 409;
+            await context.Response.WriteAsync("Bu cihaza zaten başka bir teknisyen bağlı");
+            return;
+        }
+
+        // 3b. Merkez cihazları için onay kontrolü
+        if (device.Type == DeviceType.CentralOffice)
+        {
+            var consentRequestId = context.Request.Query["consentRequestId"].FirstOrDefault();
+            if (string.IsNullOrEmpty(consentRequestId))
+            {
+                context.Response.StatusCode = 403;
+                await context.Response.WriteAsync("Merkez cihazı için onay isteği gerekli");
+                return;
+            }
+
+            var consentMgr = context.RequestServices.GetRequiredService<ConsentRequestManager>();
+            var entry = consentMgr.Get(consentRequestId);
+            if (entry == null || entry.DeviceId != deviceId || entry.Status != ConsentStatus.Approved)
+            {
+                context.Response.StatusCode = 403;
+                await context.Response.WriteAsync(entry?.Status switch
+                {
+                    ConsentStatus.Denied  => "Kullanıcı bağlantıyı reddetti",
+                    ConsentStatus.Timeout => "Onay süresi doldu (60 saniye)",
+                    ConsentStatus.Pending => "Onay henüz alınmadı",
+                    _                     => "Geçersiz onay isteği"
+                });
+                return;
+            }
+            // Onay tek kullanımlık — tüketildi
+            consentMgr.Remove(consentRequestId);
+        }
+
         var vncPassword = device.VncPassword;
         var vncPort = device.VncPort > 0 ? device.VncPort : 5900;
 
@@ -123,7 +162,6 @@ internal static class VncWebSocketHandler
         }
 
         // 4. Open raw TCP connection to VNC server
-        var sessionManager = context.RequestServices.GetRequiredService<VncSessionManager>();
         VncSession session;
         try
         {

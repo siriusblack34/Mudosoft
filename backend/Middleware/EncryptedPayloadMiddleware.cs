@@ -49,19 +49,27 @@ public class EncryptedPayloadMiddleware
         }
 
         // ✅ TEK VE DOĞRU MODEL
-        EncryptedPayloadDto payload;
+        EncryptedPayloadDto? payload;
         try
         {
             payload = JsonSerializer.Deserialize<EncryptedPayloadDto>(
                 bodyString,
                 new JsonSerializerOptions { PropertyNameCaseInsensitive = true }
-            )!;
+            );
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Middleware: JSON Deserialization failed.");
-            ctx.Request.Body.Position = 0;
-            await _next(ctx);
+            ctx.Response.StatusCode = StatusCodes.Status400BadRequest;
+            await ctx.Response.WriteAsync("Invalid payload format");
+            return;
+        }
+
+        if (payload is null)
+        {
+            _logger.LogWarning("Middleware: Deserialized payload is null — rejecting request.");
+            ctx.Response.StatusCode = StatusCodes.Status400BadRequest;
+            await ctx.Response.WriteAsync("Null payload");
             return;
         }
 
@@ -77,7 +85,7 @@ public class EncryptedPayloadMiddleware
             var keyBundle = JsonSerializer.Deserialize<AesKeyBundle>(
                 decryptedAesKeyJson,
                 new JsonSerializerOptions { PropertyNameCaseInsensitive = true }
-            )!;
+            ) ?? throw new InvalidOperationException("AES key bundle deserialized to null");
 
             var aesKeyBytes = Convert.FromBase64String(keyBundle.Key);
             var aesIVBytes = Convert.FromBase64String(keyBundle.IV);

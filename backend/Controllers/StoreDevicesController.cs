@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Orchestra.Backend.Data;
 using Orchestra.Backend.Models;
+using Orchestra.Backend.Services;
 
 namespace Orchestra.Backend.Controllers;
 
@@ -25,10 +26,14 @@ public class StoreDevicesController : ControllerBase
     {
         var devices = await _db.StoreDevices
             .OrderBy(d => d.StoreCode).ThenBy(d => d.DeviceType)
+            // 🔒 SECURITY: DbConnectionString (içinde sa parolası var) artık liste endpoint'inde DÖNMÜYOR.
+            // Her kimlikli kullanıcı (Teknisyen dahil) tüm mağazaların SQL kimlik bilgisini çekebiliyordu.
+            // Backend SQL sorgularını deviceId'den kendisi çözer; admin düzenleme formu boş bırakıldığında
+            // mevcut connection string Update'te korunur (IsNullOrWhiteSpace guard).
             .Select(d => new
             {
                 d.DeviceId, d.StoreCode, d.StoreName, d.DeviceType,
-                d.DeviceName, d.CalculatedIpAddress, d.DbConnectionString,
+                d.DeviceName, d.CalculatedIpAddress,
                 d.IsTemporarilyClosed, d.TemporaryCloseReason, d.LastSeen
             })
             .ToListAsync();
@@ -110,6 +115,17 @@ public class StoreDevicesController : ControllerBase
                 CalculatedIpAddress = kasaIp,
                 DbConnectionString = BuildConn(kasaIp),
             });
+
+            // Yazıcılar: .41, .42, .43, ...
+            var yaziciIp = $"{ipBlock}.{40 + i}";
+            devices.Add(new StoreDevice
+            {
+                DeviceId = $"{code}-Y{i}",
+                StoreCode = code, StoreName = name,
+                DeviceType = $"Yazici-{i}", DeviceName = $"{code}-Yazici-{i}",
+                CalculatedIpAddress = yaziciIp,
+                DbConnectionString = "",
+            });
         }
 
         _db.StoreDevices.AddRange(devices);
@@ -190,6 +206,63 @@ public class StoreDevicesController : ControllerBase
         return Ok(new { success = true, device.DeviceId });
     }
 
+    /// <summary>
+    /// Mevcut tüm Kasa cihazlarına ait Yazici cihazlarını toplu olarak oluşturur.
+    /// IP: Kasa IP'nin son oktetini +10 yaparak türetir (31→41, 32→42, 33→43).
+    /// İdempotent: zaten var olan yazıcıları atlar.
+    /// </summary>
+    [HttpPost("provision-printers")]
+    [Authorize(Roles = "Admin")]
+    public async Task<IActionResult> ProvisionPrinters()
+    {
+        var kasalar = await _db.StoreDevices
+            .Where(d => d.DeviceType.StartsWith("Kasa-"))
+            .AsNoTracking()
+            .ToListAsync();
+
+        var existingYaziciIds = (await _db.StoreDevices
+            .Where(d => d.DeviceType.StartsWith("Yazici-"))
+            .Select(d => d.DeviceId)
+            .ToListAsync())
+            .ToHashSet();
+
+        var toAdd = new List<StoreDevice>();
+
+        foreach (var kasa in kasalar)
+        {
+            var dash = kasa.DeviceType.LastIndexOf('-');
+            if (dash < 0 || !int.TryParse(kasa.DeviceType.AsSpan(dash + 1), out var kasaNum)) continue;
+
+            var yaziciId = $"{kasa.StoreCode}-Y{kasaNum}";
+            if (existingYaziciIds.Contains(yaziciId)) continue;
+
+            var parts = kasa.CalculatedIpAddress.Split('.');
+            if (parts.Length != 4) continue;
+            var yaziciIp = $"{parts[0]}.{parts[1]}.{parts[2]}.{40 + kasaNum}";
+
+            toAdd.Add(new StoreDevice
+            {
+                DeviceId = yaziciId,
+                StoreCode = kasa.StoreCode,
+                StoreName = kasa.StoreName,
+                DeviceType = $"Yazici-{kasaNum}",
+                DeviceName = $"{kasa.StoreCode}-Yazici-{kasaNum}",
+                CalculatedIpAddress = yaziciIp,
+                DbConnectionString = "",
+            });
+        }
+
+        if (toAdd.Count > 0)
+        {
+            _db.StoreDevices.AddRange(toAdd);
+            await _db.SaveChangesAsync();
+            Orchestra.Backend.Services.DeviceStatusWorker.InvalidateCache();
+        }
+
+        _logger.LogInformation("ProvisionPrinters: added {Added}, skipped {Skipped}", toAdd.Count, kasalar.Count - toAdd.Count);
+        return Ok(new { added = toAdd.Count, skipped = kasalar.Count - toAdd.Count, total = kasalar.Count });
+    }
+
     [HttpDelete("{deviceId}")]
     [Authorize(Roles = "Admin")]
     public async Task<IActionResult> Delete(string deviceId)
@@ -201,6 +274,7 @@ public class StoreDevicesController : ControllerBase
         await _db.SaveChangesAsync();
 
         _logger.LogInformation("Store device deleted: {DeviceId}", deviceId);
+        DeviceStatusWorker.RemoveFromCache(deviceId);
         return Ok(new { success = true, deletedDeviceId = deviceId });
     }
 }

@@ -1,8 +1,10 @@
 using Orchestra.Shared.Dtos;
 using Orchestra.Backend.Data;
 using Orchestra.Backend.Models;
+using Orchestra.Backend.Crypto;
 using Microsoft.EntityFrameworkCore;
 using System.Globalization;
+using System.Text;
 using Orchestra.Shared.Enums;
 
 namespace Orchestra.Backend.Services;
@@ -12,15 +14,18 @@ public class AgentService : IAgentService
     private readonly CommandQueue _queue;
     private readonly ILogger<AgentService> _logger;
     private readonly OrchestraDbContext _dbContext;
+    private readonly RsaKeyProvider _rsa;
 
     public AgentService(
         CommandQueue queue,
         ILogger<AgentService> logger,
-        OrchestraDbContext dbContext)
+        OrchestraDbContext dbContext,
+        RsaKeyProvider rsa)
     {
         _queue = queue;
         _logger = logger;
         _dbContext = dbContext;
+        _rsa = rsa;
     }
 
     public async Task HandleHeartbeatAsync(DeviceHeartbeatDto dto, string? remoteSourceIp = null)
@@ -58,6 +63,14 @@ public class AgentService : IAgentService
             device.RemoteSourceIp = remoteSourceIp;
         device.Online = true;
         device.LastSeen = DateTime.UtcNow;
+
+        // Merkez agent kendisini CentralOffice olarak bildirir; bir kez set edildikten sonra değiştirilmez.
+        if (!string.IsNullOrEmpty(dto.DeviceTypeName)
+            && Enum.TryParse<DeviceType>(dto.DeviceTypeName, out var parsedType)
+            && device.Type == DeviceType.Unknown)
+        {
+            device.Type = parsedType;
+        }
 
         // System Info
         device.Os = dto.OsVersion;
@@ -124,11 +137,40 @@ public class AgentService : IAgentService
         await _dbContext.SaveChangesAsync();
     }
 
-    public Task<List<CommandDto>> GetCommandsAsync(string deviceId)
+    public async Task<List<CommandDto>> GetCommandsAsync(string deviceId)
     {
         var cmds = _queue.DequeueByDevice(deviceId);
-        return Task.FromResult(cmds);
+        if (cmds.Count == 0)
+            return cmds;
+
+        // 🔒 Faz 2 (K-2): her komutu backend özel anahtarıyla imzala (ADDITIVE — eski agent'lar yok sayar).
+        // Per-device monotonik Seq (replay koruması) DeviceCredential'da kalıcı tutulur.
+        var cred = await _dbContext.DeviceCredentials.FindAsync(deviceId);
+        if (cred == null)
+        {
+            cred = new DeviceCredential { DeviceId = deviceId, CreatedAtUtc = DateTime.UtcNow, LastCommandSeq = 0 };
+            _dbContext.DeviceCredentials.Add(cred);
+        }
+
+        var now = DateTime.UtcNow;
+        foreach (var cmd in cmds)
+        {
+            cred.LastCommandSeq++;
+            cmd.Seq = cred.LastCommandSeq;
+            cmd.IssuedAtUtc = now;
+            cmd.ExpiresAtUtc = now.AddMinutes(5);
+            cmd.Signature = Convert.ToBase64String(_rsa.Sign(CanonicalCommandBytes(cmd)));
+        }
+        cred.LastSeenAtUtc = now;
+        await _dbContext.SaveChangesAsync();
+
+        return cmds;
     }
+
+    // Komut imzası için kanonik bayt dizisi — agent tarafı AYNI formatı üretip doğrular.
+    internal static byte[] CanonicalCommandBytes(CommandDto c) =>
+        Encoding.UTF8.GetBytes(
+            $"{c.Id}|{c.DeviceId}|{(int)c.Type}|{c.Payload ?? ""}|{c.Seq}|{c.IssuedAtUtc:O}|{c.ExpiresAtUtc:O}");
 
     public async Task HandleCommandResultAsync(CommandResultDto result)
     {

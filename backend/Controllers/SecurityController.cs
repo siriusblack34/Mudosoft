@@ -1,10 +1,13 @@
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Authorization;
 using Orchestra.Backend.Crypto;
 
 namespace Orchestra.Backend.Controllers;
 
 [ApiController]
 [Route("api/[controller]")] // Endpoint: api/Security
+// 🔒 RSA public-key agent'lar tarafından JWT olmadan çekilir — bilinçli anonim (gizli değil, public key).
+[AllowAnonymous]
 public class SecurityController : ControllerBase
 {
     private readonly RsaKeyProvider _rsaProvider;

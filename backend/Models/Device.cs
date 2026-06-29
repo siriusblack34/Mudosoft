@@ -9,7 +9,8 @@ namespace Orchestra.Backend.Models
         Unknown = 0,
         POS = 1,
         PC = 2,
-        Server = 3
+        Server = 3,
+        CentralOffice = 4   // merkez çalışan bilgisayarları — her bağlantıda kullanıcı onayı gerekir
     }
 
     public class Device

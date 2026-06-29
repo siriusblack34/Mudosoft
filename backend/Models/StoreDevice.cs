@@ -72,5 +72,10 @@ namespace Orchestra.Backend.Models
         // Manuel girilebilen hostname override — sync'ler erisemediginde kullanici elle girer.
         [StringLength(256)]
         public string? Hostname { get; set; }
+
+        // Windows sürümü — SMB üzerinden kernel32.dll versiyonundan okunur.
+        // Örn: "Win10 22H2", "Win11 23H2", "Server 2019"
+        [StringLength(50)]
+        public string? WindowsVersion { get; set; }
     }
 }

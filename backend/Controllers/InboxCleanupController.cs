@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
 using Orchestra.Backend.Data;
+using Orchestra.Backend.Middleware;
 using Orchestra.Backend.Services;
 using System.Collections.Concurrent;
 using System.Net.Sockets;
@@ -10,6 +11,7 @@ namespace Orchestra.Backend.Controllers
 {
     [ApiController]
     [Authorize]
+    [RequireMenu("/cleanup")] // Temizlik Merkezi menüsüne bağlı
     [Route("api/inbox-cleanup")]
     public class InboxCleanupController : ControllerBase
     {
@@ -18,6 +20,7 @@ namespace Orchestra.Backend.Controllers
         private readonly ActivityLogService _activity;
 
         private static readonly ConcurrentDictionary<string, CleanAllJob> _cleanAllJobs = new();
+        private static readonly ConcurrentDictionary<string, CheckAllJob> _checkAllJobs = new();
 
         private const string READY_FOLDER = @"GeniusOpen\Inbox\000\Ready";
         private const string KASA_FOLDER = @"GeniusOpen\Kasa";
@@ -34,7 +37,6 @@ namespace Orchestra.Backend.Controllers
             _activity = activity;
         }
 
-        // DTO
         public class InboxStatusDto
         {
             public string DeviceId { get; set; } = "";
@@ -47,62 +49,42 @@ namespace Orchestra.Backend.Controllers
             public int TxtCount { get; set; }
             public int Tmp1Count { get; set; } // Kasa
             public int Tmp2Count { get; set; } // Ready
-            public int DisCount { get; set; } // Ready (.dis)
-            public int ProCount { get; set; } // Processed
-            public int SeqCount { get; set; } // Seq
+            public int DisCount { get; set; }  // Ready (.dis)
+            public int ProCount { get; set; }  // Processed
+            public int SeqCount { get; set; }  // Seq
             public int TotalCount { get; set; }
             public string Status { get; set; } = "unknown";
             public string? ErrorMessage { get; set; }
         }
 
-        private string GetUncPath(string ip)
-        {
-            return $@"\\{ip}\C$\{READY_FOLDER}";
-        }
-
-        private string GetKasaPath(string ip)
-        {
-            return $@"\\{ip}\C$\{KASA_FOLDER}";
-        }
-
-        private string GetProcessedPath(string ip)
-        {
-            return $@"\\{ip}\C$\{PROCESSED_FOLDER}";
-        }
-
-        private string GetSeqPath(string ip)
-        {
-            return $@"\\{ip}\C$\{SEQ_FOLDER}";
-        }
+        private static string GetUncPath(string ip) => $@"\\{ip}\C$\{READY_FOLDER}";
+        private static string GetKasaPath(string ip) => $@"\\{ip}\C$\{KASA_FOLDER}";
+        private static string GetProcessedPath(string ip) => $@"\\{ip}\C$\{PROCESSED_FOLDER}";
+        private static string GetSeqPath(string ip) => $@"\\{ip}\C$\{SEQ_FOLDER}";
 
         /// <summary>
-        /// Cihazın online olup olmadığını kontrol et: SQL(1433) -> SMB(445) -> Ping
-        /// CancellationToken ile timeout olduğunda bağlantı temiz şekilde iptal edilir.
+        /// Tüm portları paralel kontrol eder. (online, smbOpen) döner.
+        /// smbOpen=true → C$ UNC erişimi mümkün demektir.
         /// </summary>
-        private async Task<bool> IsDeviceOnlineAsync(string ip, int timeoutMs = 2000, CancellationToken ct = default)
+        private static async Task<(bool online, bool smbOpen)> IsDeviceOnlineAsync(
+            string ip, int timeoutMs = 2000, CancellationToken ct = default)
         {
             using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
             cts.CancelAfter(timeoutMs);
             var token = cts.Token;
 
-            // 1. SQL Port (1433)
-            if (await TryTcpConnectAsync(ip, 1433, token))
-                return true;
+            var sqlTask = TryTcpConnectAsync(ip, 1433, token);
+            var smbTask = TryTcpConnectAsync(ip, 445, token);
+            var pingTask = PingAsync(ip, Math.Max(500, timeoutMs / 3));
 
-            // 2. SMB Port (445)
-            if (await TryTcpConnectAsync(ip, 445, token))
-                return true;
+            try { await Task.WhenAll(sqlTask, smbTask, pingTask); } catch { }
 
-            // 3. Ping
-            try
-            {
-                using var ping = new System.Net.NetworkInformation.Ping();
-                var reply = await ping.SendPingAsync(ip, Math.Max(500, timeoutMs / 3));
-                return reply.Status == System.Net.NetworkInformation.IPStatus.Success;
-            }
-            catch { }
+            var smbOpen = smbTask.IsCompletedSuccessfully && smbTask.Result;
+            var online = smbOpen
+                || (sqlTask.IsCompletedSuccessfully && sqlTask.Result)
+                || (pingTask.IsCompletedSuccessfully && pingTask.Result);
 
-            return false;
+            return (online, smbOpen);
         }
 
         private static async Task<bool> TryTcpConnectAsync(string ip, int port, CancellationToken ct)
@@ -116,15 +98,22 @@ namespace Orchestra.Backend.Controllers
             catch { return false; }
         }
 
-        /// <summary>
-        /// UNC path üzerinde dosya sayımı. CancellationToken ile iptal edilebilir.
-        /// </summary>
-        private async Task<(int rdy, int txt, int tmp, int dis, string? error)> GetFileCountsAsync(
+        private static async Task<bool> PingAsync(string ip, int timeoutMs)
+        {
+            try
+            {
+                using var ping = new System.Net.NetworkInformation.Ping();
+                var reply = await ping.SendPingAsync(ip, timeoutMs);
+                return reply.Status == System.Net.NetworkInformation.IPStatus.Success;
+            }
+            catch { return false; }
+        }
+
+        private static async Task<(int rdy, int txt, int tmp, int dis, string? error)> GetFileCountsAsync(
             string uncPath, int timeoutSec, CancellationToken ct)
         {
             using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
             cts.CancelAfter(TimeSpan.FromSeconds(timeoutSec));
-
             try
             {
                 return await Task.Run(() =>
@@ -154,15 +143,11 @@ namespace Orchestra.Backend.Controllers
             }
         }
 
-        /// <summary>
-        /// Kasa klasöründeki .tmp dosyalarını say
-        /// </summary>
-        private async Task<(int count, string? error)> GetKasaCountsAsync(
+        private static async Task<(int count, string? error)> GetKasaCountsAsync(
             string uncPath, int timeoutSec, CancellationToken ct)
         {
             using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
             cts.CancelAfter(TimeSpan.FromSeconds(timeoutSec));
-
             try
             {
                 return await Task.Run(() =>
@@ -170,10 +155,8 @@ namespace Orchestra.Backend.Controllers
                     cts.Token.ThrowIfCancellationRequested();
                     if (!Directory.Exists(uncPath))
                         return (0, (string?)"Klasör bulunamadı");
-
                     cts.Token.ThrowIfCancellationRequested();
-                    var tmpFiles = Directory.GetFiles(uncPath, "*.tmp");
-                    return (tmpFiles.Length, (string?)null);
+                    return (Directory.GetFiles(uncPath, "*.tmp").Length, (string?)null);
                 }, cts.Token);
             }
             catch (OperationCanceledException)
@@ -186,25 +169,23 @@ namespace Orchestra.Backend.Controllers
             }
         }
 
-        private async Task<(int count, string? error)> GetProcessedCountsAsync(
+        private static async Task<(int count, string? error)> GetProcessedCountsAsync(
             string uncPath, int timeoutSec, CancellationToken ct)
         {
             using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
             cts.CancelAfter(TimeSpan.FromSeconds(timeoutSec));
-
             try
             {
                 return await Task.Run(() =>
                 {
                     cts.Token.ThrowIfCancellationRequested();
                     if (!Directory.Exists(uncPath))
-                        return (0, (string?)"Klasör bulunamadı");
-
+                        return (0, (string?)null);
                     cts.Token.ThrowIfCancellationRequested();
-                    var rdyFiles = Directory.GetFiles(uncPath, "*.rdy");
+                    var rdy = Directory.GetFiles(uncPath, "*.rdy").Length;
                     cts.Token.ThrowIfCancellationRequested();
-                    var txtFiles = Directory.GetFiles(uncPath, "*.txt");
-                    return (rdyFiles.Length + txtFiles.Length, (string?)null);
+                    var txt = Directory.GetFiles(uncPath, "*.txt").Length;
+                    return (rdy + txt, (string?)null);
                 }, cts.Token);
             }
             catch (OperationCanceledException)
@@ -218,27 +199,25 @@ namespace Orchestra.Backend.Controllers
             }
         }
 
-        private async Task<(int count, string? error)> GetSeqCountsAsync(
+        private static async Task<(int count, string? error)> GetSeqCountsAsync(
             string uncPath, int timeoutSec, CancellationToken ct)
         {
             using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
             cts.CancelAfter(TimeSpan.FromSeconds(timeoutSec));
-
             try
             {
                 return await Task.Run(() =>
                 {
                     cts.Token.ThrowIfCancellationRequested();
                     if (!Directory.Exists(uncPath))
-                        return (0, (string?)"Klasör bulunamadı");
-
+                        return (0, (string?)null);
                     cts.Token.ThrowIfCancellationRequested();
-                    var rdyFiles = Directory.GetFiles(uncPath, "*.rdy");
+                    var rdy = Directory.GetFiles(uncPath, "*.rdy").Length;
                     cts.Token.ThrowIfCancellationRequested();
-                    var txtFiles = Directory.GetFiles(uncPath, "*.txt");
+                    var txt = Directory.GetFiles(uncPath, "*.txt").Length;
                     cts.Token.ThrowIfCancellationRequested();
-                    var tmpFiles = Directory.GetFiles(uncPath, "*.tmp");
-                    return (rdyFiles.Length + txtFiles.Length + tmpFiles.Length, (string?)null);
+                    var tmp = Directory.GetFiles(uncPath, "*.tmp").Length;
+                    return (rdy + txt + tmp, (string?)null);
                 }, cts.Token);
             }
             catch (OperationCanceledException)
@@ -253,52 +232,90 @@ namespace Orchestra.Backend.Controllers
         }
 
         // ===========================================================
-        // 1) TÜM PC'LERİ KONTROL ET
+        // 1) TÜM PC'LERİ KONTROL ET — JOB-BASED
         // ===========================================================
         [HttpPost("check-all")]
-        public async Task<IActionResult> CheckAll(CancellationToken ct)
+        public async Task<IActionResult> CheckAll([FromServices] IServiceScopeFactory scopeFactory, CancellationToken ct)
         {
-            var pcDevices = await _db.StoreDevices
+            var pcCount = await _db.StoreDevices
                 .AsNoTracking()
-                .Where(d => d.DeviceType == "PC" || d.DeviceType.ToLower() == "gecici")
-                .ToListAsync(ct);
+                .CountAsync(d => d.DeviceType == "PC" || d.DeviceType.ToLower() == "gecici", ct);
 
-            _logger.LogInformation("Inbox check-all starting for {Count} devices (PC+Gecici)", pcDevices.Count);
+            // Eski tamamlanmış job'ları temizle
+            var stale = _checkAllJobs
+                .Where(kvp => kvp.Value.CompletedAtUtc.HasValue &&
+                    (DateTime.UtcNow - kvp.Value.CompletedAtUtc.Value).TotalHours > 1)
+                .Select(kvp => kvp.Key).ToList();
+            foreach (var k in stale) _checkAllJobs.TryRemove(k, out _);
 
-            var results = new List<InboxStatusDto>();
-            // 10 eşzamanlı cihaz — her biri 4 UNC scan yapıyor, toplam ~40 bloklayan I/O
-            using var sem = new SemaphoreSlim(10);
+            var jobId = Guid.NewGuid().ToString("N")[..8];
+            var job = new CheckAllJob { JobId = jobId, TotalCount = pcCount, StartedAtUtc = DateTime.UtcNow };
+            _checkAllJobs[jobId] = job;
 
-            var tasks = pcDevices.Select(async device =>
+            _ = Task.Run(async () =>
             {
-                await sem.WaitAsync(ct);
                 try
                 {
-                    var dto = await CheckDeviceAsync(device, ct);
-                    lock (results) results.Add(dto);
+                    using var scope = scopeFactory.CreateScope();
+                    var db = scope.ServiceProvider.GetRequiredService<OrchestraDbContext>();
+
+                    var pcDevices = await db.StoreDevices
+                        .AsNoTracking()
+                        .Where(d => d.DeviceType == "PC" || d.DeviceType.ToLower() == "gecici")
+                        .ToListAsync();
+
+                    using var sem = new SemaphoreSlim(10);
+                    var tasks = pcDevices.Select(async device =>
+                    {
+                        await sem.WaitAsync();
+                        try
+                        {
+                            var dto = await CheckDeviceAsync(device, CancellationToken.None);
+                            lock (job.Lock) { job.Results.Add(dto); job.CompletedCount = job.Results.Count; }
+                        }
+                        finally { sem.Release(); }
+                    });
+
+                    await Task.WhenAll(tasks);
+                    lock (job.Lock) { job.CompletedAtUtc = DateTime.UtcNow; }
                 }
-                finally
+                catch (Exception ex)
                 {
-                    sem.Release();
+                    lock (job.Lock) { job.Error = ex.Message; job.CompletedAtUtc = DateTime.UtcNow; }
                 }
             });
 
-            await Task.WhenAll(tasks);
+            _logger.LogInformation("Inbox check-all job {JobId} started for {Count} devices", jobId, pcCount);
+            return Accepted(new { jobId, totalCount = pcCount });
+        }
 
-            var ordered = results.OrderBy(r => r.StoreCode).ToList();
-            _logger.LogInformation("Inbox check-all done: {Clean} clean, {Dirty} dirty, {Offline} offline, {Error} error",
-                ordered.Count(r => r.Status == "clean"),
-                ordered.Count(r => r.Status == "dirty"),
-                ordered.Count(r => r.Status == "offline"),
-                ordered.Count(r => r.Status == "error"));
+        // ===========================================================
+        // 1b) KONTROL JOB DURUMU
+        // ===========================================================
+        [HttpGet("check-all/{jobId}")]
+        public IActionResult GetCheckAllStatus(string jobId)
+        {
+            if (!_checkAllJobs.TryGetValue(jobId, out var job))
+                return NotFound(new { error = "Job bulunamadi" });
 
-            return Ok(ordered);
+            lock (job.Lock)
+            {
+                return Ok(new
+                {
+                    jobId = job.JobId,
+                    totalCount = job.TotalCount,
+                    completedCount = job.CompletedCount,
+                    isCompleted = job.CompletedAtUtc.HasValue,
+                    error = job.Error,
+                    results = job.Results.OrderBy(r => r.StoreCode).ToList()
+                });
+            }
         }
 
         /// <summary>
-        /// Tek cihazın inbox durumunu kontrol et (check-all ve check-single ortak kullanır)
+        /// Tek cihazı kontrol et. SMB porta bakarak UNC erişimini önceden doğrular.
         /// </summary>
-        private async Task<InboxStatusDto> CheckDeviceAsync(
+        private static async Task<InboxStatusDto> CheckDeviceAsync(
             Orchestra.Backend.Models.StoreDevice device, CancellationToken ct)
         {
             var dto = new InboxStatusDto
@@ -310,7 +327,7 @@ namespace Orchestra.Backend.Controllers
                 DeviceType = device.DeviceType
             };
 
-            var isOnline = await IsDeviceOnlineAsync(device.CalculatedIpAddress, 2000, ct);
+            var (isOnline, smbOpen) = await IsDeviceOnlineAsync(device.CalculatedIpAddress, 2000, ct);
             dto.IsOnline = isOnline;
 
             if (!isOnline)
@@ -319,25 +336,32 @@ namespace Orchestra.Backend.Controllers
                 return dto;
             }
 
-            var ip = device.CalculatedIpAddress;
-
-            // 4 klasörü paralel tara (aynı cihaz içinde paralel — hepsi aynı IP)
-            var inboxTask = GetFileCountsAsync(GetUncPath(ip), 15, ct);
-            var kasaTask = GetKasaCountsAsync(GetKasaPath(ip), 15, ct);
-            var proTask = GetProcessedCountsAsync(GetProcessedPath(ip), 30, ct);
-            var seqTask = GetSeqCountsAsync(GetSeqPath(ip), 30, ct);
-
-            await Task.WhenAll(inboxTask, kasaTask, proTask, seqTask);
-
-            var (rdy, txt, tmp2, dis, errorInbox) = await inboxTask;
-            var (tmp1, errorKasa) = await kasaTask;
-            var (pro, errorProcessed) = await proTask;
-            var (seq, errorSeq) = await seqTask;
-
-            if (errorInbox != null || errorKasa != null || errorProcessed != null || errorSeq != null)
+            // Port 445 (SMB) kapalıysa UNC erişimi mümkün değil — thread'i bloklama
+            if (!smbOpen)
             {
                 dto.Status = "error";
-                dto.ErrorMessage = $"{errorInbox ?? ""} | {errorKasa ?? ""} | {errorProcessed ?? ""} | {errorSeq ?? ""}".Trim(' ', '|');
+                dto.ErrorMessage = "SMB (port 445) kapalı — C$ erişimi mümkün değil";
+                return dto;
+            }
+
+            var ip = device.CalculatedIpAddress;
+
+            // Sıralı tara: dolu/parçalı disklerde 4 eş zamanlı UNC isteği disk'i daha da yavaşlatır.
+            // Sıralı → daha az disk baskısı, daha güvenilir sonuç.
+            var (rdy, txt, tmp2, dis, errorInbox) = await GetFileCountsAsync(GetUncPath(ip), 20, ct);
+            var (tmp1, errorKasa) = await GetKasaCountsAsync(GetKasaPath(ip), 40, ct);
+            var (pro, errorPro) = await GetProcessedCountsAsync(GetProcessedPath(ip), 90, ct);
+            var (seq, errorSeq) = await GetSeqCountsAsync(GetSeqPath(ip), 20, ct);
+
+            // En az bir gerçek hata varsa (boş klasör hataları değil) — error durumu
+            var errors = new[] { errorInbox, errorKasa, errorPro, errorSeq }
+                .Where(e => e != null && e != "Klasör bulunamadı")
+                .ToArray();
+
+            if (errors.Length > 0)
+            {
+                dto.Status = "error";
+                dto.ErrorMessage = string.Join(" | ", errors);
             }
             else
             {
@@ -385,37 +409,69 @@ namespace Orchestra.Backend.Controllers
             if (device == null)
                 return NotFound(new { error = "Device not found" });
 
-            var isOnline = await IsDeviceOnlineAsync(device.CalculatedIpAddress, 2000, ct);
+            var (isOnline, smbOpen) = await IsDeviceOnlineAsync(device.CalculatedIpAddress, 2000, ct);
             if (!isOnline)
-                return BadRequest(new { error = "Device is offline" });
+                return BadRequest(new { error = "Cihaz offline" });
+            if (!smbOpen)
+                return BadRequest(new { error = "SMB (port 445) erişilemiyor — C$ paylaşımı ulaşılamıyor" });
 
             var ip = device.CalculatedIpAddress;
 
-            // 4 klasörü paralel temizle
-            var t1 = DeleteFilesAsync(GetUncPath(ip), new[] { "*.rdy", "*.txt", "*.tmp", "*.dis" }, 10, ct);
-            var t2 = DeleteFilesAsync(GetKasaPath(ip), new[] { "*.tmp" }, 10, ct);
-            var t3 = DeleteFilesAsync(GetProcessedPath(ip), new[] { "*.rdy", "*.txt" }, 60, ct);
-            var t4 = DeleteFilesAsync(GetSeqPath(ip), new[] { "*.rdy", "*.txt", "*.tmp" }, 60, ct);
+            // Ready: direct delete (has processed/ subdir — renaming Ready would break Genius)
+            var (del1, err1) = await DeleteFilesAsync(GetUncPath(ip), new[] { "*.rdy", "*.txt", "*.tmp", "*.dis" }, 120, ct);
+            // processed: rename trick (leaf dir, can accumulate 5000+ files)
+            var (del2, err2) = await RenameDirectoryAsync(GetProcessedPath(ip));
+            // Kasa + Seq: rename trick (leaf dirs, safe to rename)
+            var (del3, err3) = await RenameDirectoryAsync(GetKasaPath(ip));
+            var (del4, err4) = await RenameDirectoryAsync(GetSeqPath(ip));
 
-            await Task.WhenAll(t1, t2, t3, t4);
+            var directDeleted = del1;
+            var renamedCount = (del2 > 0 ? 1 : 0) + (del3 > 0 ? 1 : 0) + (del4 > 0 ? 1 : 0);
+            var anyError = err1 ?? err2 ?? err3 ?? err4;
 
-            var (del1, err1) = await t1;
-            var (del2, err2) = await t2;
-            var (del3, err3) = await t3;
-            var (del4, err4) = await t4;
+            if (directDeleted == 0 && renamedCount == 0 && anyError != null)
+                return BadRequest(new { error = anyError });
 
-            if (err1 != null && err2 != null && err3 != null && err4 != null)
-                return BadRequest(new { error = $"{err1} | {err2} | {err3} | {err4}" });
+            var parts = new List<string>();
+            if (directDeleted > 0) parts.Add($"{directDeleted} dosya");
+            if (renamedCount > 0) parts.Add($"{renamedCount} klasör yenilendi");
+            var reason = parts.Count > 0 ? string.Join(", ", parts) : "zaten temiz";
+            _logger.LogInformation("Inbox cleaned: {DeviceId} ({Ip}) - {Count} direkt, {Renamed} klasör yenilendi", device.DeviceId, ip, directDeleted, renamedCount);
+            await _activity.LogAsync("Cleanup", "InboxCleanSingle", $"{device.StoreName} ({device.DeviceId})", reason, ct: ct);
+            return Ok(new { success = true, deleted = directDeleted + renamedCount, message = $"{device.StoreName} temizlendi ({reason})" });
+        }
 
-            var totalDeleted = del1 + del2 + del3 + del4;
-            _logger.LogInformation("Inbox cleaned: {DeviceId} ({Ip}) - {Count} files", device.DeviceId, ip, totalDeleted);
-            await _activity.LogAsync("Cleanup", "InboxCleanSingle", $"{device.StoreName} ({device.DeviceId})",
-                $"{totalDeleted} dosya silindi", ct: ct);
-            return Ok(new { success = true, deleted = totalDeleted, message = $"{device.StoreName} temizlendi ({totalDeleted} dosya)" });
+        private static async Task<(int deleted, string? error)> RenameDirectoryAsync(string uncPath)
+        {
+            return await Task.Factory.StartNew(() =>
+            {
+                try
+                {
+                    if (!Directory.Exists(uncPath)) return (0, (string?)null);
+
+                    bool hasContent = Directory.EnumerateFileSystemEntries(uncPath).Any();
+                    if (!hasContent) return (0, null);
+
+                    int deleted = 0;
+                    foreach (var file in Directory.GetFiles(uncPath, "*", SearchOption.TopDirectoryOnly))
+                    {
+                        try { System.IO.File.Delete(file); deleted++; } catch { }
+                    }
+                    foreach (var dir in Directory.GetDirectories(uncPath))
+                    {
+                        try { Directory.Delete(dir, true); deleted++; } catch { }
+                    }
+                    return (deleted, null);
+                }
+                catch (Exception ex)
+                {
+                    return (0, ex.Message.Length > 150 ? ex.Message[..150] : ex.Message);
+                }
+            }, CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default);
         }
 
         // ===========================================================
-        // 4) TÜM ONLINE PC'LERİ TEMİZLE — JOB-BASED (async)
+        // 4) TÜM ONLINE PC'LERİ TEMİZLE — JOB-BASED
         // ===========================================================
         [HttpPost("clean-all")]
         public async Task<IActionResult> CleanAll(
@@ -427,12 +483,7 @@ namespace Orchestra.Backend.Controllers
                 .CountAsync(d => d.DeviceType == "PC" || d.DeviceType.ToLower() == "gecici");
 
             var jobId = Guid.NewGuid().ToString("N")[..8];
-            var job = new CleanAllJob
-            {
-                JobId = jobId,
-                TotalCount = pcCount,
-                StartedAtUtc = DateTime.UtcNow
-            };
+            var job = new CleanAllJob { JobId = jobId, TotalCount = pcCount, StartedAtUtc = DateTime.UtcNow };
             _cleanAllJobs[jobId] = job;
 
             _ = Task.Run(async () =>
@@ -464,16 +515,11 @@ namespace Orchestra.Backend.Controllers
                     _logger.LogInformation("Clean-all job {JobId} tamamlandi: {Success}/{Total}", jobId, success, total);
                     using var s2 = scopeFactory.CreateScope();
                     var act = s2.ServiceProvider.GetRequiredService<ActivityLogService>();
-                    await act.LogAsync("Cleanup", "InboxCleanAll", jobId,
-                        $"{success}/{total} basarili");
+                    await act.LogAsync("Cleanup", "InboxCleanAll", jobId, $"{success}/{total} basarili");
                 }
                 catch (Exception ex)
                 {
-                    lock (job.Lock)
-                    {
-                        job.Error = ex.Message;
-                        job.CompletedAtUtc = DateTime.UtcNow;
-                    }
+                    lock (job.Lock) { job.Error = ex.Message; job.CompletedAtUtc = DateTime.UtcNow; }
                     _logger.LogError(ex, "Clean-all job {JobId} hata", jobId);
                     using var s2 = scopeFactory.CreateScope();
                     var act = s2.ServiceProvider.GetRequiredService<ActivityLogService>();
@@ -514,6 +560,18 @@ namespace Orchestra.Backend.Controllers
             }
         }
 
+        private sealed class CheckAllJob
+        {
+            public string JobId { get; init; } = "";
+            public int TotalCount { get; set; }
+            public int CompletedCount { get; set; }
+            public List<InboxStatusDto> Results { get; } = new();
+            public DateTime StartedAtUtc { get; set; }
+            public DateTime? CompletedAtUtc { get; set; }
+            public string? Error { get; set; }
+            public object Lock { get; } = new();
+        }
+
         private sealed class CleanAllJob
         {
             public string JobId { get; init; } = "";
@@ -530,7 +588,7 @@ namespace Orchestra.Backend.Controllers
             public object Lock { get; } = new();
         }
 
-        private async Task<(int deleted, string? error)> DeleteFilesAsync(
+        private static async Task<(int deleted, string? error)> DeleteFilesAsync(
             string uncPath, string[] patterns, int timeoutSec, CancellationToken ct)
         {
             using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
@@ -538,24 +596,25 @@ namespace Orchestra.Backend.Controllers
 
             try
             {
-                return await Task.Run(() =>
+                var count = await Task.Factory.StartNew(() =>
                 {
                     cts.Token.ThrowIfCancellationRequested();
-                    if (!Directory.Exists(uncPath))
-                        return (0, (string?)"Klasör bulunamadı");
+                    if (!Directory.Exists(uncPath)) return 0;
 
-                    int count = 0;
+                    int deleted = 0;
                     foreach (var pattern in patterns)
                     {
-                        cts.Token.ThrowIfCancellationRequested();
-                        foreach (var f in Directory.GetFiles(uncPath, pattern))
+                        if (cts.Token.IsCancellationRequested) break;
+                        foreach (var f in Directory.EnumerateFiles(uncPath, pattern))
                         {
-                            cts.Token.ThrowIfCancellationRequested();
-                            try { System.IO.File.Delete(f); count++; } catch { }
+                            if (cts.Token.IsCancellationRequested) break;
+                            try { System.IO.File.Delete(f); deleted++; } catch { }
                         }
                     }
-                    return (count, (string?)null);
-                }, cts.Token);
+                    return deleted;
+                }, CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default);
+
+                return (count, null);
             }
             catch (OperationCanceledException)
             {

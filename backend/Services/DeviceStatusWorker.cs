@@ -24,6 +24,7 @@ namespace Orchestra.Backend.Services
         private const int RouterTimeoutMs = 3000;  // 4.5G yedek hatta ping 500-1500ms olabilir, timeout'u genis tut
         private const int RouterFailThreshold = 3;           // Ardışık bu kadar başarısız taramadan sonra offline
         private const int DeviceFailThreshold = 3;           // PC/Kasa icin de ardisik basarisizlik esigi
+        private const int PrinterFailThreshold = 1;          // Yazıcılar: ilk başarısızlıkta anında offline
 
         // Paylaşılan cache — SqlQueryController buradan okur
         private static List<StoreDeviceWithStatusDto>? _cache;
@@ -36,6 +37,8 @@ namespace Orchestra.Backend.Services
         private static readonly Dictionary<string, int> _routerFailCount = new();
         // PC/Kasa ardisik basarisizlik sayaci (deviceId → consecutive fail count)
         private static readonly Dictionary<string, int> _deviceFailCount = new();
+        // Yazıcı ardışık başarısızlık sayacı
+        private static readonly Dictionary<string, int> _printerFailCount = new();
 
         public DeviceStatusWorker(
             IServiceScopeFactory scopeFactory,
@@ -94,8 +97,13 @@ namespace Orchestra.Backend.Services
             _log.LogInformation("DeviceStatusWorker starting (interval: {Interval}, concurrency: {Concurrency})",
                 ScanInterval, MaxConcurrency);
 
-            // İlk taramayı hemen yap
-            await RunScanAsync(stoppingToken);
+            // Restart öncesi offline olan cihazları hatırla — ilk taramada LastSeen sıfırlanmasın
+            try { await SeedInitialStateAsync(stoppingToken); }
+            catch (Exception ex) { _log.LogWarning(ex, "DeviceStatusWorker initial state seed başarısız (non-critical)"); }
+
+            // İlk taramayı hemen yap — exception burada da yakalanmalı (host crash'i önler)
+            try { await RunScanAsync(stoppingToken); }
+            catch (Exception ex) { _log.LogError(ex, "DeviceStatusWorker ilk tarama başarısız, servis çalışmaya devam edecek"); }
 
             while (!stoppingToken.IsCancellationRequested)
             {
@@ -116,6 +124,50 @@ namespace Orchestra.Backend.Services
             }
 
             _log.LogInformation("DeviceStatusWorker stopped");
+        }
+
+        /// <summary>
+        /// Backend restart sonrası cihazların son bilinen durumunu DB'den yükler.
+        /// Offline olan cihazların fail sayacını eşiğe doldurur — ilk taramada da offline kalırlar
+        /// ve LastSeen yanlışlıkla "şimdi" olarak güncellenmez.
+        /// </summary>
+        private async Task SeedInitialStateAsync(CancellationToken ct)
+        {
+            using var scope = _scopeFactory.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<OrchestraDbContext>();
+
+            // Her cihaz için en yüksek Id'li (= en son) kaydı bul
+            var maxIds = await db.DeviceStatusChanges
+                .AsNoTracking()
+                .GroupBy(c => c.DeviceId)
+                .Select(g => new { DeviceId = g.Key, MaxId = g.Max(c => c.Id) })
+                .ToListAsync(ct);
+
+            if (maxIds.Count == 0) return;
+
+            var idSet = maxIds.Select(x => x.MaxId).ToHashSet();
+            var lastChanges = await db.DeviceStatusChanges
+                .AsNoTracking()
+                .Where(c => idSet.Contains(c.Id))
+                .ToListAsync(ct);
+
+            int seededOffline = 0;
+            foreach (var change in lastChanges)
+            {
+                _previousStatus[change.DeviceId] = change.IsOnline;
+
+                if (!change.IsOnline)
+                {
+                    seededOffline++;
+                    if (change.DeviceType.Equals("ROUTER", StringComparison.OrdinalIgnoreCase))
+                        lock (_routerFailCount) { _routerFailCount[change.DeviceId] = RouterFailThreshold; }
+                    else
+                        lock (_deviceFailCount) { _deviceFailCount[change.DeviceId] = DeviceFailThreshold; }
+                }
+            }
+
+            _log.LogInformation("DeviceStatusWorker: {Total} cihaz durumu yüklendi, {Offline} offline olarak işaretlendi",
+                lastChanges.Count, seededOffline);
         }
 
         private async Task RunScanAsync(CancellationToken ct)
@@ -139,14 +191,17 @@ namespace Orchestra.Backend.Services
                     IsOnline = false,
                     LastSeen = d.LastSeen,
                     IsTemporarilyClosed = d.IsTemporarilyClosed,
-                    TemporaryCloseReason = d.TemporaryCloseReason
+                    TemporaryCloseReason = d.TemporaryCloseReason,
+                    WindowsVersion = d.WindowsVersion
                 })
                 .ToListAsync(ct);
 
             // 2a) Router'ları ÖNCE ve AYRI düşük eşzamanlılıkla tara
             //     (ICMP-only cihazlar — yüksek eşzamanlılıkta OS ping stack boğuluyor)
-            var routers = devices.Where(d => d.DeviceType.Equals("ROUTER", StringComparison.OrdinalIgnoreCase)).ToList();
-            var others = devices.Where(d => !d.DeviceType.Equals("ROUTER", StringComparison.OrdinalIgnoreCase)).ToList();
+            var routers  = devices.Where(d => d.DeviceType.Equals("ROUTER", StringComparison.OrdinalIgnoreCase)).ToList();
+            var printers = devices.Where(d => d.DeviceType.StartsWith("Yazici-", StringComparison.OrdinalIgnoreCase)).ToList();
+            var others   = devices.Where(d => !d.DeviceType.Equals("ROUTER", StringComparison.OrdinalIgnoreCase)
+                                           && !d.DeviceType.StartsWith("Yazici-", StringComparison.OrdinalIgnoreCase)).ToList();
 
             var routerSamples = new System.Collections.Concurrent.ConcurrentBag<RouterLatencySample>();
             using var routerSem = new SemaphoreSlim(RouterConcurrency);
@@ -197,7 +252,41 @@ namespace Orchestra.Backend.Services
             });
             await Task.WhenAll(routerTasks);
 
-            // 2b) Diğer cihazlar (PC/Kasa) — ping + TCP 1433 paralel
+            // 2b) Yazıcılar — ICMP-only, threshold=1 (ilk başarısızlıkta anında offline)
+            //     SQL portu denenmez: OKC yazıcılar port 1433'e cevap vermez, false-positive üretir
+            using var printerSem = new SemaphoreSlim(MaxConcurrency);
+            var printerTasks = printers.Select(async d =>
+            {
+                await printerSem.WaitAsync(ct);
+                try
+                {
+                    var pingOk = !d.IsTemporarilyClosed && await _fastCheck.IsPingReachableAsync(d.CalculatedIpAddress, TimeoutMs);
+                    d.PingReachable = pingOk;
+
+                    lock (_printerFailCount)
+                    {
+                        if (pingOk)
+                        {
+                            _printerFailCount.Remove(d.DeviceId);
+                            d.IsOnline = true;
+                        }
+                        else
+                        {
+                            _printerFailCount.TryGetValue(d.DeviceId, out var fails);
+                            fails++;
+                            _printerFailCount[d.DeviceId] = fails;
+                            d.IsOnline = fails < PrinterFailThreshold; // 1: ilk başarısızlıkta offline
+                        }
+                    }
+                }
+                finally
+                {
+                    printerSem.Release();
+                }
+            });
+            await Task.WhenAll(printerTasks);
+
+            // 2c) Diğer cihazlar (PC/Kasa) — ping + TCP 1433 paralel
             //     IsOnline = ping VEYA sql basariliysa online say (ping yeterli, SQL durumu ayrica gosterilir)
             //     Flap korumasi: ardisik DeviceFailThreshold kadar basarisiz scan olmadan offline yapma
             using var sem = new SemaphoreSlim(MaxConcurrency);

@@ -27,9 +27,17 @@ namespace Orchestra.Backend.Hubs
             }
             else
             {
-                // It's an Admin/User
+                // It's an Admin/User — 🔒 SECURITY (Y-4): yalnızca kimliği doğrulanmış kullanıcı "Admins"
+                // grubuna girip tüm filo telemetrisini alabilir. Anonim (token'sız, deviceId'siz) bağlantı
+                // eskiden doğrudan "Admins" grubuna düşüyordu → bilgi sızıntısı. Artık reddediliyor.
+                if (Context.User?.Identity?.IsAuthenticated != true)
+                {
+                    _logger.LogWarning($"🚫 Unauthenticated dashboard connection rejected ({Context.ConnectionId})");
+                    Context.Abort();
+                    return;
+                }
                 await Groups.AddToGroupAsync(Context.ConnectionId, "Admins");
-                _logger.LogInformation($"👤 Admin Connected: {userId ?? "Anonymous"} ({Context.ConnectionId})");
+                _logger.LogInformation($"👤 Admin Connected: {userId} ({Context.ConnectionId})");
             }
 
             await base.OnConnectedAsync();

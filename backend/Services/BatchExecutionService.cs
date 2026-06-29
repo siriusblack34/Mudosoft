@@ -206,13 +206,17 @@ public class BatchExecutionService
             target.Phase = BatchPhase.Running;
             target.StartedAtUtc = DateTime.UtcNow;
 
+            // UNC erisim gerektiren bat'lara net use ile credential enjekte et
+            var injected = InjectNetUseCredentials(batContent);
+            var injectedBytes = Encoding.Default.GetBytes(injected);
+
             if (target.Mode == BatchTargetMode.Agent && !string.IsNullOrWhiteSpace(target.DeviceId))
             {
-                await RunAgentAsync(target, batContent);
+                await RunAgentAsync(target, injected);
             }
             else if (!string.IsNullOrWhiteSpace(target.IpAddress))
             {
-                await RunAgentlessAsync(target, batBytes, exec.FileName);
+                await RunAgentlessAsync(target, injectedBytes, exec.FileName);
             }
             else
             {
@@ -273,6 +277,25 @@ public class BatchExecutionService
         target.Error = "Agent zaman asimi (6dk) — sonuc gelmedi";
     }
 
+    private static string InjectNetUseCredentials(string batContent)
+    {
+        var uncShares = System.Text.RegularExpressions.Regex
+            .Matches(batContent, @"\\\\([^\\\/\s""]+)\\([^\\\/\s""]+)")
+            .Select(m => $@"\\{m.Groups[1].Value}\{m.Groups[2].Value}")
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        if (uncShares.Count == 0) return batContent;
+
+        var user = Environment.GetEnvironmentVariable("WMI_USER") ?? @"MUDODMN\mudoadmtd";
+        var pass = Environment.GetEnvironmentVariable("WMI_PASSWORD") ?? "";
+
+        var pre  = string.Join("\r\n", uncShares.Select(s => $"net use {s} /user:{user} {pass} /persistent:no 2>nul"));
+        var post = string.Join("\r\n", uncShares.Select(s => $"net use {s} /delete /y >nul 2>nul"));
+
+        return $"@echo off\r\n{pre}\r\n{batContent.TrimStart()}\r\n{post}\r\n";
+    }
+
     /// <summary>
     /// Agent'siz yol: \\IP\C$\temp'e bat'i kopyala, WMI Win32_Process Create ile cmd /c calistir, log dosyasini oku.
     /// Backend host'unun WMI/SMB credentials'ini kullanir (RemoteInstallController desenidir).
@@ -281,135 +304,79 @@ public class BatchExecutionService
     {
         var ip = target.IpAddress!;
         var safeFile = "orchestra_" + Guid.NewGuid().ToString("N").Substring(0, 12) + ".bat";
-        var localBatPath = Path.Combine(Path.GetTempPath(), safeFile);
-        var psPath = Path.Combine(Path.GetTempPath(), $"orchestra_run_{Guid.NewGuid():N}.ps1");
+        var wrapFile = "wrap_" + safeFile;
+        var logFile  = safeFile + ".log";
+        var doneFile = safeFile + ".done";
+        var remoteTemp = $@"\\{ip}\C$\temp";
 
         try
         {
-            // Bat'i wrap et: original'i icerikten yaz, sonunda DONE marker + log redirect
-            // Original bat'in cikti'sini yakalamak icin remote tarafta cmd /c ... > log seklinde calistiriyoruz
-            await File.WriteAllBytesAsync(localBatPath, batBytes);
+            // 1. Remote C:\temp olustur (yoksa) ve bat'i kopyala
+            Directory.CreateDirectory(remoteTemp);
+            await File.WriteAllBytesAsync(Path.Combine(remoteTemp, safeFile), batBytes);
 
-            var script = $@"
-$ErrorActionPreference = 'Stop'
-$ip = '{ip}'
-$batSource = '{localBatPath.Replace("'", "''")}'
-$remoteFile = '{safeFile}'
-$logFile = $remoteFile + '.log'
-$doneFile = $remoteFile + '.done'
-try {{
-    $remoteTempUnc = ""\\$ip\C$\temp""
-    if (!(Test-Path $remoteTempUnc)) {{ New-Item -Path $remoteTempUnc -ItemType Directory -Force | Out-Null }}
+            // 2. Wrapper bat yaz (credential enjeksiyonu zaten batBytes icinde)
+            var wrapContent =
+                $"@echo off\r\n" +
+                $"call \"C:\\temp\\{safeFile}\" > \"C:\\temp\\{logFile}\" 2>&1\r\n" +
+                $"echo %ERRORLEVEL% > \"C:\\temp\\{doneFile}\"\r\n";
+            await File.WriteAllTextAsync(Path.Combine(remoteTemp, wrapFile), wrapContent, System.Text.Encoding.ASCII);
 
-    # bat'i remote temp'e kopyala
-    Copy-Item -Path $batSource -Destination ""$remoteTempUnc\$remoteFile"" -Force
+            // 3. WMI ile cmd.exe uzaktan calistir (DCOM/RPC — WSMan gerekmez)
+            uint wmiReturn = await Task.Run(() =>
+            {
+                var scope = new System.Management.ManagementScope($@"\\{ip}\root\cimv2");
+                scope.Connect();
+                using var cls = new System.Management.ManagementClass(scope, new System.Management.ManagementPath("Win32_Process"), null);
+                using var inP = cls.GetMethodParameters("Create");
+                inP["CommandLine"] = $@"cmd.exe /c C:\temp\{wrapFile}";
+                using var outP = cls.InvokeMethod("Create", inP, null);
+                return (uint)outP["ReturnValue"];
+            });
 
-    # Wrapper bat: original'i calistir, ciktiyi log'a yaz, bitince done marker olustur
-    $wrapper = ""@echo off`r`ncall ""C:\temp\$remoteFile"" > ""C:\temp\$logFile"" 2>&1`r`necho %ERRORLEVEL% > ""C:\temp\$doneFile""`r`n""
-    [System.IO.File]::WriteAllText(""$remoteTempUnc\wrap_$remoteFile"", $wrapper, [System.Text.Encoding]::ASCII)
+            if (wmiReturn != 0)
+            {
+                target.Phase = BatchPhase.Error;
+                target.Error = $"WMI Win32_Process.Create hatasi (kod: {wmiReturn})";
+                return;
+            }
 
-    # WMI ile uzaktan calistir (schtasks EDR alert tetikliyor)
-    $result = Invoke-WmiMethod -ComputerName $ip -Class Win32_Process -Name Create -ArgumentList ""cmd.exe /c C:\temp\wrap_$remoteFile"" 2>&1
-    if ($result.ReturnValue -ne 0) {{
-        Write-Output ""__ERR__: WMI process create failed (return=$($result.ReturnValue))""
-        return
-    }}
+            // 4. Done marker'i bekle (max 5dk)
+            var donePath = Path.Combine(remoteTemp, doneFile);
+            bool found = false;
+            for (int i = 0; i < 400; i++)
+            {
+                await Task.Delay(3000);
+                if (File.Exists(donePath)) { found = true; break; }
+            }
 
-    # Done marker'i bekle (max ~5dk)
-    $found = $false
-    for ($i = 0; $i -lt 100; $i++) {{
-        Start-Sleep -Seconds 3
-        if (Test-Path ""$remoteTempUnc\$doneFile"") {{ $found = $true; break }}
-    }}
+            if (!found)
+            {
+                target.Phase = BatchPhase.Error;
+                target.Error = "Timeout: bat dosyasi 20 dakika icinde tamamlanmadi";
+                return;
+            }
 
-    if (-not $found) {{
-        Write-Output ""__ERR__: Timeout — bat 5dk icinde tamamlanmadi""
-        return
-    }}
+            // 5. Exit kodu ve log oku
+            int.TryParse((await File.ReadAllTextAsync(donePath)).Trim(), out int exitCode);
+            var logPath = Path.Combine(remoteTemp, logFile);
+            var output = File.Exists(logPath)
+                ? (await File.ReadAllTextAsync(logPath, System.Text.Encoding.Default)).Trim('\r', '\n', ' ')
+                : "";
 
-    $exitCode = (Get-Content ""$remoteTempUnc\$doneFile"" -Raw).Trim()
-    $logContent = ''
-    if (Test-Path ""$remoteTempUnc\$logFile"") {{
-        $logContent = Get-Content ""$remoteTempUnc\$logFile"" -Raw
-    }}
-
-    Write-Output ""__EXIT__: $exitCode""
-    Write-Output ""__OUTPUT_BEGIN__""
-    Write-Output $logContent
-    Write-Output ""__OUTPUT_END__""
-
-    # Cleanup remote
-    Remove-Item ""$remoteTempUnc\$remoteFile"" -Force -ErrorAction SilentlyContinue
-    Remove-Item ""$remoteTempUnc\wrap_$remoteFile"" -Force -ErrorAction SilentlyContinue
-    Remove-Item ""$remoteTempUnc\$logFile"" -Force -ErrorAction SilentlyContinue
-    Remove-Item ""$remoteTempUnc\$doneFile"" -Force -ErrorAction SilentlyContinue
-}} catch {{
-    Write-Output ""__ERR__: $($_.Exception.Message)""
-}}
-";
-            await File.WriteAllTextAsync(psPath, script);
-
-            var (_, output) = await RunPowerShellFileAsync(psPath);
-            ParseAgentlessOutput(target, output);
+            target.Output = output;
+            target.Phase  = exitCode == 0 ? BatchPhase.Done : BatchPhase.Error;
+            if (exitCode != 0) target.Error = $"Bat exit code: {exitCode}";
+        }
+        catch (Exception ex)
+        {
+            target.Phase = BatchPhase.Error;
+            target.Error = ex.Message;
         }
         finally
         {
-            try { if (File.Exists(localBatPath)) File.Delete(localBatPath); } catch { }
-            try { if (File.Exists(psPath)) File.Delete(psPath); } catch { }
+            foreach (var f in new[] { safeFile, wrapFile, logFile, doneFile })
+                try { File.Delete(Path.Combine(remoteTemp, f)); } catch { }
         }
-    }
-
-    private static void ParseAgentlessOutput(BatchTargetResult target, string output)
-    {
-        var errIdx = output.IndexOf("__ERR__:", StringComparison.Ordinal);
-        if (errIdx >= 0)
-        {
-            target.Phase = BatchPhase.Error;
-            target.Error = output.Substring(errIdx + "__ERR__:".Length).Trim();
-            return;
-        }
-
-        var exitIdx = output.IndexOf("__EXIT__:", StringComparison.Ordinal);
-        var beginIdx = output.IndexOf("__OUTPUT_BEGIN__", StringComparison.Ordinal);
-        var endIdx = output.IndexOf("__OUTPUT_END__", StringComparison.Ordinal);
-
-        int exitCode = -1;
-        if (exitIdx >= 0)
-        {
-            var endLine = output.IndexOf('\n', exitIdx);
-            var rawExit = endLine > 0
-                ? output.Substring(exitIdx + "__EXIT__:".Length, endLine - exitIdx - "__EXIT__:".Length).Trim()
-                : output.Substring(exitIdx + "__EXIT__:".Length).Trim();
-            int.TryParse(rawExit, out exitCode);
-        }
-
-        if (beginIdx >= 0 && endIdx > beginIdx)
-        {
-            var start = beginIdx + "__OUTPUT_BEGIN__".Length;
-            target.Output = output.Substring(start, endIdx - start).Trim('\r', '\n', ' ');
-        }
-
-        target.Phase = exitCode == 0 ? BatchPhase.Done : BatchPhase.Error;
-        if (exitCode != 0)
-            target.Error = $"Bat exit code: {exitCode}";
-    }
-
-    private static async Task<(int ExitCode, string Output)> RunPowerShellFileAsync(string scriptPath)
-    {
-        var psi = new ProcessStartInfo
-        {
-            FileName = "powershell.exe",
-            Arguments = $"-NoProfile -NonInteractive -ExecutionPolicy Bypass -File \"{scriptPath}\"",
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            UseShellExecute = false,
-            CreateNoWindow = true
-        };
-
-        using var process = Process.Start(psi)!;
-        var stdout = await process.StandardOutput.ReadToEndAsync();
-        var stderr = await process.StandardError.ReadToEndAsync();
-        await process.WaitForExitAsync();
-        return (process.ExitCode, stdout + (string.IsNullOrEmpty(stderr) ? "" : "\n" + stderr));
     }
 }

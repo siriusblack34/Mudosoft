@@ -29,6 +29,19 @@ public class User
 
     public bool IsLdapUser { get; set; } = false;
 
+    /// <summary>
+    /// Atandığı menü profili (grup). null ise sistem "Teknisyen" profiline düşer.
+    /// Admin rolündeki kullanıcılar için anlamsızdır (admin her şeyi görür).
+    /// </summary>
+    public int? MenuProfileId { get; set; }
+    public MenuProfile? MenuProfile { get; set; }
+
+    /// <summary>Profilin üstüne kişiye özel AÇILAN ekstra menü path'leri (JSON dizi). Override.</summary>
+    public string? MenuGrantsJson { get; set; }
+
+    /// <summary>Profilin üstüne kişiye özel KAPATILAN menü path'leri (JSON dizi). Denial override.</summary>
+    public string? MenuDenialsJson { get; set; }
+
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime? LastLoginAt { get; set; }
 }

@@ -19,5 +19,8 @@ namespace Orchestra.Backend.Models
 
         /// <summary>Router icin son olculen ping RTT (ms). Router degilse null.</summary>
         public int? LatencyMs { get; set; }
+
+        /// <summary>Windows sürümü. Örn: "Win10 22H2", "Win11 23H2". null = henüz taranmadı.</summary>
+        public string? WindowsVersion { get; set; }
     }
 }

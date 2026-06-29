@@ -3,9 +3,12 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Orchestra.Backend.Data;
+using Orchestra.Backend.Middleware;
 using Orchestra.Backend.Models;
 using Orchestra.Backend.Services;
+using System.Collections.Concurrent;
 using System.Data;
+using System.Diagnostics;
 
 namespace Orchestra.Backend.Controllers
 {
@@ -91,12 +94,98 @@ namespace Orchestra.Backend.Controllers
                     IsOnline = false, // henüz taranmadı, güvenli varsayım
                     LastSeen = d.LastSeen,
                     IsTemporarilyClosed = d.IsTemporarilyClosed,
-                    TemporaryCloseReason = d.TemporaryCloseReason
+                    TemporaryCloseReason = d.TemporaryCloseReason,
+                    WindowsVersion = d.WindowsVersion
                 })
                 .ToListAsync();
 
             return Ok(devices);
         }
+
+        // ===========================================================
+        // 1.5) WINDOWS SÜRÜM TARAMA
+        // ===========================================================
+
+        /// <summary>
+        /// Tüm PC/Kasa'ların Windows sürümünü SMB üzerinden tarar ve DB'ye kaydeder.
+        /// kernel32.dll ProductVersion → build numarası → "Win10 22H2" gibi okunabilir forma dönüştürülür.
+        /// Agent gerekmez — C$ paylaşımı yeterli.
+        /// POST: /api/sqlquery/refresh-windows-versions
+        /// </summary>
+        [HttpPost("refresh-windows-versions")]
+        public async Task<IActionResult> RefreshWindowsVersions()
+        {
+            var pcDevices = await _db.StoreDevices
+                .Where(d => d.DeviceType == "PC" || d.DeviceType.ToLower() == "gecici" ||
+                            d.DeviceType.StartsWith("Kasa"))
+                .ToListAsync();
+
+            var updated = 0;
+            var failed = 0;
+            using var sem = new SemaphoreSlim(20);
+            using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(3));
+
+            var tasks = pcDevices.Select(async device =>
+            {
+                await sem.WaitAsync(cts.Token);
+                try
+                {
+                    var version = await GetWindowsVersionAsync(device.CalculatedIpAddress);
+                    if (version != null && version != device.WindowsVersion)
+                    {
+                        device.WindowsVersion = version;
+                        Interlocked.Increment(ref updated);
+                    }
+                    else if (version == null)
+                        Interlocked.Increment(ref failed);
+                }
+                catch { Interlocked.Increment(ref failed); }
+                finally { sem.Release(); }
+            });
+
+            await Task.WhenAll(tasks);
+            await _db.SaveChangesAsync();
+
+            // Cache'i de güncelle
+            DeviceStatusWorker.InvalidateCache();
+
+            _logger.LogInformation("Windows version refresh: {Updated} güncellendi, {Failed} erişilemedi", updated, failed);
+            return Ok(new { scanned = pcDevices.Count, updated, failed });
+        }
+
+        private static async Task<string?> GetWindowsVersionAsync(string ip)
+        {
+            var kernel32 = $@"\\{ip}\C$\Windows\System32\kernel32.dll";
+            try
+            {
+                var task = Task.Run(() => FileVersionInfo.GetVersionInfo(kernel32));
+                if (await Task.WhenAny(task, Task.Delay(5000)) != task || !task.IsCompletedSuccessfully)
+                    return null;
+                var vi = task.Result;
+                return MapBuildToVersion(vi.ProductBuildPart);
+            }
+            catch { return null; }
+        }
+
+        private static string MapBuildToVersion(int build) => build switch
+        {
+            >= 26100 => "Win11 24H2",
+            >= 22631 => "Win11 23H2",
+            >= 22621 => "Win11 22H2",
+            >= 22000 => "Win11 21H2",
+            20348    => "Server 2022",
+            >= 19045 => "Win10 22H2",
+            >= 19044 => "Win10 21H2",
+            >= 19043 => "Win10 21H1",
+            >= 19042 => "Win10 20H2",
+            >= 19041 => "Win10 2004",
+            >= 18363 => "Win10 1909",
+            >= 17763 => "Win10 1809",
+            >= 14393 => "Win10 1607 / Svr2016",
+            >= 9600  => "Win 8.1",
+            >= 7600  => "Win 7",
+            _        => $"Build {build}"
+        };
 
         // ===========================================================
         // 1.6) OFFLİNE LOG SORGULAMA
@@ -371,6 +460,88 @@ namespace Orchestra.Backend.Controllers
         }
 
         // ===========================================================
+        // 3e) GEÇİCİ PC DURUMU — hangi mağaza kurulu, aktif mi boş mu
+        // ===========================================================
+        [HttpGet("gecici/status")]
+        public async Task<IActionResult> GetGeciciStatus(CancellationToken ct)
+        {
+            var geciciDevices = await _db.StoreDevices
+                .AsNoTracking()
+                .Where(d => d.DeviceType == "GECICI")
+                .ToListAsync(ct);
+
+            var cached = DeviceStatusWorker.GetCachedDevices();
+
+            // Tüm mağaza isimlerini tek sorguda önceden al
+            var storeNameList = await _db.StoreDevices
+                .AsNoTracking()
+                .Where(d => d.DeviceType == "PC" || d.DeviceType.StartsWith("Kasa"))
+                .GroupBy(d => d.StoreCode)
+                .Select(g => new { Code = g.Key, Name = g.First().StoreName })
+                .ToListAsync(ct);
+            var storeNameMap = storeNameList.ToDictionary(x => x.Code, x => x.Name);
+
+            using var sem = new SemaphoreSlim(3);
+
+            var tasks = geciciDevices.Select(async device =>
+            {
+                var status = cached?.FirstOrDefault(c => c.DeviceId == device.DeviceId);
+                var pingOk = status?.PingReachable == true;
+                var sqlOk = status?.SqlReachable == true;
+
+                int? installedStoreCode = null;
+                string? installedStoreName = null;
+
+                if (sqlOk && !string.IsNullOrEmpty(device.DbConnectionString))
+                {
+                    await sem.WaitAsync(ct);
+                    try
+                    {
+                        // Connect Timeout kısalt — cihaz zaten SQL reachable olarak işaretlendi
+                        var connStr = System.Text.RegularExpressions.Regex.Replace(
+                            device.DbConnectionString,
+                            @"Connect Timeout=\d+",
+                            "Connect Timeout=5");
+
+                        var dt = await _remoteSqlService.ExecuteQueryAsync(
+                            connStr, "SELECT PARAMETER_VALUE FROM PSS_HOME WHERE ID=69");
+
+                        if (dt?.Rows.Count > 0)
+                        {
+                            var raw = dt.Rows[0]["PARAMETER_VALUE"]?.ToString();
+                            if (int.TryParse(raw, out var rawCode) && rawCode > 1000)
+                            {
+                                installedStoreCode = rawCode - 1000;
+                                storeNameMap.TryGetValue(installedStoreCode.Value, out installedStoreName);
+                            }
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning("Gecici PC {DeviceId} PSS_HOME sorgusu basarisiz: {Error}",
+                            device.DeviceId, ex.Message);
+                    }
+                    finally { sem.Release(); }
+                }
+
+                return new GeciciPcStatusDto
+                {
+                    DeviceId = device.DeviceId,
+                    DeviceName = device.DeviceName ?? device.DeviceId,
+                    IpAddress = device.CalculatedIpAddress ?? "",
+                    PingReachable = pingOk,
+                    SqlReachable = sqlOk,
+                    IsActive = sqlOk,
+                    InstalledStoreCode = installedStoreCode,
+                    InstalledStoreName = installedStoreName,
+                };
+            });
+
+            var results = await Task.WhenAll(tasks);
+            return Ok(results.OrderBy(r => r.DeviceName));
+        }
+
+        // ===========================================================
         // 4) CİHAZ SİL (Envanter'den kaldır)
         // ===========================================================
         [HttpDelete("devices/{deviceId}")]
@@ -416,6 +587,7 @@ namespace Orchestra.Backend.Controllers
         }
 
         [HttpPost("execute")]
+        [RequireMenu("/sql-query")] // ham SQL çalıştırma yalnızca SQL Sorgu menüsü olanlara
         public async Task<IActionResult> ExecuteQuery([FromBody] ExecuteSqlQueryRequest request)
         {
             if (!ModelState.IsValid)
@@ -481,5 +653,17 @@ namespace Orchestra.Backend.Controllers
     {
         public bool IsClosed { get; set; }
         public string? Reason { get; set; }
+    }
+
+    public class GeciciPcStatusDto
+    {
+        public string DeviceId { get; set; } = "";
+        public string DeviceName { get; set; } = "";
+        public string IpAddress { get; set; } = "";
+        public bool PingReachable { get; set; }
+        public bool SqlReachable { get; set; }
+        public bool IsActive { get; set; }
+        public int? InstalledStoreCode { get; set; }
+        public string? InstalledStoreName { get; set; }
     }
 }

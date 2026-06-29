@@ -211,7 +211,7 @@ public class DevicesController : ControllerBase
         };
 
         _startJobs[jobId] = job;
-        _ = Task.Run(() => ProcessOfflineServiceStartJobAsync(jobId, offlineDevices));
+        _ = ProcessOfflineServiceStartJobAsync(jobId, offlineDevices);
 
         _logger.LogInformation(
             "Offline servis start job queued: JobId={JobId} TargetCount={Count} Targets={Targets}",

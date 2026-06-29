@@ -6,6 +6,7 @@ using Orchestra.Backend.Crypto;
 using Orchestra.Backend.Middleware;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.IdentityModel.Tokens;
 using System.Text;
 using AspNetCoreRateLimit;
@@ -31,6 +32,10 @@ else
 }
 
 var builder = WebApplication.CreateBuilder(args);
+
+// Dashboard üzerinden düzenlenebilen servis monitör ayarları (service-monitor.json)
+var smOverridePath = Path.Combine(builder.Environment.ContentRootPath, "service-monitor.json");
+builder.Configuration.AddJsonFile(smOverridePath, optional: true, reloadOnChange: true);
 
 // 🔧 FIX: Disable EventLog to prevent "Interface unknown" (1717) error on some Windows systems
 builder.Logging.ClearProviders();
@@ -60,15 +65,10 @@ builder.Services.Configure<IpRateLimitOptions>(options =>
     options.HttpStatusCode = 429;
     options.RealIpHeader = "X-Real-IP";
     options.ClientIdHeader = "X-ClientId";
+    // IIS proxy tüm agent isteklerini 127.0.0.1 olarak iletir; /api/agent/* ve /api/mobile/* tamamen muaf.
+    options.EndpointWhitelist = new List<string> { "*:/api/agent/*", "*:/api/mobile/*" };
     options.GeneralRules = new List<RateLimitRule>
     {
-        // Genel API limiti: dakikada 400 istek
-        new RateLimitRule
-        {
-            Endpoint = "*",
-            Period = "1m",
-            Limit = 400
-        },
         // Login endpoint: dakikada 10 deneme (brute-force koruması)
         new RateLimitRule
         {
@@ -89,7 +89,14 @@ builder.Services.Configure<IpRateLimitOptions>(options =>
             Endpoint = "*:/api/sqlquery/*",
             Period = "1m",
             Limit = 400
-        }
+        },
+        // Genel API limiti: dakikada 400 istek
+        new RateLimitRule
+        {
+            Endpoint = "*",
+            Period = "1m",
+            Limit = 400
+        },
     };
 });
 builder.Services.AddSingleton<IIpPolicyStore, MemoryCacheIpPolicyStore>();
@@ -111,6 +118,10 @@ if (!string.IsNullOrEmpty(jwtKeyFromConfig) && jwtKeyFromConfig.StartsWith("${")
 
 var jwtKey = jwtKeyFromEnv ?? jwtKeyFromConfig
     ?? throw new InvalidOperationException("JWT_SECRET_KEY is not configured. Set it in .env or as environment variable.");
+
+// 🔒 SECURITY: HS256 için anahtar en az 256-bit (32 byte) olmalı; aksi halde offline forge edilebilir.
+if (Encoding.UTF8.GetByteCount(jwtKey) < 32)
+    throw new InvalidOperationException("JWT_SECRET_KEY must be at least 32 bytes (256-bit) for HS256. Generate a strong random key.");
 var jwtIssuer = builder.Configuration["Jwt:Issuer"] ?? "Orchestra";
 var jwtAudience = builder.Configuration["Jwt:Audience"] ?? "OrchestraUsers";
 
@@ -135,6 +146,8 @@ builder.Services.AddAuthentication(options =>
         ValidIssuers = validIssuers,
         ValidAudiences = validAudiences,
         IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey)),
+        // 🔒 SECURITY: Algoritmayı sabitle — HS256 dışı (özellikle "none" / RS256 confusion) token kabul edilmez.
+        ValidAlgorithms = new[] { SecurityAlgorithms.HmacSha256 },
         ClockSkew = TimeSpan.Zero
     };
     
@@ -143,9 +156,13 @@ builder.Services.AddAuthentication(options =>
     {
         OnMessageReceived = context =>
         {
+            // WebSocket/SignalR: tarayıcı Authorization header gönderemez → token query'den alınır.
+            // /hubs (SignalR) ve /ws (VNC proxy) path'leri için access_token'ı bearer token olarak kullan.
+            // Bu olmadan FallbackPolicy (RequireAuthenticatedUser) /ws/vnc'yi 401 ile keser.
             var accessToken = context.Request.Query["access_token"];
             var path = context.HttpContext.Request.Path;
-            if (!string.IsNullOrEmpty(accessToken) && path.StartsWithSegments("/hubs"))
+            if (!string.IsNullOrEmpty(accessToken) &&
+                (path.StartsWithSegments("/hubs") || path.StartsWithSegments("/ws")))
             {
                 context.Token = accessToken;
             }
@@ -154,7 +171,14 @@ builder.Services.AddAuthentication(options =>
     };
 });
 
-builder.Services.AddAuthorization();
+builder.Services.AddAuthorization(options =>
+{
+    // 🔒 SECURITY: Fail-closed — [Authorize]/[AllowAnonymous] belirtilmemiş her endpoint artık kimlik
+    // doğrulaması ister. [Authorize] eklemeyi unutmak (Discovery/DeviceDetails gibi) artık anonim açık bırakmaz.
+    options.FallbackPolicy = new Microsoft.AspNetCore.Authorization.AuthorizationPolicyBuilder()
+        .RequireAuthenticatedUser()
+        .Build();
+});
 
 // ================== SERVICES ==================
 
@@ -169,17 +193,10 @@ builder.Services.AddCors(options =>
         policy.WithOrigins(allowedOrigins)
               .SetIsOriginAllowed(origin =>
               {
-                  // Allow configured origins + local network IPs for agent/admin access
-                  if (allowedOrigins.Contains(origin)) return true;
-                  if (Uri.TryCreate(origin, UriKind.Absolute, out var uri))
-                  {
-                      var host = uri.Host;
-                      return host == "localhost"
-                          || host == "127.0.0.1"
-                          || host.StartsWith("10.")
-                          || host.StartsWith("192.168.");
-                  }
-                  return false;
+                  // 🔒 SECURITY: Yalnızca açıkça yapılandırılmış origin'ler (Cors:AllowedOrigins).
+                  // Eski geniş "10.*/192.168.*" wildcard'ı (AllowCredentials ile birlikte) kaldırıldı —
+                  // iç ağdaki herhangi bir host artık credentialed cross-origin istek yapamaz.
+                  return allowedOrigins.Contains(origin);
               })
               .WithMethods("GET", "POST", "PUT", "DELETE")
               .WithHeaders("Content-Type", "Authorization", "X-Encrypted", "X-ClientId", "X-Requested-With", "x-signalr-user-agent")
@@ -249,6 +266,9 @@ builder.Services.AddScoped<Orchestra.Backend.Services.ActivityLogService>();
 // 3.5. Health Score Service
 builder.Services.AddScoped<Orchestra.Backend.Services.HealthScoreService>();
 
+// 3.6. Menü erişim servisi (profil + kişisel override değerlendirmesi; [RequireMenu] tarafından da kullanılır)
+builder.Services.AddScoped<Orchestra.Backend.Services.IMenuAccessService, Orchestra.Backend.Services.MenuAccessService>();
+
 // 4. CommandQueue
 builder.Services.AddSingleton<CommandQueue>();
 
@@ -257,6 +277,8 @@ builder.Services.AddSingleton<Orchestra.Backend.Services.BatchExecutionService>(
 
 // 4.1. VNC Session Manager (RDP proxy)
 builder.Services.AddSingleton<VncSessionManager>();
+// 4.2. Merkez cihaz onay akışı yöneticisi
+builder.Services.AddSingleton<ConsentRequestManager>();
 
 // 5. AES Encryption (Middleware için kritik)
 builder.Services.AddScoped<AesEncryption>();
@@ -268,6 +290,13 @@ builder.Services.AddSingleton<IEmailService, EmailService>();
 // 6b. LDAP authentication (opsiyonel, appsettings:Ldap:Enabled ile aç/kapa)
 builder.Services.AddSingleton<ILdapAuthService, LdapAuthService>();
 builder.Services.AddSingleton<ILdapDirectoryService, LdapDirectoryService>();
+
+// Self-healing servisi (Singleton — state tutar, worker'lar paylaşır)
+builder.Services.AddSingleton<Orchestra.Backend.Services.AgentSelfHealingService>();
+
+// Playbook engine + trigger worker
+builder.Services.AddSingleton<Orchestra.Backend.Services.IPlaybookEngine, Orchestra.Backend.Services.PlaybookEngine>();
+builder.Services.AddHostedService<Orchestra.Backend.Services.PlaybookTriggerWorker>();
 
 // 7. Worker'lar (Singleton/HostedService olarak doğru şekilde kaydedildi)
 builder.Services.AddHostedService<Orchestra.Backend.Services.HeartbeatCheckerWorker>();
@@ -281,6 +310,8 @@ builder.Services.AddSingleton<Orchestra.Backend.Services.SerialNumberSyncService
 builder.Services.AddHostedService(sp => sp.GetRequiredService<Orchestra.Backend.Services.SerialNumberSyncService>());
 builder.Services.AddSingleton<Orchestra.Backend.Services.PrinterSerialSyncService>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<Orchestra.Backend.Services.PrinterSerialSyncService>());
+builder.Services.AddSingleton<Orchestra.Backend.Services.KasaMorningCheckWorker>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<Orchestra.Backend.Services.KasaMorningCheckWorker>());
 builder.Services.AddHostedService<Orchestra.Backend.Services.TelemetryRetentionWorker>();
 builder.Services.AddHostedService<Orchestra.Backend.Services.BirthdayNotificationService>();
 if (OperatingSystem.IsWindows())
@@ -295,7 +326,8 @@ builder.Services.AddHttpClient("internal", c =>
 builder.Services.AddSignalR(hubOptions =>
 {
     hubOptions.MaximumReceiveMessageSize = 5 * 1024 * 1024; // 5MB Limit
-    hubOptions.EnableDetailedErrors = true;
+    // 🔒 SECURITY: Detaylı hata (stack trace / iç detay) yalnızca development'ta.
+    hubOptions.EnableDetailedErrors = builder.Environment.IsDevelopment();
 }); 
 
 // =====================================================
@@ -303,6 +335,15 @@ builder.Services.AddSignalR(hubOptions =>
 var app = builder.Build();
 
 // ================== PIPELINE ==================
+
+// IIS / ARR reverse proxy arkasında çalıştığı için X-Forwarded-For'u gerçek client IP olarak kabul et.
+// Bu olmadan HttpContext.Connection.RemoteIpAddress her zaman 127.0.0.1 döner.
+app.UseForwardedHeaders(new ForwardedHeadersOptions
+{
+    ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto,
+    KnownProxies = { System.Net.IPAddress.Loopback, System.Net.IPAddress.IPv6Loopback }
+});
+
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
@@ -342,9 +383,14 @@ app.UseAuthorization();
 app.UseWebSockets();
 app.UseVncWebSocket("/ws/vnc");
 
+// Lightweight liveness probe — frontend health check kullanır
+app.MapGet("/api/health", () => Results.Ok(new { status = "ok", ts = DateTimeOffset.UtcNow }))
+   .AllowAnonymous();
+
 app.MapControllers();
 // Hub Mapping
 app.MapHub<Orchestra.Backend.Hubs.DashboardHub>("/hubs/dashboard");
+app.MapHub<Orchestra.Backend.Hubs.RemoteDesktopHub>("/hubs/desktop");
 
 // ================== SEED (SADECE DEVELOPMENT) ==================
 if (app.Environment.IsDevelopment())
@@ -465,13 +511,13 @@ if (app.Environment.IsDevelopment())
         // =====================================================
         var temporaryDevices = new List<(string Name, string Ip, int StoreCode, string StoreName)>
         {
-            ("GE-PC-1", "10.0.102.40", 102, "Tekirdağ Tekira City"),
-            ("GE-PC-2", "10.0.102.45", 102, "Tekirdağ Tekira City"),
-            ("GE-PC-3", "10.0.210.131", 210, "Tuzla Viaport Marina"),
-            ("GE-PC-4", "10.0.210.132", 210, "Tuzla Viaport Marina"),
-            ("GE-PC-5", "10.0.210.133", 210, "Tuzla Viaport Marina"),
-            ("GE-PC-6", "10.0.102.35", 102, "Tekirdağ Tekira City"),
-            ("GE-PC-7", "10.0.102.50", 102, "Tekirdağ Tekira City")
+            ("MKOY-1", "10.0.102.35", 102, "Mecidiyeköy Geçici PC"),
+            ("MKOY-2", "10.0.102.40", 102, "Mecidiyeköy Geçici PC"),
+            ("MKOY-3", "10.0.102.45", 102, "Mecidiyeköy Geçici PC"),
+            ("MKOY-4", "10.0.102.50", 102, "Mecidiyeköy Geçici PC"),
+            ("TUZLA-1", "10.0.210.131", 210, "Tuzla Geçici PC"),
+            ("TUZLA-2", "10.0.210.132", 210, "Tuzla Geçici PC"),
+            ("TUZLA-3", "10.0.210.133", 210, "Tuzla Geçici PC"),
         };
 
         foreach (var td in temporaryDevices)
@@ -501,6 +547,7 @@ if (app.Environment.IsDevelopment())
                 // Mevcut kaydı güncelle
                 existing.DeviceType = "GECICI";
                 existing.DeviceName = td.Name;
+                existing.StoreName = td.StoreName;
                 existing.DbConnectionString = BuildConnectionString(td.Ip);
             }
         }
@@ -647,6 +694,9 @@ if (app.Environment.IsDevelopment())
 
     // Seed default Store Opening checklist template
     await Orchestra.Backend.Services.StoreOpeningTemplateSeeder.SeedAsync(db);
+
+    // Seed sistem menü profilleri (Teknisyen, Superuser) + eski global ayarı taşı
+    await Orchestra.Backend.Services.MenuProfileSeeder.SeedAsync(db);
 
     // Seed default admin user if no users exist
     if (!db.Users.Any())

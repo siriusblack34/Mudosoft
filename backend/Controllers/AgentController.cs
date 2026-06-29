@@ -6,6 +6,9 @@ using Orchestra.Shared.Enums;
 using Orchestra.Backend.Services;
 using Orchestra.Backend.Data;
 using Orchestra.Backend.Models;
+using Orchestra.Backend.Crypto;
+using System.Security.Cryptography;
+using System.Text;
 
 namespace Orchestra.Backend.Controllers;
 
@@ -19,16 +22,20 @@ public class AgentController : ControllerBase
     private readonly ILogger<AgentController> _logger;
     private readonly OrchestraDbContext _dbContext;
 
+    private readonly IWebHostEnvironment _env;
+
     public AgentController(
         IAgentService service,
         CommandQueue queue,
         ILogger<AgentController> logger,
-        OrchestraDbContext dbContext)
+        OrchestraDbContext dbContext,
+        IWebHostEnvironment env)
     {
         _service = service;
         _queue = queue;
         _logger = logger;
         _dbContext = dbContext;
+        _env = env;
     }
 
     // ❤️ Heartbeat (decrypt edilmiş DTO middleware'den gelir)
@@ -76,6 +83,50 @@ public class AgentController : ControllerBase
     {
         await _service.HandleEventAsync(evt);
         return Ok();
+    }
+
+    // 🔒 Faz 2 (K-5): Cihaz enrollment — ajan ilk açılışta kendi public key'ini kaydeder.
+    // Bootstrap için tek-seferlik paylaşımlı AGENT_API_KEY kullanılır; enroll sonrası cihaz
+    // isteklerini kendi özel anahtarıyla imzalayacak (Stage 1). Backend public key'ini döndürür ki
+    // ajan komut imzalarını pinli key ile doğrulasın. ADDITIVE — mevcut filo bu endpoint'i kullanmıyor.
+    [AllowAnonymous]
+    [HttpPost("enroll")]
+    public async Task<IActionResult> Enroll([FromBody] AgentEnrollRequest req,
+        [FromServices] RsaKeyProvider rsa, [FromServices] IConfiguration config)
+    {
+        if (req == null || string.IsNullOrWhiteSpace(req.DeviceId)
+            || string.IsNullOrWhiteSpace(req.PublicKey) || string.IsNullOrWhiteSpace(req.BootstrapApiKey))
+            return BadRequest(new { error = "deviceId, publicKey, bootstrapApiKey required" });
+
+        var validApiKey = Environment.GetEnvironmentVariable("AGENT_API_KEY") ?? config["Jwt:AgentApiKey"];
+        if (string.IsNullOrEmpty(validApiKey) || validApiKey.StartsWith("${"))
+            return StatusCode(500, new { error = "AGENT_API_KEY not configured" });
+
+        var ok = CryptographicOperations.FixedTimeEquals(
+            Encoding.UTF8.GetBytes(req.BootstrapApiKey), Encoding.UTF8.GetBytes(validApiKey));
+        if (!ok)
+        {
+            _logger.LogWarning("Enroll reddedildi (gecersiz bootstrap key): {DeviceId}", req.DeviceId);
+            return Unauthorized(new { error = "invalid bootstrap key" });
+        }
+
+        var cred = await _dbContext.DeviceCredentials.FindAsync(req.DeviceId);
+        if (cred == null)
+        {
+            cred = new DeviceCredential { DeviceId = req.DeviceId, CreatedAtUtc = DateTime.UtcNow };
+            _dbContext.DeviceCredentials.Add(cred);
+        }
+        // TOFU: ilk public key güvenilir. Sonradan değişirse logla (Stage 3'te admin onayı zorunlu olacak).
+        if (!string.IsNullOrEmpty(cred.PublicKey) && cred.PublicKey != req.PublicKey)
+            _logger.LogWarning("Enroll: {DeviceId} public key DEGISTI — TOFU ihlali olabilir", req.DeviceId);
+
+        cred.PublicKey = req.PublicKey;
+        cred.EnrolledAtUtc = DateTime.UtcNow;
+        cred.LastSeenAtUtc = DateTime.UtcNow;
+        await _dbContext.SaveChangesAsync();
+
+        _logger.LogInformation("Device enrolled: {DeviceId}", req.DeviceId);
+        return Ok(new { backendPublicKey = rsa.GetPublicKeyString() });
     }
 
     // 🧪 Test command enqueue
@@ -197,6 +248,38 @@ public class AgentController : ControllerBase
         }
 
         return Ok(new { commandId, message = "Uninstall command queued. Agent will remove itself, TightVNC and all folders within ~30s." });
+    }
+
+    /// <summary>
+    /// Merkez Agent EXE indirme — teknisyenler bu endpoint'ten self-contained exe'yi indirir.
+    /// Dosya: {ContentRoot}/central-agent/OrchestraCentralAgent.exe
+    /// </summary>
+    [AllowAnonymous]
+    [HttpGet("central/download")]
+    public IActionResult DownloadCentralAgent()
+    {
+        var path = Path.Combine(_env.ContentRootPath, "central-agent", "OrchestraCentralAgent.exe");
+        if (!System.IO.File.Exists(path))
+            return NotFound(new { error = "Merkez Agent henüz yayınlanmamış. Lütfen yöneticiyle iletişime geçin." });
+
+        var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
+        return File(stream, "application/octet-stream", "OrchestraCentralAgent.exe");
+    }
+
+    /// <summary>
+    /// TightVNC MSI indirme — Merkez Agent kurulum sırasında buradan çeker.
+    /// Dosya: {ContentRoot}/central-agent/tightvnc.msi
+    /// </summary>
+    [AllowAnonymous]
+    [HttpGet("central/tightvnc")]
+    public IActionResult DownloadTightVncMsi()
+    {
+        var path = Path.Combine(_env.ContentRootPath, "central-agent", "tightvnc.msi");
+        if (!System.IO.File.Exists(path))
+            return NotFound(new { error = "tightvnc.msi sunucuda bulunamadı." });
+
+        var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
+        return File(stream, "application/octet-stream", "tightvnc.msi");
     }
 
     /// <summary>
@@ -369,6 +452,7 @@ public class AgentController : ControllerBase
                                   : r.CommandType == CommandType.FileDelete     ? "Dosya Sil"
                                   : r.CommandType == CommandType.InstallVnc    ? "VNC Kur"
                                   : r.CommandType == CommandType.UninstallAgent ? "Agent Kaldır"
+                                  : r.CommandType == CommandType.BarcodeExcelExport ? "Barkod Excel Export"
                                   : "Diğer",
                     success        = r.Success,
                     completedAtUtc = r.CompletedAtUtc,
@@ -410,4 +494,12 @@ public class VncStatusReport
     public bool Installed { get; set; }
     public string? Password { get; set; }
     public int Port { get; set; } = 5900;
+}
+
+// 🔒 Faz 2 enrollment isteği
+public class AgentEnrollRequest
+{
+    public string? DeviceId { get; set; }
+    public string? PublicKey { get; set; }      // cihazın RSA public key'i (XML)
+    public string? BootstrapApiKey { get; set; } // tek-seferlik paylaşımlı AGENT_API_KEY
 }

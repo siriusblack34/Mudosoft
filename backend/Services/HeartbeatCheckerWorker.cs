@@ -19,6 +19,7 @@ namespace Orchestra.Backend.Services
         private readonly ILogger<HeartbeatCheckerWorker> _log;
         private readonly IServiceScopeFactory _scopeFactory;
         private readonly IEmailService _emailService;
+        private readonly AgentSelfHealingService _selfHealing;
 
         // Heartbeat timeout suresi (3 dakika — yuksek latency magazalar icin arttirildi)
         private static readonly TimeSpan HeartbeatTimeout = TimeSpan.FromMinutes(3);
@@ -34,11 +35,12 @@ namespace Orchestra.Backend.Services
         // Anti-spam: cihaz basina son alarm zamani
         private readonly ConcurrentDictionary<string, DateTime> _lastAlertSent = new();
 
-        public HeartbeatCheckerWorker(IServiceScopeFactory scopeFactory, ILogger<HeartbeatCheckerWorker> log, IEmailService emailService)
+        public HeartbeatCheckerWorker(IServiceScopeFactory scopeFactory, ILogger<HeartbeatCheckerWorker> log, IEmailService emailService, AgentSelfHealingService selfHealing)
         {
             _scopeFactory = scopeFactory;
             _log = log;
             _emailService = emailService;
+            _selfHealing = selfHealing;
         }
 
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -129,11 +131,34 @@ namespace Orchestra.Backend.Services
                             _log.LogError(ex, "Offline alarm e-postasi gonderiminde hata");
                         }
                     });
+
+                    // Self-healing: her offline cihaz icin agent yeniden baslatmayi dene
+                    foreach (var device in devicesToMarkOffline)
+                    {
+                        _ = Task.Run(async () =>
+                        {
+                            try
+                            {
+                                await _selfHealing.TryHealAsync(device.Id, device.Hostname, device.IpAddress);
+                            }
+                            catch (Exception ex)
+                            {
+                                _log.LogError(ex, "SelfHeal hatasi: {Hostname}", device.Hostname);
+                            }
+                        });
+                    }
                 }
             }
 
-            // Online'a donen cihazlarin cooldown'ini temizle
+            // Online'a donen cihazlarin cooldown'ini temizle ve self-healing sayacini sifirla
             CleanupCooldowns(dbContext);
+
+            var onlineDeviceIds = await dbContext.Devices
+                .Where(d => d.Online)
+                .Select(d => d.Id)
+                .ToListAsync();
+            foreach (var id in onlineDeviceIds)
+                _selfHealing.ResetDevice(id);
         }
 
         private async Task SendOfflineAlarmAsync(List<string> offlineDeviceIds)

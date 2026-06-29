@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Orchestra.Backend.Data;
+using Orchestra.Backend.Middleware;
 using Orchestra.Backend.Models;
 using Orchestra.Backend.Services;
 using System.Diagnostics;
@@ -12,6 +13,7 @@ namespace Orchestra.Backend.Controllers;
 
 [ApiController]
 [Authorize]
+[RequireMenu("/remote-install")] // tüm uçlar Uzaktan Kurulum menüsüne bağlı
 [Route("api/agent/remote-install")]
 public class RemoteInstallController : ControllerBase
 {
@@ -27,6 +29,7 @@ public class RemoteInstallController : ControllerBase
 
     private static readonly Dictionary<string, InstallStatus> _installations = new();
     private static readonly object _lock = new();
+    private static readonly SemaphoreSlim _concurrencySemaphore = new SemaphoreSlim(3, 3);
 
     public RemoteInstallController(
         ILogger<RemoteInstallController> logger,
@@ -46,7 +49,9 @@ public class RemoteInstallController : ControllerBase
         _activity = activity;
         _ad = ad;
         _updatesPath = Path.Combine(env.ContentRootPath, "updates");
-        _toolsPath = Path.GetFullPath(Path.Combine(env.ContentRootPath, "..", "agent", "tools"));
+        // Yayınlanan backend: C:\projects\orchestra\backend
+        // Tools:             C:\projects\orchestra\repo\agent\tools
+        _toolsPath = Path.GetFullPath(Path.Combine(env.ContentRootPath, "..", "repo", "agent", "tools"));
     }
 
     /// <summary>
@@ -598,7 +603,8 @@ public class RemoteInstallController : ControllerBase
         var storeCode = await ResolveStoreCodeForInstall(ip, request.StoreCode);
         lock (_lock)
         {
-            if (_installations.TryGetValue(ip, out var existing) && existing.Phase == "running")
+            if (_installations.TryGetValue(ip, out var existing) &&
+                (existing.Phase == "running" || existing.Phase == "queued"))
                 return Conflict(new { error = "Bu IP için zaten bir kurulum devam ediyor" });
         }
 
@@ -614,7 +620,7 @@ public class RemoteInstallController : ControllerBase
             return BadRequest(new { error = $"Agent ZIP bulunamadı: {fileName}" });
 
         // Backend URL — agent bu URL'e bağlanacak
-        var backendUrl = _config["Agent:BackendUrl"] ?? "http://10.0.210.99:5102";
+        var backendUrl = _config["Agent:BackendUrl"] ?? "http://10.75.1.109";
 
         var installId = Guid.NewGuid().ToString("N")[..8];
         var status = new InstallStatus
@@ -622,14 +628,26 @@ public class RemoteInstallController : ControllerBase
             Id = installId,
             IpAddress = ip,
             StoreCode = storeCode,
-            Phase = "running",
+            Phase = "queued",
             Steps = new List<InstallStep>(),
             StartedAt = DateTime.UtcNow
         };
 
         lock (_lock) { _installations[ip] = status; }
 
-        _ = Task.Run(() => RunInstallAsync(status, ip, storeCode, backendUrl, zipPath));
+        _ = Task.Run(async () =>
+        {
+            await _concurrencySemaphore.WaitAsync();
+            try
+            {
+                status.Phase = "running";
+                await RunInstallAsync(status, ip, storeCode, backendUrl, zipPath);
+            }
+            finally
+            {
+                _concurrencySemaphore.Release();
+            }
+        });
 
         _ = _activity.LogAsync("RemoteInstall", "Start", $"{storeCode}@{ip}", $"InstallId: {installId}");
         return Ok(new { installId, ip, storeCode, message = "Kurulum başlatıldı" });
@@ -694,7 +712,7 @@ public class RemoteInstallController : ControllerBase
         if (!System.IO.File.Exists(zipPath))
             return BadRequest(new { error = $"Agent ZIP bulunamadı: {fileName}" });
 
-        var backendUrl = _config["Agent:BackendUrl"] ?? "http://10.0.210.99:5102";
+        var backendUrl = _config["Agent:BackendUrl"] ?? "http://10.75.1.109";
         var results = new List<object>();
 
         foreach (var hostnameRaw in request.Hostnames.Distinct(StringComparer.OrdinalIgnoreCase))
@@ -715,7 +733,8 @@ public class RemoteInstallController : ControllerBase
 
             lock (_lock)
             {
-                if (_installations.TryGetValue(ip, out var existing) && existing.Phase == "running")
+                if (_installations.TryGetValue(ip, out var existing) &&
+                    (existing.Phase == "running" || existing.Phase == "queued"))
                 {
                     results.Add(new { hostname, ip, ok = false, error = "Zaten kurulum devam ediyor" });
                     continue;
@@ -729,13 +748,25 @@ public class RemoteInstallController : ControllerBase
                 Id = installId,
                 IpAddress = ip,
                 StoreCode = storeCode,
-                Phase = "running",
+                Phase = "queued",
                 Steps = new List<InstallStep>(),
                 StartedAt = DateTime.UtcNow
             };
             lock (_lock) { _installations[ip] = status; }
 
-            _ = Task.Run(() => RunInstallAsync(status, ip, storeCode, backendUrl, zipPath));
+            _ = Task.Run(async () =>
+            {
+                await _concurrencySemaphore.WaitAsync();
+                try
+                {
+                    status.Phase = "running";
+                    await RunInstallAsync(status, ip, storeCode, backendUrl, zipPath);
+                }
+                finally
+                {
+                    _concurrencySemaphore.Release();
+                }
+            });
             _ = _activity.LogAsync("RemoteInstall", "Start (AD)", $"{storeCode}@{hostname}({ip})", $"InstallId: {installId}");
 
             results.Add(new { hostname, ip, installId, storeCode, ok = true });
@@ -957,40 +988,72 @@ try {
     Copy-Item -Path $zipPath -Destination $remoteZip -Force
 
     # 2) Hedefte calistirilacak extract script'ini gonder
-    # AV (anti-virus) anlik dosya tarama yapinca Expand-Archive IOException aliyor.
-    # Bunun yerine .NET ZipFile API'siyle dosya-bazli retry-with-backoff yapiyoruz.
+    # PS 5+: Expand-Archive. PS 2-4: powershell.exe.config ile .NET 4 CLR zorunlu kilinip ZipFile kullanilir.
     $extractScript = @'
+$ErrorActionPreference = 'SilentlyContinue'
+sc.exe config MudosoftAgentService start= disabled | Out-Null
+sc.exe stop MudosoftAgentService | Out-Null
+sc.exe config MudosoftTrayService start= disabled | Out-Null
+sc.exe stop MudosoftTrayService | Out-Null
+Start-Sleep -Seconds 8
+taskkill /f /im MudoSoft.Agent.exe /t | Out-Null
+taskkill /f /im MudoSoft.Tray.exe /t | Out-Null
+Start-Sleep -Seconds 4
 $ErrorActionPreference = 'Stop'
-Add-Type -AssemblyName System.IO.Compression.FileSystem
 try {
     $dest = 'C:\Program Files\MudoSoft\Agent'
-    if (!(Test-Path $dest)) { New-Item -Path $dest -ItemType Directory -Force | Out-Null }
+    $zipPath = 'C:\temp\mudoagent.zip'
 
-    $zip = [System.IO.Compression.ZipFile]::OpenRead('C:\temp\mudoagent.zip')
-    try {
-        foreach ($entry in $zip.Entries) {
-            if ([string]::IsNullOrEmpty($entry.Name)) { continue }
-            $target = Join-Path $dest $entry.FullName
-            $targetDir = Split-Path $target -Parent
-            if (!(Test-Path $targetDir)) { New-Item -Path $targetDir -ItemType Directory -Force | Out-Null }
+    # Eski kurulumu tamamen sil — AV scan kilidi ve overwrite sorununu onler
+    Remove-Item -LiteralPath $dest -Recurse -Force -ErrorAction SilentlyContinue
+    Start-Sleep -Seconds 2
+    New-Item -Path $dest -ItemType Directory -Force | Out-Null
 
-            # AV scan kilidi: 5 retry x exponential backoff (100/200/400/800/1600ms)
-            $attempt = 0
-            while ($true) {
-                try {
-                    [System.IO.Compression.ZipFileExtensions]::ExtractToFile($entry, $target, $true)
-                    break
-                } catch [System.IO.IOException] {
-                    $attempt++
-                    if ($attempt -ge 5) { throw }
-                    Start-Sleep -Milliseconds (100 * [Math]::Pow(2, $attempt - 1))
-                }
-            }
+    # PS versiyonuna gore en uygun extract yontemi sec
+    $psVer = $PSVersionTable.PSVersion.Major
+    if ($psVer -ge 5) {
+        Expand-Archive -LiteralPath $zipPath -DestinationPath $dest -Force
+    } else {
+        # PS 2-4: powershell.exe.config ile .NET 4 CLR zorunlu kilip child PS'de ZipFile extract yapariz.
+        # Dikkat: bu blok C# verbatim string icinde; cift tirnak kullanilamaz, sadece tek tirnak.
+        $configPath = Join-Path $PSHOME 'powershell.exe.config'
+        $hadConfig = Test-Path $configPath
+        if (-not $hadConfig) {
+            $xml = '<?xml version=''1.0''?><configuration><startup useLegacyV2RuntimeActivationPolicy=''true''><supportedRuntime version=''v4.0.30319''/></startup></configuration>'
+            [System.IO.File]::WriteAllText($configPath, $xml)
         }
-    } finally { $zip.Dispose() }
+        # Add-Type -AssemblyName GAC'den bulamaz; explicit DLL path ile yukle.
+        # Cift tirnak yok — C# verbatim string / PS single-quoted here-string kisitlamasi.
+        $nl = [System.Environment]::NewLine
+        $innerLines  = '$ErrorActionPreference = ''Stop''' + $nl
+        $innerLines += 'try {' + $nl
+        $innerLines += '    $bits = if ([System.IntPtr]::Size -eq 8) { ''Framework64'' } else { ''Framework'' }' + $nl
+        $innerLines += '    $dll = $env:windir + ''\Microsoft.NET\'' + $bits + ''\v4.0.30319\System.IO.Compression.FileSystem.dll''' + $nl
+        $innerLines += '    if (Test-Path $dll) {' + $nl
+        $innerLines += '        Add-Type -Path $dll' + $nl
+        $innerLines += '        [System.IO.Compression.ZipFile]::ExtractToDirectory(''C:\temp\mudoagent.zip'', ''C:\Program Files\MudoSoft\Agent'')' + $nl
+        $innerLines += '    } else {' + $nl
+        $innerLines += '        $sh = New-Object -ComObject Shell.Application' + $nl
+        $innerLines += '        $sh.NameSpace(''C:\Program Files\MudoSoft\Agent'').CopyHere($sh.NameSpace(''C:\temp\mudoagent.zip'').Items(), 0x14)' + $nl
+        $innerLines += '        $d = [DateTime]::Now.AddSeconds(120)' + $nl
+        $innerLines += '        while ([DateTime]::Now -lt $d) { Start-Sleep 2; if ((Get-ChildItem ''C:\Program Files\MudoSoft\Agent'' -Recurse -ea 0).Count -ge 5) { break } }' + $nl
+        $innerLines += '    }' + $nl
+        $innerLines += '} catch { $_.Exception.Message | Set-Content ''C:\temp\inner_err.txt''; exit 1 }' + $nl
+        [System.IO.File]::WriteAllText('C:\temp\mudoinner.ps1', $innerLines)
+        $psExe = Join-Path $PSHOME 'powershell.exe'
+        & $psExe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File 'C:\temp\mudoinner.ps1'
+        $exitCode = $LASTEXITCODE
+        if (-not $hadConfig) { Remove-Item $configPath -Force -ErrorAction SilentlyContinue }
+        Remove-Item 'C:\temp\mudoinner.ps1' -Force -ErrorAction SilentlyContinue
+        if ($exitCode -ne 0) {
+            $innerErr = Get-Content 'C:\temp\inner_err.txt' -ErrorAction SilentlyContinue
+            Remove-Item 'C:\temp\inner_err.txt' -Force -ErrorAction SilentlyContinue
+            throw ('Inner extraction failed (exit ' + $exitCode + '): ' + $innerErr)
+        }
+    }
 
     Remove-Item (Join-Path $dest 'appsettings.json') -Force -ErrorAction SilentlyContinue
-    Remove-Item 'C:\temp\mudoagent.zip' -Force -ErrorAction SilentlyContinue
+    Remove-Item $zipPath -Force -ErrorAction SilentlyContinue
     New-Item 'C:\temp\mudoagent.done' -ItemType File -Force | Out-Null
 } catch {
     $_.Exception.Message | Set-Content 'C:\temp\mudoagent.error' -Force
@@ -1008,11 +1071,11 @@ try {
     $r = Invoke-WmiMethod -ComputerName $ip -Class Win32_Process -Name Create -ArgumentList $extractCmd -ErrorAction Stop
     if ($r.ReturnValue -ne 0) { throw ""WMI process create failed (return=$($r.ReturnValue))"" }
 
-    # 4) Extract tamamlanmasini bekle — max 5dk (168MB lokal extract ~30sn, AV varsa 2-3dk)
+    # 4) Extract tamamlanmasini bekle — max 10dk (AV + yavas disk varsa uzun surebilir)
     $doneFile = ""$remoteTemp\mudoagent.done""
     $errorFile = ""$remoteTemp\mudoagent.error""
     $extracted = $false
-    for ($i = 0; $i -lt 100; $i++) {
+    for ($i = 0; $i -lt 200; $i++) {
         Start-Sleep -Seconds 3
         if (Test-Path $errorFile) {
             $errMsg = Get-Content $errorFile -Raw
@@ -1021,7 +1084,7 @@ try {
         }
         if (Test-Path $doneFile) { $extracted = $true; break }
     }
-    if (!$extracted) { throw 'Extract 5dk icinde tamamlanmadi' }
+    if (!$extracted) { throw 'Extract 10dk icinde tamamlanmadi' }
     Remove-Item $doneFile -Force -ErrorAction SilentlyContinue
     Remove-Item $remoteScript -Force -ErrorAction SilentlyContinue
 
@@ -1044,7 +1107,7 @@ try {
         await System.IO.File.WriteAllTextAsync(scriptPath, script);
         try
         {
-            var (_, output) = await RunPsFile(scriptPath);
+            var (_, output) = await RunPsFile(scriptPath, TimeSpan.FromMinutes(15));
             _logger.LogInformation("[RemoteInstall] CopyFiles {Ip}: {Output}", ip, output);
             if (output.Contains("COPY_OK"))
                 return (true, "OK");
@@ -1114,26 +1177,36 @@ try {
     cmd /c ""sc.exe \\$ip failure $svcName reset= 86400 actions= restart/5000/restart/10000/restart/30000"" 2>&1 | Out-Null
 
     # Servisi baslat
+    # ÖNEMLİ: exit 1053 (""service did not respond in a timely fashion"") BIR HATA DEGIL.
+    # Self-contained .NET agent'i (554 dosya) ilk acilista AV real-time taramasi + JIT warmup ile
+    # varsayilan 30sn'lik SCM timeout'unu asabiliyor (cold start ~60-90sn). Yukarida
+    # ServicesPipeTimeout=120000 set ediliyor AMA SCM bu degeri yalnizca BOOT'ta okur —
+    # reboot olmadan mevcut start denemesine etki etmez. Bu yuzden 1053'u tolere edip
+    # asagidaki dongude RUNNING'i bekliyoruz (process arka planda acilmaya devam ediyor).
     $startOutput = cmd /c ""sc.exe \\$ip start $svcName"" 2>&1
     $startExit = $LASTEXITCODE
-    # exit 1056 = ""An instance of the service is already running"" — tamam
-    if ($startExit -ne 0 -and $startExit -ne 1056) {
+    # 1056 = zaten calisiyor (tamam), 1053 = yavas cold-start (asagida bekle), 0 = ok
+    if ($startExit -ne 0 -and $startExit -ne 1056 -and $startExit -ne 1053) {
         Write-Output ""SVC_FAIL: sc start basarisiz (exit=$startExit): $startOutput""
         return
     }
 
-    # Servis durumunu 30sn bekle — RUNNING olmali
-    for ($i = 0; $i -lt 6; $i++) {
+    # Servis durumunu 3dk bekle — yavas makinede cold-start uzun surer (RUNNING olmali).
+    # SCM timeout'u (1053) process'i STOPPED'a dusurduyse tekrar start dene.
+    for ($i = 0; $i -lt 36; $i++) {
         Start-Sleep -Seconds 5
         $svc = cmd /c ""sc.exe \\$ip query $svcName"" 2>&1
         if ($svc -match 'RUNNING') {
             Write-Output 'SVC_OK: Servis kuruldu ve calisiyor'
             return
         }
+        if ($svc -match 'STOPPED') {
+            cmd /c ""sc.exe \\$ip start $svcName"" 2>&1 | Out-Null
+        }
     }
 
     $finalState = (cmd /c ""sc.exe \\$ip query $svcName"" 2>&1) -join ' '
-    Write-Output ""SVC_WARN: Servis olusturuldu ama 30sn icinde RUNNING durumuna gelmedi. Son durum: $finalState""
+    Write-Output ""SVC_WARN: Servis olusturuldu ama 3dk icinde RUNNING durumuna gelmedi. Son durum: $finalState""
 } catch {
     Write-Output ""SVC_FAIL: $($_.Exception.Message)""
 }
@@ -1210,44 +1283,11 @@ try {
         return new string(bytes.Select(b => chars[b % chars.Length]).ToArray());
     }
 
-    private async Task<(bool Ok, string Detail)> CheckDotNetRuntime(string ip)
+    private Task<(bool Ok, string Detail)> CheckDotNetRuntime(string ip)
     {
-        // Remote makinede C:\Program Files\dotnet\shared\Microsoft.NETCore.App altinda 8.x klasoru var mi?
-        // Agent self-contained publish edilmiyor → runtime mutlaka yüklü olmalı.
-        var scriptPath = Path.Combine(Path.GetTempPath(), $"mudonet_{ip.Replace('.', '_')}.ps1");
-        var script = @"
-$ErrorActionPreference = 'Stop'
-$ip = '" + ip + @"'
-try {
-    $sharedPath = ""\\$ip\C$\Program Files\dotnet\shared\Microsoft.NETCore.App""
-    if (!(Test-Path $sharedPath)) {
-        Write-Output 'NET_FAIL: .NET Runtime yuklu degil (Microsoft.NETCore.App dizini bulunamadi)'
-        return
-    }
-    $versions = @(Get-ChildItem $sharedPath -Directory -ErrorAction Stop | Select-Object -ExpandProperty Name)
-    $net8 = @($versions | Where-Object { $_ -like '8.*' })
-    if ($net8.Count -eq 0) {
-        Write-Output ""NET_FAIL: .NET 8 Runtime yuklu degil. Mevcut surumler: $($versions -join ', ')""
-        return
-    }
-    Write-Output ""NET_OK: $($net8 -join ', ')""
-} catch {
-    Write-Output ""NET_FAIL: $($_.Exception.Message)""
-}
-";
-        await System.IO.File.WriteAllTextAsync(scriptPath, script);
-        try
-        {
-            var (_, output) = await RunPsFile(scriptPath);
-            _logger.LogInformation("[RemoteInstall] .NET check {Ip}: {Output}", ip, output);
-            if (output.Contains("NET_OK"))
-                return (true, ".NET 8 Runtime mevcut: " + ExtractMarker(output, "NET_OK: "));
-            return (false, ExtractMarker(output, "NET_FAIL: "));
-        }
-        finally
-        {
-            try { System.IO.File.Delete(scriptPath); } catch { }
-        }
+        // Agent self-contained publish (SelfContained=true) — coreclr.dll ZIP içinde bundle.
+        // Sistem .NET kurulumuna gerek yok.
+        return Task.FromResult((true, "Self-contained publish — sistem runtime gerektirmez"));
     }
 
     private async Task<(bool Ok, string Detail)> InstallDotNetRuntime(string ip)
@@ -1406,7 +1446,10 @@ if (Test-Path ""\\$ip\C$\Program Files\MudoSoft\Agent\tools\tightvnc.msi"") {{ W
         }
         else
         {
-            // Already installed — just configure password, firewall, restart
+            // Already installed (exe mevcut) — sifre/firewall yapilandir, gerekirse servisi yeniden kaydet, restart.
+            // NOT: Temizlik batch'leri / AV (Trend Micro Apex One) tvnserver SERVISINI silip exe'yi birakabiliyor.
+            // Bu yari-kaldirma durumunda 'net start tvnserver' "service does not exist" ile patlar ve 5900 kapali kalir.
+            // sc query basarisizsa (servis yok) tvnserver.exe -reinstall ile servisi yeniden kaydet (idempotent, sifreye dokunmaz).
             batContent = "@echo off\r\n"
                 + $"reg add \"HKLM\\SOFTWARE\\TightVNC\\Server\" /v Password /t REG_BINARY /d {hexStr} /f\r\n"
                 + "reg add \"HKLM\\SOFTWARE\\TightVNC\\Server\" /v AcceptConnections /t REG_DWORD /d 1 /f\r\n"
@@ -1414,6 +1457,8 @@ if (Test-Path ""\\$ip\C$\Program Files\MudoSoft\Agent\tools\tightvnc.msi"") {{ W
                 + "netsh advfirewall firewall delete rule name=\"TightVNC\" >nul 2>&1\r\n"
                 + "netsh advfirewall firewall add rule name=\"TightVNC\" dir=in action=allow protocol=TCP localport=5900\r\n"
                 + "net stop tvnserver >nul 2>&1\r\n"
+                + "timeout /t 2 /nobreak >nul\r\n"
+                + "sc query tvnserver >nul 2>&1 || \"C:\\Program Files\\TightVNC\\tvnserver.exe\" -reinstall -silent\r\n"
                 + "timeout /t 2 /nobreak >nul\r\n"
                 + "net start tvnserver\r\n"
                 + "echo DONE > C:\\temp\\vnc_setup_done.txt\r\n"
