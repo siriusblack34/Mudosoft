@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { apiClient, SqlDeviceWithStatus, StoreManager } from "../lib/apiClient";
 import Spinner from "../components/ui/Spinner";
@@ -100,26 +100,24 @@ const MagazalarPage: React.FC = () => {
     const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
     const [selectedStoreCode, setSelectedStoreCode] = useState<number | null>(null);
 
+    const load = useCallback(async (silent = false) => {
+        try {
+            if (!silent) setIsLoading(true);
+            const data = await apiClient.getSqlDevicesWithStatus({ timeoutMs: 500, maxConcurrency: 40 });
+            setDevices(data ?? []);
+            setLastUpdated(new Date());
+        } catch (err) { console.error("Mağaza load failed:", err); }
+        finally { if (!silent) setIsLoading(false); }
+    }, []);
+
     useEffect(() => {
-        let alive = true;
-        const load = async (silent = false) => {
-            try {
-                if (!silent) setIsLoading(true);
-                const data = await apiClient.getSqlDevicesWithStatus({ timeoutMs: 500, maxConcurrency: 40 });
-                if (alive) {
-                    setDevices(data ?? []);
-                    setLastUpdated(new Date());
-                }
-            } catch (err) { console.error("Mağaza load failed:", err); }
-            finally { if (alive && !silent) setIsLoading(false); }
-        };
         load();
         apiClient.getStoreManagers()
-            .then(m => { if (alive) setManagers(m ?? []); })
+            .then(m => setManagers(m ?? []))
             .catch(err => console.error("StoreManager load failed:", err));
         const t = setInterval(() => load(true), 30000);
-        return () => { alive = false; clearInterval(t); };
-    }, []);
+        return () => clearInterval(t);
+    }, [load]);
 
     const managerByCode = useMemo(() => {
         const m = new Map<number, StoreManager>();
@@ -207,6 +205,7 @@ const MagazalarPage: React.FC = () => {
                     store={selectedStore}
                     manager={managerByCode.get(selectedStore.storeCode) ?? null}
                     onClose={() => setSelectedStoreCode(null)}
+                    onChanged={() => load(true)}
                 />
             )}
 
@@ -302,7 +301,8 @@ const StoreDetailPanel: React.FC<{
     store: StoreAgg;
     manager: StoreManager | null;
     onClose: () => void;
-}> = ({ store, manager, onClose }) => {
+    onChanged: () => void;
+}> = ({ store, manager, onClose, onChanged }) => {
     const allDevices = useMemo(() => {
         const list: SqlDeviceWithStatus[] = [];
         if (store.router) list.push(store.router);
@@ -311,6 +311,25 @@ const StoreDetailPanel: React.FC<{
         list.push(...store.otherDevices);
         return list;
     }, [store]);
+
+    const isClosed = store.status === "closed";
+    const currentReason = allDevices.find(d => d.isTemporarilyClosed)?.temporaryCloseReason ?? "";
+    const [busy, setBusy] = useState(false);
+    const [reason, setReason] = useState("");
+
+    const toggleStore = async (close: boolean) => {
+        if (close && !reason.trim()) return;
+        setBusy(true);
+        try {
+            await apiClient.setStoreTemporaryClose(store.storeCode, close, close ? reason.trim() : undefined);
+            setReason("");
+            onChanged();
+        } catch (e: any) {
+            alert("İşlem başarısız: " + (e?.message ?? "bilinmeyen hata"));
+        } finally {
+            setBusy(false);
+        }
+    };
 
     return (
         <div className="fixed inset-0 z-40" onClick={onClose}>
@@ -335,6 +354,48 @@ const StoreDetailPanel: React.FC<{
                 </div>
 
                 <div className="space-y-5 px-5 py-4">
+                    {/* Mağaza durumu — pasife al / aktif et (tadilat/planlı kesinti) */}
+                    <section>
+                        <div className="mb-2 text-[11px] uppercase tracking-wider text-slate-500">Mağaza Durumu</div>
+                        {isClosed ? (
+                            <div className="space-y-2 rounded-lg border border-slate-500/30 bg-slate-500/[0.06] p-3">
+                                <div className="flex items-center gap-2 text-[13px] font-medium text-slate-200">
+                                    <PauseCircle className="h-4 w-4 text-slate-400" /> Mağaza pasif — taramaya girmiyor
+                                </div>
+                                {currentReason && (
+                                    <div className="text-[12px] text-slate-400">Açıklama: <span className="text-slate-300">{currentReason}</span></div>
+                                )}
+                                <button
+                                    onClick={() => toggleStore(false)}
+                                    disabled={busy}
+                                    className="w-full rounded-lg border border-emerald-500/30 bg-emerald-500/15 px-3 py-2 text-[13px] font-medium text-emerald-300 transition-colors hover:bg-emerald-500/25 disabled:opacity-50"
+                                >
+                                    {busy ? "İşleniyor…" : "Mağazayı Aktif Et"}
+                                </button>
+                            </div>
+                        ) : (
+                            <div className="space-y-2 rounded-lg border border-amber-500/25 bg-amber-500/[0.05] p-3">
+                                <div className="text-[12px] text-slate-400">
+                                    Tadilat / planlı kesinti için mağazayı pasife al. Tüm cihazlar <span className="text-slate-300">"Kapalı"</span> olur, taramaya girmez ve kesinti alarmı çalmaz.
+                                </div>
+                                <input
+                                    value={reason}
+                                    onChange={(e) => setReason(e.target.value)}
+                                    placeholder="Açıklama (örn. tadilat — network kapalı)"
+                                    className="h-9 w-full rounded-lg border border-white/10 bg-white/[0.03] px-3 text-[13px] text-slate-200 placeholder:text-slate-600 focus:ring-1 focus:ring-amber-500/40"
+                                />
+                                <button
+                                    onClick={() => toggleStore(true)}
+                                    disabled={busy || !reason.trim()}
+                                    className="inline-flex w-full items-center justify-center gap-1.5 rounded-lg border border-rose-500/30 bg-rose-500/15 px-3 py-2 text-[13px] font-medium text-rose-300 transition-colors hover:bg-rose-500/25 disabled:opacity-50"
+                                    title={!reason.trim() ? "Önce açıklama girin" : ""}
+                                >
+                                    <PauseCircle className="h-4 w-4" /> {busy ? "İşleniyor…" : "Mağazayı Pasife Al"}
+                                </button>
+                            </div>
+                        )}
+                    </section>
+
                     {/* Mağaza müdürü & adres */}
                     <section>
                         <div className="mb-2 text-[11px] uppercase tracking-wider text-slate-500">Mağaza Bilgileri</div>

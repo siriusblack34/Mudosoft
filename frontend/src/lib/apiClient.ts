@@ -712,6 +712,11 @@ export const apiClient = {
         return this.put(`/api/sqlquery/devices/${encodeURIComponent(deviceId)}/temporary-close`, { isClosed, reason });
     },
 
+    /** Mağaza seviyesi geçici kapatma — tüm cihazları "Kapalı" yapar (tadilat/planlı kesinti). */
+    setStoreTemporaryClose(storeCode: number, isClosed: boolean, reason?: string): Promise<{ success: boolean; storeCode: number; storeName: string; affectedDevices: number; isStoreClosed: boolean; message: string }> {
+        return this.put(`/api/store-devices/${storeCode}/temporary-close`, { isClosed, reason });
+    },
+
     setDeviceOfflineExclusion(deviceId: string, excludeFromOfflineList: boolean): Promise<DeviceOfflineExclusionResponse> {
         return this.put(`/api/devices/${encodeURIComponent(deviceId)}/offline-exclusion`, { excludeFromOfflineList });
     },

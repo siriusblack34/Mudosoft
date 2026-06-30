@@ -40,6 +40,54 @@ public class StoreDevicesController : ControllerBase
         return Ok(devices);
     }
 
+    // ===========================================================
+    // MAĞAZA SEVİYESİ PASİF/KAPALI — tadilat/planlı kesinti için
+    // Mağazanın TÜM cihazlarını "geçici kapalı" yapar; taramaya girmez,
+    // offline tespiti/alarmı çalmaz, listede "Kapalı" görünür.
+    // ===========================================================
+    [HttpPut("{storeCode:int}/temporary-close")]
+    public async Task<IActionResult> ToggleStoreTemporaryClose(int storeCode, [FromBody] StoreTemporaryCloseRequest req)
+    {
+        var devices = await _db.StoreDevices.Where(d => d.StoreCode == storeCode).ToListAsync();
+        if (devices.Count == 0)
+            return NotFound(new { error = "Mağazaya ait cihaz bulunamadı" });
+
+        var storeName = devices[0].StoreName;
+        var reason = req.IsClosed ? (req.Reason?.Trim() ?? "") : null;
+
+        foreach (var d in devices)
+        {
+            d.IsTemporarilyClosed = req.IsClosed;
+            d.TemporaryCloseReason = reason;
+        }
+        await _db.SaveChangesAsync();
+
+        // Cache'i anında güncelle (with-status cache'ten okuyor; dashboard yanıp sönmesin)
+        foreach (var d in devices)
+        {
+            DeviceStatusWorker.UpdateCachedDevice(d.DeviceId, c =>
+            {
+                c.IsTemporarilyClosed = req.IsClosed;
+                c.TemporaryCloseReason = reason;
+            });
+        }
+
+        _logger.LogInformation("Store {StoreCode} ({StoreName}) temporary-close={IsClosed}, {Count} cihaz, reason: {Reason}",
+            storeCode, storeName, req.IsClosed, devices.Count, reason);
+
+        return Ok(new
+        {
+            success = true,
+            storeCode,
+            storeName,
+            affectedDevices = devices.Count,
+            isStoreClosed = req.IsClosed,
+            message = req.IsClosed
+                ? $"Mağaza {storeCode} ({storeName}) ve {devices.Count} cihazı kapalı olarak işaretlendi"
+                : $"Mağaza {storeCode} ({storeName}) yeniden aktif edildi"
+        });
+    }
+
     [HttpGet("stores")]
     public async Task<IActionResult> GetStores()
     {
@@ -306,4 +354,10 @@ public class UpdateStoreDeviceRequest
     public string? DeviceType { get; set; }
     public string? CalculatedIpAddress { get; set; }
     public string? DbConnectionString { get; set; }
+}
+
+public class StoreTemporaryCloseRequest
+{
+    public bool IsClosed { get; set; }
+    public string? Reason { get; set; }
 }
