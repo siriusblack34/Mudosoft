@@ -95,6 +95,9 @@ const UserManagement: React.FC = () => {
   const [editForm, setEditForm] = useState({ fullName: '', role: '', isActive: true, email: '', menuProfileId: -1 });
   const [newPass, setNewPass] = useState('');
   const [msg, setMsg] = useState('');
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [bulkProfileId, setBulkProfileId] = useState<number>(-1);
+  const [bulkBusy, setBulkBusy] = useState(false);
 
   const load = async () => {
     try {
@@ -154,6 +157,31 @@ const UserManagement: React.FC = () => {
     } catch (e: any) { setMsg(e.message); }
   };
 
+  // ── Çoklu seçim + toplu profil atama ──
+  const toggleSelect = (id: number) => setSelectedIds(prev => {
+    const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n;
+  });
+  const allSelected = users.length > 0 && users.every(u => selectedIds.has(u.id));
+  const toggleSelectAll = () => setSelectedIds(allSelected ? new Set() : new Set(users.map(u => u.id)));
+
+  const applyBulkProfile = async () => {
+    // Profil yalnızca teknisyenler için anlamlı; admin'ler atlanır.
+    const targets = users.filter(u => selectedIds.has(u.id) && u.role !== 'Admin');
+    if (targets.length === 0) { setMsg('Profil atanacak teknisyen seçilmedi (admin kullanıcılar atlanır).'); return; }
+    setBulkBusy(true); setMsg('');
+    let ok = 0, fail = 0;
+    for (const u of targets) {
+      try { await apiClient.put(`/api/users/${u.id}`, { menuProfileId: bulkProfileId }); ok++; }
+      catch { fail++; }
+    }
+    const pname = bulkProfileId <= 0 ? 'Varsayılan (Teknisyen)' : (profiles.find(p => p.id === bulkProfileId)?.name ?? 'profil');
+    setBulkBusy(false);
+    setSelectedIds(new Set());
+    setMsg(`${ok} kullanıcıya "${pname}" profili atandı${fail ? `, ${fail} hata` : ''}.`);
+    setTimeout(() => setMsg(''), 4000);
+    load();
+  };
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -166,6 +194,25 @@ const UserManagement: React.FC = () => {
       {msg && (
         <div className="text-xs text-amber-400 bg-amber-500/10 border border-amber-500/20 rounded-lg px-3 py-2">
           {msg}
+        </div>
+      )}
+
+      {/* Toplu işlem çubuğu — seçim varken */}
+      {selectedIds.size > 0 && (
+        <div className="flex flex-wrap items-center gap-2 bg-violet-500/10 border border-violet-500/20 rounded-xl px-4 py-2.5">
+          <span className="text-sm font-semibold text-violet-300">{selectedIds.size} seçili</span>
+          <span className="text-xs text-ms-text-muted">→ Menü profili ata:</span>
+          <select value={bulkProfileId} onChange={e => setBulkProfileId(Number(e.target.value))} className="text-sm">
+            <option value={-1}>Varsayılan (Teknisyen)</option>
+            {profiles.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+          </select>
+          <button onClick={applyBulkProfile} disabled={bulkBusy} className="btn-primary text-xs disabled:opacity-40">
+            <Layers className="w-3.5 h-3.5" /> {bulkBusy ? 'Atanıyor...' : 'Seçilenlere Uygula'}
+          </button>
+          <button onClick={() => setSelectedIds(new Set())} className="btn-secondary text-xs">
+            <X className="w-3.5 h-3.5" /> Seçimi Temizle
+          </button>
+          <span className="text-[10px] text-ms-text-muted/70">(admin kullanıcılar atlanır)</span>
         </div>
       )}
 
@@ -207,6 +254,9 @@ const UserManagement: React.FC = () => {
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-ms-border text-ms-text-muted text-xs">
+              <th className="px-3 py-3 w-9">
+                <input type="checkbox" checked={allSelected} onChange={toggleSelectAll} title="Tümünü seç" />
+              </th>
               <th className="text-left px-4 py-3">Kullanıcı</th>
               <th className="text-left px-4 py-3">Ad Soyad</th>
               <th className="text-left px-4 py-3">E-posta</th>
@@ -219,9 +269,12 @@ const UserManagement: React.FC = () => {
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={8} className="text-center py-8 text-ms-text-muted">Yükleniyor...</td></tr>
+              <tr><td colSpan={9} className="text-center py-8 text-ms-text-muted">Yükleniyor...</td></tr>
             ) : users.map(u => (
-              <tr key={u.id} className="border-b border-ms-border/50 hover:bg-ms-border/30 transition-colors">
+              <tr key={u.id} className={`border-b border-ms-border/50 hover:bg-ms-border/30 transition-colors ${selectedIds.has(u.id) ? 'bg-violet-500/5' : ''}`}>
+                <td className="px-3 py-3 w-9">
+                  <input type="checkbox" checked={selectedIds.has(u.id)} onChange={() => toggleSelect(u.id)} />
+                </td>
                 <td className="px-4 py-3 font-mono text-ms-text">{u.username}</td>
                 <td className="px-4 py-3 text-ms-text">
                   {editId === u.id ? (
