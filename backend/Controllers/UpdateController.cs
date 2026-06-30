@@ -204,6 +204,30 @@ public class UpdateController : ControllerBase
     }
 
     /// <summary>
+    /// TightVNC MSI indirme — mağaza agent'ı (VncInstallerService) VNC kurulumu sırasında buradan çeker.
+    /// Dosya: {ContentRoot}/central-agent/tightvnc.msi, yoksa {ContentRoot}/updates/tightvnc.msi.
+    /// </summary>
+    [AllowAnonymous] // Agent JWT'siz indirir (diğer download uçları gibi)
+    [HttpGet("vnc-installer")]
+    public IActionResult DownloadVncInstaller()
+    {
+        var candidates = new[]
+        {
+            Path.GetFullPath(Path.Combine(_updatesPath, "..", "central-agent", "tightvnc.msi")),
+            Path.Combine(_updatesPath, "tightvnc.msi"),
+        };
+        var path = candidates.FirstOrDefault(System.IO.File.Exists);
+        if (path == null)
+        {
+            _logger.LogWarning("[VNC] vnc-installer istendi ama tightvnc.msi sunucuda bulunamadı");
+            return NotFound(new { error = "tightvnc.msi sunucuda bulunamadı." });
+        }
+
+        var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
+        return File(stream, "application/octet-stream", "tightvnc.msi");
+    }
+
+    /// <summary>
     /// Download specific version
     /// GET /api/updates/download/{version}
     /// </summary>
