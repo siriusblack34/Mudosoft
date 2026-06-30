@@ -52,7 +52,6 @@ import OutageMailPage from "./pages/OutageMailPage";
 import ActiveSessionsPage from "./pages/ActiveSessionsPage";
 import SessionHistoryPage from "./pages/SessionHistoryPage";
 import ServiceMonitorPage from "./pages/ServiceMonitorPage";
-import GeniusPosHealthPage from "./pages/GeniusPosHealthPage";
 import YazicilarPage from "./pages/YazicilarPage";
 import KampanyaKontrolPage from "./pages/KampanyaKontrolPage";
 import { Navigate } from "react-router-dom";
@@ -488,14 +487,6 @@ const routes = [
                 element: (
                     <ShellLayout>
                         <KampanyaKontrolPage />
-                    </ShellLayout>
-                ),
-            },
-            {
-                path: "/genius-pos-sagligi",
-                element: (
-                    <ShellLayout>
-                        <GeniusPosHealthPage />
                     </ShellLayout>
                 ),
             },

@@ -34,7 +34,6 @@ import {
   Settings,
   Shield,
   ShieldCheck,
-  ShoppingCart,
   Sparkles,
   StickyNote,
   Users,
@@ -127,7 +126,6 @@ export const navGroups: NavGroup[] = [
       { to: '/remote-install', label: 'Uzaktan Kurulum', icon: <Download className="h-4 w-4" /> },
       { to: '/active-directory', label: 'Active Directory', icon: <Building2 className="h-4 w-4" />, requiresAdmin: true },
       { to: '/batch-scripts', label: 'Acil Bat Çalıştır', icon: <FileCode className="h-4 w-4" /> },
-      { to: '/genius-pos-sagligi', label: 'Genius POS Sağlığı', icon: <ShoppingCart className="h-4 w-4" /> },
     ],
   },
   {
